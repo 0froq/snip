@@ -1,6 +1,6 @@
 {
   "name": "snip",
-  "identifier": "dev.froq.snip",
+  "identifier": "me.froq.snip",
   "out": "build",
   "macos": {
     "infoPlist": {

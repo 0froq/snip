@@ -30,6 +30,28 @@ Optional config: copy `config.toml` to `~/Library/Application Support/snip/confi
 
 `max_cards` (default **20**) caps how many snippets are kept. When a new copy would exceed the limit, the **oldest** cards are closed and removed first (FIFO).
 
+Snippet cards are small paper strips (default about **240×44** pt, auto width between `[card].min_width` and `[card].max_width`, **1–2 lines** with ellipsis). Drag a card by its surface (`ui.Element.DragWindow()` on the frameless window). Positions are remembered per card for the session (and restored via MyGo `StateKey` when IDs repeat).
+
+### AeroSpace (tiling window manager)
+
+snip’s bundle ID is **`me.froq.snip`** (`mygo.json` → `identifier`). AeroSpace may tile snip’s floating cards unless you float them. Cards also use MyGo’s **`Panel`** window type when `[window].panel = true` (default), which keeps them out of normal app window lists.
+
+Add to your AeroSpace config ([on-window-detected](https://nikitabobko.github.io/AeroSpace/guide#on-window-detected-callback)):
+
+```toml
+on-window-detected = [
+    { if = 'test %{app-bundle-id} = me.froq.snip', run = 'layout floating' },
+]
+```
+
+Legacy table form (still supported by AeroSpace):
+
+```toml
+on-window-detected = [
+    { if.app-id = 'me.froq.snip', run = 'layout floating' },
+]
+```
+
 ### Permissions
 
 1. **Accessibility** (required for paste simulation): System Settings → Privacy & Security → Accessibility → enable **snip**. On first launch the app logs a reminder; failed paste opens the Accessibility pane.

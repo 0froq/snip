@@ -6,8 +6,21 @@ always_on_top = true
 visible_on_all_workspaces = true
 content_protection = true
 frameless = true
-width = 320
-height = 120
+panel = true
+
+[card]
+min_width = 120
+max_width = 480
+height = 44
+max_lines = 2
+padding_x = 10
+padding_y = 6
+font_size = 12
+char_width = 7
+cascade_origin_x = 24
+cascade_origin_y = 24
+cascade_step_x = 12
+cascade_step_y = 10
 
 [shortcuts]
 show_all = "CmdOrCtrl+Shift+S"

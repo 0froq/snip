@@ -2,3 +2,4 @@
 snip-bin
 *.app
 .go/
+agent-tools/

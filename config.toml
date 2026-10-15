@@ -1,4 +1,5 @@
 clipboard_poll_ms = 300
+max_cards = 20
 
 [window]
 always_on_top = true

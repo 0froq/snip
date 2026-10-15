@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"time"
+	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 )
@@ -13,8 +14,25 @@ type Window struct {
 	VisibleOnAllWorkspaces bool `toml:"visible_on_all_workspaces"`
 	ContentProtection      bool `toml:"content_protection"`
 	Frameless              bool `toml:"frameless"`
-	Width                  int  `toml:"width"`
-	Height                 int  `toml:"height"`
+	// Panel uses a non-normal window level (launcher-style) so tiling WMs
+	// are less likely to manage snip cards as regular app windows.
+	Panel bool `toml:"panel"`
+}
+
+// Card controls the paper-strip snippet appearance.
+type Card struct {
+	MinWidth      int `toml:"min_width"`
+	MaxWidth      int `toml:"max_width"`
+	Height        int `toml:"height"`
+	MaxLines      int `toml:"max_lines"`
+	PaddingX      int `toml:"padding_x"`
+	PaddingY      int `toml:"padding_y"`
+	FontSize      int `toml:"font_size"`
+	CharWidth     int `toml:"char_width"`
+	CascadeStepX  int `toml:"cascade_step_x"`
+	CascadeStepY  int `toml:"cascade_step_y"`
+	CascadeOriginX int `toml:"cascade_origin_x"`
+	CascadeOriginY int `toml:"cascade_origin_y"`
 }
 
 // Shortcuts are global accelerator strings (MyGo syntax).
@@ -40,6 +58,7 @@ type Config struct {
 	ClipboardPollMs int       `toml:"clipboard_poll_ms"`
 	MaxCards        int       `toml:"max_cards"`
 	Window          Window    `toml:"window"`
+	Card            Card      `toml:"card"`
 	Shortcuts       Shortcuts `toml:"shortcuts"`
 	Secrets         Secrets   `toml:"secrets"`
 }
@@ -54,8 +73,21 @@ func Default() Config {
 			VisibleOnAllWorkspaces: true,
 			ContentProtection:      true,
 			Frameless:              true,
-			Width:                  320,
-			Height:                 120,
+			Panel:                  true,
+		},
+		Card: Card{
+			MinWidth:       120,
+			MaxWidth:       480,
+			Height:         44,
+			MaxLines:       2,
+			PaddingX:       10,
+			PaddingY:       6,
+			FontSize:       12,
+			CharWidth:      7,
+			CascadeStepX:   12,
+			CascadeStepY:   10,
+			CascadeOriginX: 24,
+			CascadeOriginY: 24,
 		},
 		Shortcuts: Shortcuts{
 			ShowAll: "CmdOrCtrl+Shift+S",
@@ -79,6 +111,79 @@ func (c Config) EffectiveMaxCards() int {
 		return 20
 	}
 	return c.MaxCards
+}
+
+// EstimateCardWidth returns content width for a snippet (clamped min/max).
+func (c Card) EstimateWidth(display string) int {
+	minW := c.EffectiveMinWidth()
+	maxW := c.EffectiveMaxWidth()
+	charW := c.EffectiveCharWidth()
+	pad := c.EffectivePaddingX()
+	runes := utf8.RuneCountInString(display)
+	est := runes*charW + 2*pad
+	if est < minW {
+		return minW
+	}
+	if est > maxW {
+		return maxW
+	}
+	return est
+}
+
+func (c Card) EffectiveMinWidth() int {
+	if c.MinWidth <= 0 {
+		return 120
+	}
+	return c.MinWidth
+}
+
+func (c Card) EffectiveMaxWidth() int {
+	if c.MaxWidth <= 0 {
+		return 480
+	}
+	return c.MaxWidth
+}
+
+func (c Card) EffectiveHeight() int {
+	if c.Height <= 0 {
+		return 44
+	}
+	return c.Height
+}
+
+func (c Card) EffectiveMaxLines() int {
+	if c.MaxLines <= 0 {
+		return 2
+	}
+	return c.MaxLines
+}
+
+func (c Card) EffectivePaddingX() int {
+	if c.PaddingX <= 0 {
+		return 10
+	}
+	return c.PaddingX
+}
+
+func (c Card) EffectivePaddingY() int {
+	if c.PaddingY <= 0 {
+		return 6
+	}
+	return c.PaddingY
+}
+
+func (c Card) EffectiveFontSize() int {
+	if c.FontSize <= 0 {
+		return 12
+	}
+	return c.FontSize
+}
+
+func (c Card) EffectiveCharWidth() int {
+	if c.CharWidth <= 0 {
+		return 7
+	}
+	return c.CharWidth
 }
 
 // PollInterval returns the clipboard polling interval.

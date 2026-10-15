@@ -29,8 +29,14 @@ type App struct {
 	lastChange    int
 	ignoreNextChange bool
 
-	cardW config.Window
 	sec   secrets.Config
+
+	cardPositions map[string]cardPosition
+}
+
+type cardPosition struct {
+	x int
+	y int
 }
 
 type cardUI struct {
@@ -52,7 +58,7 @@ func New(cfg config.Config) *App {
 			MinEntropyBits:  cfg.Secrets.MinEntropyBits,
 			MinSecretLength: cfg.Secrets.MinSecretLength,
 		},
-		cardW: cfg.Window,
+		cardPositions: make(map[string]cardPosition),
 	}
 }
 
@@ -144,21 +150,26 @@ func (a *App) spawnCard(card store.Card) {
 	a.mu.Unlock()
 
 	idx := len(a.order) - 1
-	x := 24 + (idx%5)*20
-	y := 24 + (idx%8)*18
+	cardCfg := a.cfg.Card
+	width := cardCfg.EstimateWidth(host.display)
+	x, y := a.cardOrigin(card.ID, idx)
 
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:         "snip",
-		Width:         a.cardW.Width,
-		Height:        a.cardW.Height,
+		Width:         width,
+		Height:        cardCfg.EffectiveHeight(),
 		X:             x,
 		Y:             y,
-		Frameless:     a.cardW.Frameless,
-		AlwaysOnTop:   a.cardW.AlwaysOnTop,
+		Frameless:     a.cfg.Window.Frameless,
+		Panel:         a.cfg.Window.Panel,
+		AlwaysOnTop:   a.cfg.Window.AlwaysOnTop,
 		DisableResize: true,
+		StateKey:      "card-" + card.ID,
 		Content:       ui.View(func(c *ui.Context) { a.cardView(c, host) }),
 	})
 	host.win = win
+	win.SetMovable(true)
+	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
 	a.applyWindowFlags(win)
 	if a.visible {
 		win.ShowInactive()
@@ -170,12 +181,31 @@ func (a *App) spawnCard(card store.Card) {
 }
 
 func (a *App) applyWindowFlags(win *mygo.Window) {
-	if a.cardW.VisibleOnAllWorkspaces {
+	if a.cfg.Window.VisibleOnAllWorkspaces {
 		win.SetVisibleOnAllWorkspaces(true)
 	}
-	if a.cardW.ContentProtection {
+	if a.cfg.Window.ContentProtection {
 		win.SetContentProtection(true)
 	}
+}
+
+func (a *App) cardOrigin(id string, cascadeIndex int) (int, int) {
+	a.mu.Lock()
+	if p, ok := a.cardPositions[id]; ok {
+		a.mu.Unlock()
+		return p.x, p.y
+	}
+	a.mu.Unlock()
+	c := a.cfg.Card
+	return c.CascadeOriginX + (cascadeIndex%8)*c.CascadeStepX,
+		c.CascadeOriginY + (cascadeIndex%12)*c.CascadeStepY
+}
+
+func (a *App) rememberCardPosition(id string, win *mygo.Window) {
+	x, y := win.Position()
+	a.mu.Lock()
+	a.cardPositions[id] = cardPosition{x: x, y: y}
+	a.mu.Unlock()
 }
 
 func (a *App) cardView(c *ui.Context, host *cardUI) {
@@ -184,20 +214,20 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	if host.selected {
 		border = t.Accent
 	}
-	ui.Column(c).Fill().Padding(10).Gap(6).
-		Background(t.Surface).Radius(10).
-		Border(2, border).
+	cardCfg := a.cfg.Card
+	padX := float32(cardCfg.EffectivePaddingX())
+	padY := float32(cardCfg.EffectivePaddingY())
+	ui.Column(c).Fill().
+		Padding(padY, padX, padY, padX).
+		Background(t.Surface).Radius(8).
+		Border(1, border).
+		DragWindow().
 		Children(func() {
-			ui.Text(c, truncate(host.display, 280)).FontSize(13).Wrap()
-			ui.Text(c, host.card.ID).FontSize(10).TextColor(t.TextMuted)
+			ui.Text(c, host.display).
+				FontSize(float32(cardCfg.EffectiveFontSize())).
+				Ellipsis("…").
+				MaxLines(cardCfg.EffectiveMaxLines())
 		})
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-1] + "…"
 }
 
 func (a *App) setAllVisible(show bool) {
@@ -320,6 +350,7 @@ func (a *App) detachCard(id string) {
 	}
 	a.mu.Unlock()
 	a.store.Delete(id)
+	delete(a.cardPositions, id)
 	if h != nil && h.win != nil {
 		h.win.Close()
 	}

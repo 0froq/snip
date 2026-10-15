@@ -10,10 +10,10 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/froq/snip/config"
-	"github.com/froq/snip/internal/macpaste"
-	"github.com/froq/snip/secrets"
-	"github.com/froq/snip/store"
+	"github.com/0froq/snip/config"
+	"github.com/0froq/snip/internal/macpaste"
+	"github.com/0froq/snip/secrets"
+	"github.com/0froq/snip/store"
 )
 
 // App coordinates clipboard watching, cards, and shortcuts.

@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/egoist/mygo"
-	"github.com/froq/snip/app"
+	"github.com/0froq/snip/app"
 )
 
 func main() {

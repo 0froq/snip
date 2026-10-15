@@ -1,0 +1,22 @@
+clipboard_poll_ms = 300
+
+[window]
+always_on_top = true
+visible_on_all_workspaces = true
+content_protection = true
+frameless = true
+width = 320
+height = 120
+
+[shortcuts]
+show_all = "CmdOrCtrl+Shift+S"
+hide_all = "CmdOrCtrl+Shift+H"
+next = "CmdOrCtrl+Shift+]"
+prev = "CmdOrCtrl+Shift+["
+paste = "CmdOrCtrl+Shift+V"
+delete = "CmdOrCtrl+Shift+Backspace"
+
+[secrets]
+mask_enabled = true
+min_entropy_bits = 3.5
+min_secret_length = 16

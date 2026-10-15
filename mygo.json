@@ -1,0 +1,11 @@
+{
+  "name": "snip",
+  "identifier": "dev.froq.snip",
+  "out": "build",
+  "macos": {
+    "infoPlist": {
+      "LSUIElement": true,
+      "NSAppleEventsUsageDescription": "snip simulates Cmd+V to paste clipboard snippets into the frontmost app."
+    }
+  }
+}

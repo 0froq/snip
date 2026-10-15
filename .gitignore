@@ -1,0 +1,4 @@
+/build/
+snip-bin
+*.app
+.go/

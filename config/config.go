@@ -33,6 +33,8 @@ type Card struct {
 	CascadeStepY  int `toml:"cascade_step_y"`
 	CascadeOriginX int `toml:"cascade_origin_x"`
 	CascadeOriginY int `toml:"cascade_origin_y"`
+	// Placement is where new cards spawn: near-selection, near-cursor, or fixed.
+	Placement string `toml:"placement"`
 }
 
 // Shortcuts are global accelerator strings (MyGo syntax).

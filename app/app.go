@@ -12,6 +12,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/0froq/snip/config"
 	"github.com/0froq/snip/internal/macpaste"
+	"github.com/0froq/snip/internal/macplace"
 	"github.com/0froq/snip/secrets"
 	"github.com/0froq/snip/store"
 )
@@ -127,16 +128,23 @@ func (a *App) watchClipboard() {
 			continue
 		}
 		card, evicted := a.store.AddWithLimit(text, a.cfg.EffectiveMaxCards())
-		mygo.RunOnMain(func() {
-			for _, id := range evicted {
-				a.detachCard(id)
-			}
-			a.spawnCard(card)
+		display := secrets.DisplayText(card.Text, a.sec)
+		cardCfg := a.cfg.Card
+		width := cardCfg.EstimateWidth(display)
+		height := cardCfg.EffectiveHeight()
+		mode := a.cfg.EffectivePlacement()
+		macplace.ResolveOrigin(mode, width, height, func(x, y int, ok bool) {
+			mygo.RunOnMain(func() {
+				for _, id := range evicted {
+					a.detachCard(id)
+				}
+				a.spawnCard(card, x, y, ok)
+			})
 		})
 	}
 }
 
-func (a *App) spawnCard(card store.Card) {
+func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool) {
 	host := &cardUI{
 		card:    card,
 		display: secrets.DisplayText(card.Text, a.sec),
@@ -152,12 +160,13 @@ func (a *App) spawnCard(card store.Card) {
 	idx := len(a.order) - 1
 	cardCfg := a.cfg.Card
 	width := cardCfg.EstimateWidth(host.display)
-	x, y := a.cardOrigin(card.ID, idx)
+	height := cardCfg.EffectiveHeight()
+	x, y := a.cardOrigin(card.ID, idx, width, height, placeX, placeY, havePlacement)
 
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:         "snip",
 		Width:         width,
-		Height:        cardCfg.EffectiveHeight(),
+		Height:        height,
 		X:             x,
 		Y:             y,
 		Frameless:     a.cfg.Window.Frameless,
@@ -189,13 +198,16 @@ func (a *App) applyWindowFlags(win *mygo.Window) {
 	}
 }
 
-func (a *App) cardOrigin(id string, cascadeIndex int) (int, int) {
+func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, placeY int, havePlacement bool) (int, int) {
 	a.mu.Lock()
 	if p, ok := a.cardPositions[id]; ok {
 		a.mu.Unlock()
 		return p.x, p.y
 	}
 	a.mu.Unlock()
+	if havePlacement {
+		return placeX, placeY
+	}
 	c := a.cfg.Card
 	return c.CascadeOriginX + (cascadeIndex%8)*c.CascadeStepX,
 		c.CascadeOriginY + (cascadeIndex%12)*c.CascadeStepY

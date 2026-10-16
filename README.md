@@ -32,6 +32,8 @@ Optional config: copy `config.toml` to `~/Library/Application Support/snip/confi
 
 Snippet cards are small paper strips (default about **240×44** pt, auto width between `[card].min_width` and `[card].max_width`, **1–2 lines** with ellipsis). Drag a card by its surface (`ui.Element.DragWindow()` on the frameless window). Positions are remembered per card for the session (and restored via MyGo `StateKey` when IDs repeat).
 
+New cards are placed with `[card].placement` (default **`near-selection`**). snip asks the frontmost app for the focused selection bounds via the Accessibility API and opens the card just below that text (or above when there is no room), clamped to the monitor work area. When that fails (browsers, Electron, terminals), it falls back to near the mouse cursor. **`near-cursor`** skips the selection step. **`fixed`** keeps the old cascade from the top-left corner.
+
 ### AeroSpace (tiling window manager)
 
 snip’s bundle ID is **`me.froq.snip`** (`mygo.json` → `identifier`). AeroSpace may tile snip’s floating cards unless you float them. Cards also use MyGo’s **`Panel`** window type when `[window].panel = true` (default), which keeps them out of normal app window lists.
@@ -112,6 +114,7 @@ go test ./...
 | `main.go` | MyGo app entry |
 | `app/app.go` | Cards, shortcuts, clipboard loop |
 | `internal/macpaste/` | Darwin pasteboard changeCount + CGEvent Cmd+V (purego) |
+| `internal/macplace/` | Card placement (AX selection bounds, cursor, screen clamp) |
 | `secrets/` | Regex / entropy masking |
 | `store/` | In-memory card store |
 | `config/` | TOML config |

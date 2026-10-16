@@ -9,6 +9,8 @@ frameless = true
 panel = true
 
 [card]
+# placement: near-selection (default), near-cursor, or fixed
+placement = "near-selection"
 min_width = 120
 max_width = 480
 height = 44

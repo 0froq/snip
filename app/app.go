@@ -61,9 +61,12 @@ type cardUI struct {
 	userW    int
 	userH    int
 
-	selectPressing bool
-	selectPressX   float32
-	selectPressY   float32
+	pointerActive  bool
+	pointerDragged bool
+	pointerX       float32
+	pointerY       float32
+	pointerWinX    int
+	pointerWinY    int
 }
 
 // New creates the application state.
@@ -314,34 +317,14 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 			Shadow(0, 3, 10, 0, paperShadow(dark)).
 			FocusRing(false).
 			Rotate(paperSlant(host.card.ID)).
-			Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) }).
-			DragWindow()
+			Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) })
 		if cfg.Motion.Enabled {
 			col = col.Transition(motion)
 		}
 		if host.hiding {
 			col = col.Opacity(0).Scale(0.96, 0.96)
 		}
-		col = col.HandleInput(func(ev ui.InputEvent) bool {
-			const slop = 6.0
-			switch ev.Kind {
-			case ui.InputPointerDown:
-				if ev.Button == 0 {
-					host.selectPressX, host.selectPressY = ev.X, ev.Y
-					host.selectPressing = true
-				}
-			case ui.InputPointerUp:
-				if ev.Button == 0 && host.selectPressing {
-					host.selectPressing = false
-					dx := ev.X - host.selectPressX
-					dy := ev.Y - host.selectPressY
-					if dx*dx+dy*dy < slop*slop {
-						a.selectID(host.card.ID)
-					}
-				}
-			}
-			return false
-		})
+		col = cardPointerInput(a, host, host.win, col)
 		col.Children(func() {
 			ui.Text(c, host.display).
 				Font("Georgia").

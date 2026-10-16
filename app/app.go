@@ -43,7 +43,7 @@ type App struct {
 	leaderKeys    []string
 	taps          tapGate
 	flashing      bool
-	tray *mygo.Tray
+	tray          *mygo.Tray
 }
 
 type cardPosition struct {
@@ -188,25 +188,30 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	cfg := a.config()
 	cardCfg := cfg.Card
 	width, height := cardCfg.EstimateSize(host.display)
+	width += 2 * paperMargin
+	height += 2 * paperMargin
 	x, y := a.cardOrigin(card.ID, idx, width, height, placeX, placeY, havePlacement)
-	minH := cardCfg.EffectiveLineHeight() + 2*cardCfg.EffectivePaddingY()
+	minH := cardCfg.EffectiveLineHeight() + 2*cardCfg.EffectivePaddingY() + 2*paperMargin
 
 	win := mygo.NewWindow(mygo.WindowOptions{
-		Title:         "snip",
-		Width:         width,
-		Height:        height,
-		X:             x,
-		Y:             y,
-		MinWidth:      cardCfg.EffectiveMinWidth(),
-		MinHeight:     minH,
-		MaxWidth:      cardCfg.EffectiveMaxWidth(),
-		MaxHeight:     cardCfg.EffectiveMaxHeight(),
-		Frameless:     cfg.Window.EffectiveFrameless(),
-		Panel:         cfg.Window.EffectivePanel(),
-		AlwaysOnTop:   cfg.Window.AlwaysOnTop,
-		DisableResize: false,
-		StateKey:      "card-" + card.ID,
-		Content:       ui.View(func(c *ui.Context) { a.cardView(c, host) }),
+		Title:           "snip",
+		Width:           width,
+		Height:          height,
+		X:               x,
+		Y:               y,
+		MinWidth:        cardCfg.EffectiveMinWidth() + 2*paperMargin,
+		MinHeight:       minH,
+		MaxWidth:        cardCfg.EffectiveMaxWidth() + 2*paperMargin,
+		MaxHeight:       cardCfg.EffectiveMaxHeight() + 2*paperMargin,
+		Frameless:       cfg.Window.EffectiveFrameless(),
+		Panel:           cfg.Window.EffectivePanel(),
+		AlwaysOnTop:     cfg.Window.AlwaysOnTop,
+		Transparent:     true,
+		DisableShadow:   true,
+		DisableResize:   false,
+		BackgroundColor: "#00000000",
+		StateKey:        "card-" + card.ID,
+		Content:         ui.View(func(c *ui.Context) { a.cardView(c, host) }),
 	})
 	host.win = win
 	win.SetMovable(true)
@@ -251,20 +256,22 @@ func (a *App) syncCardHeight(host *cardUI) {
 	}
 	cardCfg := a.config().Card
 	w, _ := host.win.Size()
+	innerW := w - 2*paperMargin
 	minW := cardCfg.EffectiveMinWidth()
 	maxW := cardCfg.EffectiveMaxWidth()
-	if w < minW {
-		w = minW
+	if innerW < minW {
+		innerW = minW
 	}
-	if w > maxW {
-		w = maxW
+	if innerW > maxW {
+		innerW = maxW
 	}
-	wantH := cardCfg.HeightForWidth(host.display, w)
+	wantW := innerW + 2*paperMargin
+	wantH := cardCfg.HeightForWidth(host.display, innerW) + 2*paperMargin
 	curW, curH := host.win.Size()
-	if curW != w || curH != wantH {
-		host.win.SetSize(w, wantH)
+	if curW != wantW || curH != wantH {
+		host.win.SetSize(wantW, wantH)
 	}
-	host.userW, host.userH = w, wantH
+	host.userW, host.userH = wantW, wantH
 }
 
 func (a *App) rememberCardPosition(id string, win *mygo.Window) {
@@ -278,12 +285,14 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	cfg := a.config()
 	dark := c.Theme().Dark
 	accent := activeColor(cfg.Card.ActiveColor, dark)
-	c.SetTheme(paperTheme(dark, accent))
+	theme := paperTheme(dark, accent)
+	theme.Background = ui.Transparent
+	c.SetTheme(theme)
 	t := c.Theme()
 	surface := t.Surface
-	border := t.Border
+	border := paperEdge(dark)
 	if host.selected || host.pulse || a.flashing {
-		surface = t.Surface.Mix(accent, 0.16)
+		surface = t.Surface.Mix(accent, 0.14)
 		border = accent
 	}
 	cardCfg := cfg.Card
@@ -294,48 +303,56 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		motion.Enter = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 8}
 		motion.Exit = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 6}
 	}
-	col := ui.Column(c).Fill().
-		Padding(padY, padX, padY, padX).
-		Background(surface).Radius(14).
-		Border(1, border).
-		Shadow(0, 8, 18, 0, ui.Hex("#3B3128").Alpha(0.18)).
-		FocusRing(false).
-		DragWindow()
-	if cfg.Motion.Enabled {
-		col = col.Transition(motion)
-	}
-	if host.hiding {
-		col = col.Opacity(0).Scale(0.96, 0.96)
-	}
-	col = col.HandleInput(func(ev ui.InputEvent) bool {
-		const slop = 6.0
-		switch ev.Kind {
-		case ui.InputPointerDown:
-			if ev.Button == 0 {
-				host.selectPressX, host.selectPressY = ev.X, ev.Y
-				host.selectPressing = true
-			}
-		case ui.InputPointerUp:
-			if ev.Button == 0 && host.selectPressing {
-				host.selectPressing = false
-				dx := ev.X - host.selectPressX
-				dy := ev.Y - host.selectPressY
-				if dx*dx+dy*dy < slop*slop {
-					a.selectID(host.card.ID)
+	tl, tr, br, bl := paperCorners(host.card.ID)
+	seed := paperSeed(host.card.ID)
+	ui.Column(c).Fill().Padding(paperMargin).Children(func() {
+		col := ui.Column(c).Fill().
+			Padding(padY, padX, padY, padX).
+			Background(surface).
+			Radius(tl, tr, br, bl).
+			Border(1, border).
+			Shadow(0, 3, 10, 0, paperShadow(dark)).
+			FocusRing(false).
+			Rotate(paperSlant(host.card.ID)).
+			Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) }).
+			DragWindow()
+		if cfg.Motion.Enabled {
+			col = col.Transition(motion)
+		}
+		if host.hiding {
+			col = col.Opacity(0).Scale(0.96, 0.96)
+		}
+		col = col.HandleInput(func(ev ui.InputEvent) bool {
+			const slop = 6.0
+			switch ev.Kind {
+			case ui.InputPointerDown:
+				if ev.Button == 0 {
+					host.selectPressX, host.selectPressY = ev.X, ev.Y
+					host.selectPressing = true
+				}
+			case ui.InputPointerUp:
+				if ev.Button == 0 && host.selectPressing {
+					host.selectPressing = false
+					dx := ev.X - host.selectPressX
+					dy := ev.Y - host.selectPressY
+					if dx*dx+dy*dy < slop*slop {
+						a.selectID(host.card.ID)
+					}
 				}
 			}
-		}
-		return false
-	})
-	col.Children(func() {
-		ui.Text(c, host.display).
-			Font("Georgia").
-			FontSize(float32(cardCfg.EffectiveFontSize())).
-			Ellipsis("…").
-			MaxLines(cardCfg.EffectiveMaxLines())
-		if a.leaderActive() {
-			a.leaderHint(c, host)
-		}
+			return false
+		})
+		col.Children(func() {
+			ui.Text(c, host.display).
+				Font("Georgia").
+				FontSize(float32(cardCfg.EffectiveFontSize())).
+				TextColor(paperInk(dark)).
+				Ellipsis("…").
+				MaxLines(cardCfg.EffectiveMaxLines())
+			if a.leaderActive() {
+				a.leaderHint(c, host)
+			}
+		})
 	})
 }
 

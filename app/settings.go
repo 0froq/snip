@@ -184,10 +184,12 @@ func (a *App) settingsView(c *ui.Context) {
 
 func (a *App) settingsSection(c *ui.Context, title string, body func()) {
 	t := c.Theme()
-	ui.Column(c).Gap(8).Padding(14).Background(t.Surface).Radius(14).Border(1, t.Border).
-		Shadow(0, 6, 16, 0, ui.Hex("#3B3128").Alpha(0.08)).
+	dark := t.Dark
+	ui.Column(c).Gap(8).Padding(14).Background(t.Surface).Radius(3).Border(1, paperEdge(dark)).
+		Shadow(0, 2, 8, 0, paperShadow(dark)).
+		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, paperSeed(title)) }).
 		Children(func() {
-			ui.Text(c, title).Font("Georgia").FontSize(15)
+			ui.Text(c, title).Font("Georgia").FontSize(15).TextColor(paperInk(dark))
 			body()
 		})
 }

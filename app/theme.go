@@ -6,22 +6,22 @@ func paperTheme(dark bool, active ui.Color) *ui.Theme {
 	t := ui.LightTheme()
 	if dark {
 		t = ui.DarkTheme()
-		t.Background = ui.Hex("#241F1B")
-		t.Surface = ui.Hex("#3A322C")
-		t.SurfaceHover = ui.Hex("#463E36")
-		t.Border = ui.Hex("#5C5148")
-		t.Text = ui.Hex("#F6F0E8")
-		t.TextMuted = ui.Hex("#C4B6A6")
+		t.Background = ui.Hex("#1A1613")
+		t.Surface = ui.Hex("#312924")
+		t.SurfaceHover = ui.Hex("#3C332C")
+		t.Border = ui.Hex("#5C5046")
+		t.Text = paperInk(true)
+		t.TextMuted = ui.Hex("#B6A694")
 	} else {
-		t.Background = ui.Hex("#F3EBDF")
-		t.Surface = ui.Hex("#FFF9F1")
-		t.SurfaceHover = ui.Hex("#F7F0E4")
-		t.Border = ui.Hex("#E4D5C3")
-		t.Text = ui.Hex("#3B3128")
-		t.TextMuted = ui.Hex("#8A7768")
+		t.Background = ui.Hex("#E6D9C8")
+		t.Surface = ui.Hex("#F3EADF")
+		t.SurfaceHover = ui.Hex("#E9DFD0")
+		t.Border = ui.Hex("#D2C3B0")
+		t.Text = paperInk(false)
+		t.TextMuted = ui.Hex("#8A7764")
 	}
 	t.Accent = active
-	t.Radius = 12
+	t.Radius = 3
 	return t
 }
 

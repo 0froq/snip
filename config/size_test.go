@@ -5,9 +5,40 @@ import "testing"
 func TestEstimateSizeOneLine(t *testing.T) {
 	c := Default().Card
 	_, h := c.EstimateSize("hi")
-	one := c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
+	one := c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*CardBorderPx()
 	if h != one {
 		t.Fatalf("one line height %d want %d", h, one)
+	}
+}
+
+func TestHeightForWidthCJKWraps(t *testing.T) {
+	c := Default().Card
+	text := "还有这个样式，我认为既然要做纸色，窗口可以再纸一点"
+	w := 220
+	lines, _ := c.shapedHeight(text, w)
+	if lines < 2 {
+		t.Fatalf("expected at least 2 wrapped lines for CJK, got %d at width %d", lines, w)
+	}
+	h := c.HeightForWidth(text, w)
+	two := 2*c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	if h < two {
+		t.Fatalf("height %d too small for two lines (need >= %d)", h, two)
+	}
+}
+
+func TestHeightForWidthMixedScript(t *testing.T) {
+	c := Default().Card
+	c.MaxWidth = 280
+	text := "hello 你好 world"
+	w := 200
+	lines, _ := c.shapedHeight(text, w)
+	if lines < 1 {
+		t.Fatal("expected at least one line")
+	}
+	h := c.HeightForWidth(text, w)
+	min := lines*c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	if h < min {
+		t.Fatalf("height %d below shaped minimum %d", h, min)
 	}
 }
 
@@ -33,7 +64,7 @@ func TestEstimateSizeCapsLines(t *testing.T) {
 	c.MaxLines = 2
 	long := "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
 	_, h := c.EstimateSize(long)
-	maxH := 2*c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
+	maxH := 2*c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*CardBorderPx()
 	if h > maxH {
 		t.Fatalf("height %d over %d", h, maxH)
 	}

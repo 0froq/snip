@@ -63,10 +63,10 @@ type cardUI struct {
 
 	pointerActive  bool
 	pointerDragged bool
-	pointerX       float32
-	pointerY       float32
-	pointerWinX    int
-	pointerWinY    int
+	dragOffX       int
+	dragOffY       int
+	pressScreenX   int
+	pressScreenY   int
 }
 
 // New creates the application state.
@@ -191,10 +191,8 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	cfg := a.config()
 	cardCfg := cfg.Card
 	width, height := cardCfg.EstimateSize(host.display)
-	width += 2 * paperMargin
-	height += 2 * paperMargin
 	x, y := a.cardOrigin(card.ID, idx, width, height, placeX, placeY, havePlacement)
-	minH := cardCfg.EffectiveLineHeight() + 2*cardCfg.EffectivePaddingY() + 2*paperMargin
+	minH := cardCfg.EffectiveLineHeight() + 2*cardCfg.EffectivePaddingY() + 2*config.CardBorderPx()
 
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:           "snip",
@@ -202,10 +200,10 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		Height:          height,
 		X:               x,
 		Y:               y,
-		MinWidth:        cardCfg.EffectiveMinWidth() + 2*paperMargin,
+		MinWidth:        cardCfg.EffectiveMinWidth(),
 		MinHeight:       minH,
-		MaxWidth:        cardCfg.EffectiveMaxWidth() + 2*paperMargin,
-		MaxHeight:       cardCfg.EffectiveMaxHeight() + 2*paperMargin,
+		MaxWidth:        cardCfg.EffectiveMaxWidth(),
+		MaxHeight:       cardCfg.EffectiveMaxHeight(),
 		Frameless:       cfg.Window.EffectiveFrameless(),
 		Panel:           cfg.Window.EffectivePanel(),
 		AlwaysOnTop:     cfg.Window.AlwaysOnTop,
@@ -254,27 +252,25 @@ func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, plac
 }
 
 func (a *App) syncCardHeight(host *cardUI) {
-	if host == nil || host.win == nil {
+	if host == nil || host.win == nil || host.pointerActive {
 		return
 	}
 	cardCfg := a.config().Card
 	w, _ := host.win.Size()
-	innerW := w - 2*paperMargin
 	minW := cardCfg.EffectiveMinWidth()
 	maxW := cardCfg.EffectiveMaxWidth()
-	if innerW < minW {
-		innerW = minW
+	if w < minW {
+		w = minW
 	}
-	if innerW > maxW {
-		innerW = maxW
+	if w > maxW {
+		w = maxW
 	}
-	wantW := innerW + 2*paperMargin
-	wantH := cardCfg.HeightForWidth(host.display, innerW) + 2*paperMargin
+	wantH := cardCfg.HeightForWidth(host.display, w)
 	curW, curH := host.win.Size()
-	if curW != wantW || curH != wantH {
-		host.win.SetSize(wantW, wantH)
+	if curW != w || curH != wantH {
+		host.win.SetSize(w, wantH)
 	}
-	host.userW, host.userH = wantW, wantH
+	host.userW, host.userH = w, wantH
 }
 
 func (a *App) rememberCardPosition(id string, win *mygo.Window) {
@@ -308,34 +304,33 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	}
 	tl, tr, br, bl := paperCorners(host.card.ID)
 	seed := paperSeed(host.card.ID)
-	ui.Column(c).Fill().Padding(paperMargin).Children(func() {
-		col := ui.Column(c).Fill().
-			Padding(padY, padX, padY, padX).
-			Background(surface).
-			Radius(tl, tr, br, bl).
-			Border(1, border).
-			Shadow(0, 3, 10, 0, paperShadow(dark)).
-			FocusRing(false).
-			Rotate(paperSlant(host.card.ID)).
-			Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) })
-		if cfg.Motion.Enabled {
-			col = col.Transition(motion)
+	col := ui.Column(c).Fill().
+		Padding(padY, padX, padY, padX).
+		Background(surface).
+		Radius(tl, tr, br, bl).
+		Border(1, border).
+		Shadow(0, 2, 6, 0, paperShadow(dark)).
+		Clip().
+		FocusRing(false).
+		Rotate(paperSlant(host.card.ID)).
+		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) })
+	if cfg.Motion.Enabled {
+		col = col.Transition(motion)
+	}
+	if host.hiding {
+		col = col.Opacity(0).Scale(0.96, 0.96)
+	}
+	col = cardPointerInput(a, host, host.win, col)
+	col.Children(func() {
+		ui.Text(c, host.display).
+			Font("Georgia").
+			FontSize(float32(cardCfg.EffectiveFontSize())).
+			TextColor(paperInk(dark)).
+			Ellipsis("…").
+			MaxLines(cardCfg.EffectiveMaxLines())
+		if a.leaderActive() {
+			a.leaderHint(c, host)
 		}
-		if host.hiding {
-			col = col.Opacity(0).Scale(0.96, 0.96)
-		}
-		col = cardPointerInput(a, host, host.win, col)
-		col.Children(func() {
-			ui.Text(c, host.display).
-				Font("Georgia").
-				FontSize(float32(cardCfg.EffectiveFontSize())).
-				TextColor(paperInk(dark)).
-				Ellipsis("…").
-				MaxLines(cardCfg.EffectiveMaxLines())
-			if a.leaderActive() {
-				a.leaderHint(c, host)
-			}
-		})
 	})
 }
 

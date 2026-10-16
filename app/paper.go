@@ -2,9 +2,6 @@ package app
 
 import "github.com/egoist/mygo/ui"
 
-// paperMargin is clear space around a slip so its shadow can rest on the screen.
-const paperMargin = 12
-
 func paperSeed(id string) uint32 {
 	h := uint32(2166136261)
 	for i := 0; i < len(id); i++ {

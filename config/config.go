@@ -1,12 +1,10 @@
 package config
 
 import (
+	"github.com/BurntSushi/toml"
 	"os"
 	"strings"
 	"time"
-	"unicode/utf8"
-
-	"github.com/BurntSushi/toml"
 )
 
 // Window holds floating-card window defaults (overridable per deployment).
@@ -178,10 +176,7 @@ func (c Config) EffectiveMaxCards() int {
 func (c Card) EstimateWidth(display string) int {
 	minW := c.EffectiveMinWidth()
 	maxW := c.EffectiveMaxWidth()
-	charW := c.EffectiveCharWidth()
-	pad := c.EffectivePaddingX()
-	runes := utf8.RuneCountInString(display)
-	est := runes*charW + 2*pad
+	est := c.naturalSlipWidth(display)
 	if est < minW {
 		return minW
 	}
@@ -232,7 +227,7 @@ func (c Card) EstimateSize(display string) (int, int) {
 	return width, c.HeightForWidth(display, width)
 }
 
-// HeightForWidth returns the window height needed to show display at the given width.
+// HeightForWidth returns the window height needed to show display at the given slip width.
 func (c Card) HeightForWidth(display string, width int) int {
 	minW := c.EffectiveMinWidth()
 	maxW := c.EffectiveMaxWidth()
@@ -242,29 +237,8 @@ func (c Card) HeightForWidth(display string, width int) int {
 	if width > maxW {
 		width = maxW
 	}
-	inner := width - 2*c.EffectivePaddingX()
-	charW := c.EffectiveCharWidth()
-	if inner < charW {
-		inner = charW
-	}
-	per := inner / charW
-	if per < 1 {
-		per = 1
-	}
-	runes := utf8.RuneCountInString(display)
-	if runes < 1 {
-		runes = 1
-	}
-	lines := (runes + per - 1) / per
-	maxLines := c.EffectiveMaxLines()
-	if lines > maxLines {
-		lines = maxLines
-	}
-	if lines < 1 {
-		lines = 1
-	}
-	minH := c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
-	h := lines*c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
+	_, h := c.shapedHeight(display, width)
+	minH := c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*cardBorderPx
 	if h < minH {
 		h = minH
 	}

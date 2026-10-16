@@ -66,6 +66,19 @@ func (s *Store) All() []Card {
 	return out
 }
 
+// FindText returns the newest card whose text matches exactly.
+func (s *Store) FindText(text string) (Card, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := len(s.order) - 1; i >= 0; i-- {
+		c := s.byID[s.order[i]]
+		if c.Text == text {
+			return c, true
+		}
+	}
+	return Card{}, false
+}
+
 // Get returns a card by id.
 func (s *Store) Get(id string) (Card, bool) {
 	s.mu.RLock()

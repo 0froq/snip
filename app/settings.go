@@ -9,11 +9,13 @@ import (
 )
 
 func (a *App) installMenus() {
+	lang := a.config().Language
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "snip", Submenu: []*mygo.MenuItem{
-			{Label: "Settings…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {
+		{Label: tr(lang, "app_menu"), Submenu: []*mygo.MenuItem{
+			{Label: tr(lang, "menu_settings"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {
 				a.showSettings()
 			}},
+			{Label: tr(lang, "menu_toggle"), Click: func(*mygo.MenuItem, *mygo.Window) { a.toggleVisible() }},
 			mygo.Separator(),
 			{Role: mygo.RoleHide},
 			{Role: mygo.RoleHideOthers},
@@ -24,19 +26,25 @@ func (a *App) installMenus() {
 	}))
 
 	trayMenu := mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "Settings…", Click: func(*mygo.MenuItem, *mygo.Window) { a.showSettings() }},
-		{Label: "Show cards", Click: func(*mygo.MenuItem, *mygo.Window) { a.setAllVisible(true) }},
-		{Label: "Hide cards", Click: func(*mygo.MenuItem, *mygo.Window) { a.setAllVisible(false) }},
+		{Label: tr(lang, "menu_settings"), Click: func(*mygo.MenuItem, *mygo.Window) { a.showSettings() }},
+		{Label: tr(lang, "menu_toggle"), Click: func(*mygo.MenuItem, *mygo.Window) { a.toggleVisible() }},
 		mygo.Separator(),
-		{Label: "Quit", Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
+		{Label: tr(lang, "menu_quit"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
 	})
-	if _, err := mygo.NewTray(mygo.TrayOptions{
-		Title:   "snip",
-		ToolTip: "snip clipboard cards",
-		Menu:    trayMenu,
-	}); err != nil {
-		log.Printf("snip: menu bar item: %v", err)
+	if a.tray != nil {
+		a.tray.SetMenu(trayMenu)
+		return
 	}
+	tray, err := mygo.NewTray(mygo.TrayOptions{
+		Title:   "snip",
+		ToolTip: "snip",
+		Menu:    trayMenu,
+	})
+	if err != nil {
+		log.Printf("snip: menu bar item: %v", err)
+		return
+	}
+	a.tray = tray
 }
 
 func (a *App) showSettings() {
@@ -77,79 +85,112 @@ func (a *App) settingsView(c *ui.Context) {
 	if f == nil {
 		return
 	}
+	dark := c.Theme().Dark
+	c.SetTheme(paperTheme(dark, activeColor(f.ActiveColor, dark)))
 	t := c.Theme()
-	ui.Column(c).Fill().Background(t.Background).Padding(16).Gap(12).Children(func() {
-		ui.Text(c, "Settings").FontSize(18)
-		ui.Text(c, "Most options apply as soon as you save. The non activating panel needs a restart.").
-			FontSize(12).TextColor(t.TextMuted).MaxLines(2)
+	lang := f.Language
+	if lang == "" {
+		lang = "en"
+	}
+	ui.Column(c).Fill().Background(t.Background).Padding(18).Gap(12).Children(func() {
+		ui.Text(c, tr(lang, "settings")).Font("Georgia").FontSize(22)
+		ui.Text(c, tr(lang, "settings_hint")).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).Gap(12).Padding(0, 4, 8, 0).Children(func() {
-				a.settingsSection(c, "Clipboard", func() {
-					labeledInput(c, "Poll interval (ms)", &f.ClipboardPollMs)
-					labeledInput(c, "Max cards", &f.MaxCards)
-					ui.Text(c, "Placement").FontSize(12)
+			ui.Column(c).Gap(12).Padding(0, 4, 12, 0).Children(func() {
+				a.settingsSection(c, tr(lang, "language"), func() {
+					ui.Select(c, &f.Language, []string{"en", "zh"})
+				})
+				a.settingsSection(c, tr(lang, "clipboard"), func() {
+					labeledInput(c, tr(lang, "poll"), &f.ClipboardPollMs)
+					labeledInput(c, tr(lang, "max_cards"), &f.MaxCards)
+					ui.Text(c, tr(lang, "placement")).FontSize(12)
 					ui.Select(c, &f.Placement, []string{"near-selection", "near-cursor", "fixed"})
 				})
-				a.settingsSection(c, "Card windows", func() {
-					ui.Checkbox(c, &f.AlwaysOnTop, "Always on top")
-					ui.Checkbox(c, &f.VisibleOnAllWorkspaces, "Visible on all Spaces")
-					ui.Checkbox(c, &f.ContentProtection, "Hide from screen capture")
-					ui.Checkbox(c, &f.Panel, "Non activating panel")
-					ui.Text(c, "Applies after restart").FontSize(11).TextColor(t.TextMuted)
+				a.settingsSection(c, tr(lang, "windows"), func() {
+					ui.Checkbox(c, &f.AlwaysOnTop, tr(lang, "always_on_top"))
+					ui.Checkbox(c, &f.VisibleOnAllWorkspaces, tr(lang, "all_spaces"))
+					ui.Checkbox(c, &f.ContentProtection, tr(lang, "capture"))
+					ui.Checkbox(c, &f.Panel, tr(lang, "panel"))
+					ui.Text(c, tr(lang, "restart")).FontSize(11).TextColor(t.TextMuted)
 				})
-				a.settingsSection(c, "Card size", func() {
-					labeledInput(c, "Min width", &f.MinWidth)
-					labeledInput(c, "Max width", &f.MaxWidth)
-					labeledInput(c, "Height", &f.Height)
-					labeledInput(c, "Max lines", &f.MaxLines)
-					labeledInput(c, "Padding x", &f.PaddingX)
-					labeledInput(c, "Padding y", &f.PaddingY)
-					labeledInput(c, "Font size", &f.FontSize)
-					labeledInput(c, "Char width", &f.CharWidth)
+				a.settingsSection(c, tr(lang, "size"), func() {
+					labeledInput(c, tr(lang, "min_w"), &f.MinWidth)
+					labeledInput(c, tr(lang, "max_w"), &f.MaxWidth)
+					labeledInput(c, tr(lang, "max_h"), &f.MaxHeight)
+					labeledInput(c, tr(lang, "line_h"), &f.LineHeight)
+					labeledInput(c, tr(lang, "max_lines"), &f.MaxLines)
+					labeledInput(c, tr(lang, "pad_x"), &f.PaddingX)
+					labeledInput(c, tr(lang, "pad_y"), &f.PaddingY)
+					labeledInput(c, tr(lang, "font"), &f.FontSize)
+					labeledInput(c, tr(lang, "char_w"), &f.CharWidth)
+					labeledInput(c, tr(lang, "active_color"), &f.ActiveColor)
 					labeledInput(c, "Cascade origin x", &f.CascadeOriginX)
 					labeledInput(c, "Cascade origin y", &f.CascadeOriginY)
 					labeledInput(c, "Cascade step x", &f.CascadeStepX)
 					labeledInput(c, "Cascade step y", &f.CascadeStepY)
 				})
-				a.settingsSection(c, "Hotkeys", func() {
-					labeledInput(c, "Show cards", &f.ShowAll)
-					labeledInput(c, "Hide cards", &f.HideAll)
-					labeledInput(c, "Next card", &f.Next)
-					labeledInput(c, "Previous card", &f.Prev)
-					labeledInput(c, "Paste", &f.Paste)
-					labeledInput(c, "Delete", &f.Delete)
-					labeledInput(c, "Settings", &f.Settings)
+				a.settingsSection(c, tr(lang, "motion"), func() {
+					ui.Checkbox(c, &f.MotionEnabled, tr(lang, "motion_on"))
+					labeledInput(c, tr(lang, "motion_ms"), &f.MotionMs)
 				})
-				a.settingsSection(c, "Secrets", func() {
-					ui.Checkbox(c, &f.MaskEnabled, "Mask secrets on cards")
-					labeledInput(c, "Min entropy", &f.MinEntropyBits)
-					labeledInput(c, "Min secret length", &f.MinSecretLength)
-					ui.Text(c, "Extra patterns, one regex per line").FontSize(12)
-					ui.TextArea(c, &f.ExtraPatterns).Height(72)
-					ui.Text(c, "Pasteboard markers (1Password, Bitwarden, etc.)").FontSize(12).TextColor(t.TextMuted)
-					ui.Checkbox(c, &f.HonorConcealed, "Mask concealed copies")
-					ui.Checkbox(c, &f.SkipTransient, "Skip transient copies")
-					ui.Checkbox(c, &f.SkipAutoGenerated, "Skip auto generated copies")
+				a.settingsSection(c, tr(lang, "hotkeys"), func() {
+					ui.Checkbox(c, &f.Direct, tr(lang, "direct"))
+					labeledInput(c, tr(lang, "toggle"), &f.Toggle)
+					labeledInput(c, tr(lang, "next"), &f.Next)
+					labeledInput(c, tr(lang, "prev"), &f.Prev)
+					labeledInput(c, tr(lang, "paste"), &f.Paste)
+					labeledInput(c, tr(lang, "delete"), &f.Delete)
+					labeledInput(c, tr(lang, "pin"), &f.Pin)
+					labeledInput(c, tr(lang, "settings"), &f.Settings)
+				})
+				a.settingsSection(c, tr(lang, "leader"), func() {
+					labeledInput(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
+					labeledInput(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
+					labeledInput(c, tr(lang, "leader_toggle"), &f.LeaderToggle)
+					labeledInput(c, tr(lang, "leader_next"), &f.LeaderNext)
+					labeledInput(c, tr(lang, "leader_prev"), &f.LeaderPrev)
+					labeledInput(c, tr(lang, "leader_paste"), &f.LeaderPaste)
+					labeledInput(c, tr(lang, "leader_delete"), &f.LeaderDelete)
+					labeledInput(c, tr(lang, "leader_pin"), &f.LeaderPin)
+					labeledInput(c, tr(lang, "leader_settings"), &f.LeaderSettings)
+					labeledInput(c, tr(lang, "double_ms"), &f.DoublePressMs)
+					ui.Text(c, tr(lang, "double_map")).FontSize(12).TextColor(t.TextMuted).MaxLines(2)
+					ui.TextArea(c, &f.DoubleMap).Height(56)
+					ui.Checkbox(c, &f.DimOverlay, tr(lang, "dim"))
+				})
+				a.settingsSection(c, tr(lang, "secrets"), func() {
+					ui.Checkbox(c, &f.MaskEnabled, tr(lang, "mask"))
+					labeledInput(c, tr(lang, "entropy"), &f.MinEntropyBits)
+					labeledInput(c, tr(lang, "secret_len"), &f.MinSecretLength)
+					ui.Text(c, tr(lang, "patterns")).FontSize(12)
+					ui.TextArea(c, &f.ExtraPatterns).Height(64)
+					ui.Text(c, tr(lang, "markers")).FontSize(12).TextColor(t.TextMuted)
+					ui.Checkbox(c, &f.HonorConcealed, tr(lang, "concealed"))
+					ui.Checkbox(c, &f.SkipTransient, tr(lang, "transient"))
+					ui.Checkbox(c, &f.SkipAutoGenerated, tr(lang, "auto"))
+				})
+				a.settingsSection(c, tr(lang, "config_path"), func() {
+					ui.Text(c, a.configPath).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
 				})
 			})
 		})
 		if f.Message != "" {
 			ui.Text(c, f.Message).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
 		}
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "Save").Clicked() {
-				a.saveSettings()
-			}
-		})
+		if ui.Button(c, tr(lang, "save")).Clicked() {
+			a.saveSettings()
+		}
 	})
 }
 
 func (a *App) settingsSection(c *ui.Context, title string, body func()) {
 	t := c.Theme()
-	ui.Column(c).Gap(8).Padding(12).Background(t.Surface).Radius(8).Border(1, t.Border).Children(func() {
-		ui.Text(c, title).FontSize(13)
-		body()
-	})
+	ui.Column(c).Gap(8).Padding(14).Background(t.Surface).Radius(14).Border(1, t.Border).
+		Shadow(0, 6, 16, 0, ui.Hex("#3B3128").Alpha(0.08)).
+		Children(func() {
+			ui.Text(c, title).Font("Georgia").FontSize(15)
+			body()
+		})
 }
 
 func labeledInput(c *ui.Context, label string, value *string) {
@@ -181,10 +222,11 @@ func (a *App) saveSettings() {
 	}
 	restart := config.NeedsRestart(a.config(), next)
 	a.applyConfig(next)
+	lang := next.Language
 	if restart {
-		f.Message = "Saved. The non activating panel applies after you restart snip."
+		f.Message = tr(lang, "saved_restart")
 	} else {
-		f.Message = "Saved."
+		f.Message = tr(lang, "saved")
 	}
 	if a.settingsWin != nil {
 		a.settingsWin.Invalidate()

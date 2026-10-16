@@ -11,3 +11,6 @@ const Supported = false
 func Origin(_ config.Placement, _ int, _ int) (x, y int, ok bool) {
 	return 0, 0, false
 }
+
+// FocusedFrame is unavailable off macOS.
+func FocusedFrame() (Rect, bool) { return Rect{}, false }

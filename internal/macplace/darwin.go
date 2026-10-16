@@ -18,7 +18,7 @@ const Supported = true
 type id = objc.ID
 
 var (
-	loadOnce sync.Once
+	loadOnce    sync.Once
 	msgSendAddr uintptr
 	poolPushFn  uintptr
 	poolPopFn   uintptr
@@ -33,15 +33,15 @@ var (
 	axUIElementCopyAttributeValue         func(el uintptr, attr uintptr, out *uintptr) int32
 	axUIElementCopyParameterizedAttribute func(el uintptr, attr uintptr, param uintptr, out *uintptr) int32
 	axUIElementSetMessagingTimeout        func(el uintptr, timeout float32)
-	axValueGetValue func(val uintptr, typ int32, out unsafe.Pointer) bool
-	cfRelease       func(cf uintptr)
+	axValueGetValue                       func(val uintptr, typ int32, out unsafe.Pointer) bool
+	cfRelease                             func(cf uintptr)
 )
 
 const (
 	nsUTF8StringEncoding = 4
 	kAXErrorSuccess      = 0
 
-	kAXValueCGRectType = 3
+	kAXValueCGRectType  = 3
 	kAXValueCFRangeType = 4
 
 	axMessagingTimeoutSec = 0.05
@@ -130,6 +130,41 @@ func selectionBounds() (Rect, bool) {
 		return Rect{}, false
 	}
 	return rect, true
+}
+
+// FocusedFrame returns the focused element's screen bounds when Accessibility can see it.
+func FocusedFrame() (Rect, bool) {
+	load()
+	var rect Rect
+	var ok bool
+	withPool(func() {
+		pid := frontmostPID()
+		if pid == 0 {
+			return
+		}
+		app := axUIElementCreateApplication(pid)
+		if app == 0 {
+			return
+		}
+		axUIElementSetMessagingTimeout(app, axMessagingTimeoutSec)
+		focused := copyAttribute(app, "AXFocusedUIElement")
+		if focused == 0 {
+			return
+		}
+		defer release(focused)
+		val := copyAttribute(focused, "AXFrame")
+		if val == 0 {
+			return
+		}
+		defer release(val)
+		var r cgRect
+		if !axValueGetValue(val, kAXValueCGRectType, unsafe.Pointer(&r)) {
+			return
+		}
+		rect = axCGRectToScreen(r)
+		ok = rect.Width > 0 && rect.Height > 0
+	})
+	return rect, ok
 }
 
 func axCGRectToScreen(r cgRect) Rect {

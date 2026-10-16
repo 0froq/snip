@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -23,31 +24,62 @@ type Window struct {
 
 // Card controls the paper-strip snippet appearance.
 type Card struct {
-	MinWidth       int `toml:"min_width"`
-	MaxWidth       int `toml:"max_width"`
-	Height         int `toml:"height"`
-	MaxLines       int `toml:"max_lines"`
-	PaddingX       int `toml:"padding_x"`
-	PaddingY       int `toml:"padding_y"`
-	FontSize       int `toml:"font_size"`
-	CharWidth      int `toml:"char_width"`
-	CascadeStepX   int `toml:"cascade_step_x"`
-	CascadeStepY   int `toml:"cascade_step_y"`
-	CascadeOriginX int `toml:"cascade_origin_x"`
-	CascadeOriginY int `toml:"cascade_origin_y"`
+	MinWidth       int    `toml:"min_width"`
+	MaxWidth       int    `toml:"max_width"`
+	Height         int    `toml:"height"`
+	MaxHeight      int    `toml:"max_height"`
+	LineHeight     int    `toml:"line_height"`
+	MaxLines       int    `toml:"max_lines"`
+	ActiveColor    string `toml:"active_color"`
+	PaddingX       int    `toml:"padding_x"`
+	PaddingY       int    `toml:"padding_y"`
+	FontSize       int    `toml:"font_size"`
+	CharWidth      int    `toml:"char_width"`
+	CascadeStepX   int    `toml:"cascade_step_x"`
+	CascadeStepY   int    `toml:"cascade_step_y"`
+	CascadeOriginX int    `toml:"cascade_origin_x"`
+	CascadeOriginY int    `toml:"cascade_origin_y"`
 	// Placement is where new cards spawn: near-selection, near-cursor, or fixed.
 	Placement string `toml:"placement"`
 }
 
 // Shortcuts are global accelerator strings (MyGo syntax).
 type Shortcuts struct {
+	Toggle   string `toml:"toggle"`
 	ShowAll  string `toml:"show_all"`
 	HideAll  string `toml:"hide_all"`
 	Next     string `toml:"next"`
 	Prev     string `toml:"prev"`
 	Paste    string `toml:"paste"`
 	Delete   string `toml:"delete"`
+	Pin      string `toml:"pin"`
 	Settings string `toml:"settings"`
+	// Direct registers the shortcuts above as global hotkeys.
+	Direct bool `toml:"direct"`
+}
+
+// Leader is the vim style prefix and the single keys that follow it.
+type Leader struct {
+	Shortcut      string            `toml:"shortcut"`
+	TimeoutMs     int               `toml:"timeout_ms"`
+	Toggle        string            `toml:"toggle"`
+	Next          string            `toml:"next"`
+	Prev          string            `toml:"prev"`
+	Paste         string            `toml:"paste"`
+	Delete        string            `toml:"delete"`
+	Pin           string            `toml:"pin"`
+	Settings      string            `toml:"settings"`
+	DoublePressMs int               `toml:"double_press_ms"`
+	Double        map[string]string `toml:"double"`
+	DimOverlay    bool              `toml:"dim_overlay"`
+	DimOpacity    float64           `toml:"dim_opacity"`
+	PinMs         int               `toml:"pin_ms"`
+}
+
+// Motion controls appear and disappear animation.
+type Motion struct {
+	Enabled    bool `toml:"enabled"`
+	DurationMs int  `toml:"duration_ms"`
 }
 
 // Secrets controls on-screen masking (not clipboard contents).
@@ -60,13 +92,16 @@ type Secrets struct {
 
 // Config is the full snip configuration.
 type Config struct {
-	ClipboardPollMs int       `toml:"clipboard_poll_ms"`
-	MaxCards        int       `toml:"max_cards"`
-	Window          Window    `toml:"window"`
-	Card            Card      `toml:"card"`
-	Shortcuts       Shortcuts `toml:"shortcuts"`
-	Secrets         Secrets     `toml:"secrets"`
-	Pasteboard      Pasteboard  `toml:"pasteboard"`
+	ClipboardPollMs int        `toml:"clipboard_poll_ms"`
+	MaxCards        int        `toml:"max_cards"`
+	Window          Window     `toml:"window"`
+	Card            Card       `toml:"card"`
+	Shortcuts       Shortcuts  `toml:"shortcuts"`
+	Secrets         Secrets    `toml:"secrets"`
+	Pasteboard      Pasteboard `toml:"pasteboard"`
+	Leader          Leader     `toml:"leader"`
+	Motion          Motion     `toml:"motion"`
+	Language        string     `toml:"language"`
 }
 
 // Default returns built-in defaults aligned with the prototype goals.
@@ -85,7 +120,10 @@ func Default() Config {
 			MinWidth:       120,
 			MaxWidth:       480,
 			Height:         44,
+			MaxHeight:      220,
+			LineHeight:     18,
 			MaxLines:       2,
+			ActiveColor:    "#C4784A",
 			PaddingX:       10,
 			PaddingY:       6,
 			FontSize:       12,
@@ -96,14 +134,32 @@ func Default() Config {
 			CascadeOriginY: 24,
 		},
 		Shortcuts: Shortcuts{
-			ShowAll:  "CmdOrCtrl+Shift+S",
-			HideAll:  "CmdOrCtrl+Shift+H",
+			Toggle:   "CmdOrCtrl+Shift+S",
 			Next:     "CmdOrCtrl+Shift+]",
 			Prev:     "CmdOrCtrl+Shift+[",
 			Paste:    "CmdOrCtrl+Shift+V",
 			Delete:   "CmdOrCtrl+Shift+Backspace",
+			Pin:      "CmdOrCtrl+Shift+F",
 			Settings: "CmdOrCtrl+,",
+			Direct:   true,
 		},
+		Leader: Leader{
+			Shortcut:      "CmdOrCtrl+Shift+Space",
+			TimeoutMs:     1500,
+			Toggle:        "s",
+			Next:          "j",
+			Prev:          "k",
+			Paste:         "v",
+			Delete:        "d",
+			Pin:           "p",
+			Settings:      ",",
+			DoublePressMs: 400,
+			Double:        map[string]string{},
+			DimOpacity:    0.45,
+			PinMs:         900,
+		},
+		Motion:   Motion{Enabled: true, DurationMs: 160},
+		Language: "en",
 		Secrets: Secrets{
 			MaskEnabled:     true,
 			MinEntropyBits:  3.5,
@@ -159,6 +215,54 @@ func (c Card) EffectiveHeight() int {
 	return c.Height
 }
 
+func (c Card) EffectiveMaxHeight() int {
+	if c.MaxHeight <= 0 {
+		return 220
+	}
+	return c.MaxHeight
+}
+
+func (c Card) EffectiveLineHeight() int {
+	if c.LineHeight <= 0 {
+		return c.EffectiveFontSize() + 6
+	}
+	return c.LineHeight
+}
+
+// EstimateSize returns a width and a height that fit the text, from one line up to max lines.
+func (c Card) EstimateSize(display string) (int, int) {
+	width := c.EstimateWidth(display)
+	inner := width - 2*c.EffectivePaddingX()
+	charW := c.EffectiveCharWidth()
+	if inner < charW {
+		inner = charW
+	}
+	per := inner / charW
+	if per < 1 {
+		per = 1
+	}
+	runes := utf8.RuneCountInString(display)
+	if runes < 1 {
+		runes = 1
+	}
+	lines := (runes + per - 1) / per
+	maxLines := c.EffectiveMaxLines()
+	if lines > maxLines {
+		lines = maxLines
+	}
+	if lines < 1 {
+		lines = 1
+	}
+	h := lines*c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
+	if h < c.EffectiveLineHeight()+2*c.EffectivePaddingY() {
+		h = c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
+	}
+	if h > c.EffectiveMaxHeight() {
+		h = c.EffectiveMaxHeight()
+	}
+	return width, h
+}
+
 func (c Card) EffectiveMaxLines() int {
 	if c.MaxLines <= 0 {
 		return 2
@@ -192,6 +296,45 @@ func (c Card) EffectiveCharWidth() int {
 		return 7
 	}
 	return c.CharWidth
+}
+
+// EffectiveToggle is the show and hide shortcut. Older configs used show_all.
+func (s Shortcuts) EffectiveToggle() string {
+	if strings.TrimSpace(s.Toggle) != "" {
+		return strings.TrimSpace(s.Toggle)
+	}
+	if strings.TrimSpace(s.ShowAll) != "" {
+		return strings.TrimSpace(s.ShowAll)
+	}
+	return "CmdOrCtrl+Shift+S"
+}
+
+func (l Leader) Timeout() time.Duration {
+	if l.TimeoutMs <= 0 {
+		return 1500 * time.Millisecond
+	}
+	return time.Duration(l.TimeoutMs) * time.Millisecond
+}
+
+func (l Leader) DoubleGap() time.Duration {
+	if l.DoublePressMs <= 0 {
+		return 400 * time.Millisecond
+	}
+	return time.Duration(l.DoublePressMs) * time.Millisecond
+}
+
+func (l Leader) PinDuration() time.Duration {
+	if l.PinMs <= 0 {
+		return 900 * time.Millisecond
+	}
+	return time.Duration(l.PinMs) * time.Millisecond
+}
+
+func (m Motion) Duration() time.Duration {
+	if m.DurationMs <= 0 {
+		return 160 * time.Millisecond
+	}
+	return time.Duration(m.DurationMs) * time.Millisecond
 }
 
 // PollInterval returns the clipboard polling interval.

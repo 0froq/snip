@@ -67,18 +67,23 @@ The file Settings writes is the one snip loaded (`config.toml` in the working di
 1. **Accessibility** (required for paste simulation): System Settings → Privacy & Security → Accessibility → enable **snip**. On first launch the app logs a reminder; failed paste opens the Accessibility pane.
 2. No special permission for clipboard **read** on macOS for this prototype (general pasteboard polling).
 
-### Global shortcuts (defaults)
+### Shortcuts
 
-| Action | Shortcut |
-|--------|----------|
-| Show all cards | Cmd+Shift+S |
-| Hide all cards | Cmd+Shift+H |
-| Select next / previous | Cmd+Shift+] / Cmd+Shift+[ |
-| Paste selected card | Cmd+Shift+V |
-| Delete selected card | Cmd+Shift+Backspace |
-| Settings | Cmd+, |
+One shortcut shows or hides every card (`toggle`, default Cmd+Shift+S). Optional direct shortcuts remain for next, previous, paste, delete, flash, and Settings. Turn them off with `direct = false` if they clash with other apps.
 
-Change these under `[shortcuts]` in `config.toml` or in Settings. If registration fails, MyGo logs an error (shortcut taken by another app).
+A leader shortcut (default Cmd+Shift+Space) starts a short chord mode. Then press one key: `s` toggle, `j` and `k` next and previous, `v` paste, `d` delete, `p` flash, comma settings, `1` to `9` pick a card, Escape cancels. Cards show those hints while the leader is active. It times out (`timeout_ms`).
+
+Double press: under `[leader]`, `double_press_ms` is the longest gap. `double` maps a key to another action, for example `v = "pin"`. The first press waits. A second press in time runs the mapped action.
+
+Flash (`pin`) brings every card forward with the active color, then puts them back.
+
+`dim_overlay` (default off) dims the screen behind the cards while the leader is active. The overlay ignores clicks. When Accessibility can see the focused field, that rectangle stays undimmed.
+
+### Language and config path
+
+`language` is `en` or `zh` (Settings, menus, and leader hints).
+
+Point snip at a config file with `-config path` or the `SNIP_CONFIG` environment variable. Settings shows the path it loaded.
 
 ## What to verify (four capabilities)
 
@@ -88,7 +93,7 @@ Change these under `[shortcuts]` in `config.toml` or in Settings. If registratio
 2. Copy plain text from Safari or Notes (Cmd+C).
 3. Expect a new card within ~300 ms showing the text (secrets masked if applicable).
 4. Copy again (different text): another card appears.
-5. Copy the **same** text twice: two cards (changeCount-based detection).
+5. Copy the same text again: the existing card becomes active and pulses. A new card is not created.
 6. With `max_cards = 3`, copy four distinct strings: only the three newest cards remain.
 
 ### 2. Floating cards
@@ -101,7 +106,7 @@ Change these under `[shortcuts]` in `config.toml` or in Settings. If registratio
 ### 3. Paste selected card
 
 1. Grant Accessibility.
-2. Select a card (Cmd+Shift+] / [ — slight tint on the strip).
+2. Select a card with Cmd+Shift+] or Cmd+Shift+[, or click the card. The active card uses your active color.
 3. Focus a text field in another app.
 4. Press Cmd+Shift+V: clipboard gets the card text and Cmd+V is simulated into the frontmost app.
 

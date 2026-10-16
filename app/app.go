@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,14 @@ type App struct {
 	pollReset     chan struct{}
 	settingsWin   *mygo.Window
 	settingsForm  *config.Form
+	leaderOn      bool
+	leaderGen     int
+	leaderKeys    []string
+	taps          tapGate
+	flashing      bool
+	tray          *mygo.Tray
+	dimWins       []*mygo.Window
+	dimCut        cutout
 }
 
 type cardPosition struct {
@@ -49,6 +58,10 @@ type cardUI struct {
 	win      *mygo.Window
 	display  string
 	selected bool
+	pulse    bool
+	hiding   bool
+	userW    int
+	userH    int
 }
 
 // New creates the application state.
@@ -86,26 +99,6 @@ func (a *App) checkAccessibility() {
 	if !macpaste.AccessibilityTrusted(true) {
 		log.Println("snip: enable Accessibility for snip in System Settings (required for Cmd+V paste simulation)")
 	}
-}
-
-func (a *App) registerShortcuts() {
-	mygo.GlobalShortcut.UnregisterAll()
-	sc := a.config().Shortcuts
-	reg := func(acc string, fn func()) {
-		if acc == "" {
-			return
-		}
-		if err := mygo.GlobalShortcut.Register(acc, fn); err != nil {
-			log.Printf("snip: shortcut %q: %v", acc, err)
-		}
-	}
-	reg(sc.ShowAll, func() { a.setAllVisible(true) })
-	reg(sc.HideAll, func() { a.setAllVisible(false) })
-	reg(sc.Next, func() { a.moveSelection(1) })
-	reg(sc.Prev, func() { a.moveSelection(-1) })
-	reg(sc.Paste, func() { a.pasteSelected() })
-	reg(sc.Delete, func() { a.deleteSelected() })
-	reg(sc.Settings, func() { a.showSettings() })
 }
 
 func (a *App) config() config.Config {
@@ -157,6 +150,10 @@ func (a *App) watchClipboard() {
 			continue
 		}
 		concealed := cfg.Pasteboard.ConcealedOnCard(markers)
+		if existing, ok := a.store.FindText(text); ok {
+			mygo.RunOnMain(func() { a.surfaceCard(existing.ID) })
+			continue
+		}
 		card, evicted := a.store.AddWithLimit(text, cfg.EffectiveMaxCards(), concealed)
 		display := a.cardDisplay(card)
 		cardCfg := cfg.Card
@@ -188,9 +185,9 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	idx := len(a.order) - 1
 	cfg := a.config()
 	cardCfg := cfg.Card
-	width := cardCfg.EstimateWidth(host.display)
-	height := cardCfg.EffectiveHeight()
+	width, height := cardCfg.EstimateSize(host.display)
 	x, y := a.cardOrigin(card.ID, idx, width, height, placeX, placeY, havePlacement)
+	minH := cardCfg.EffectiveLineHeight() + 2*cardCfg.EffectivePaddingY()
 
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:         "snip",
@@ -198,16 +195,24 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		Height:        height,
 		X:             x,
 		Y:             y,
+		MinWidth:      cardCfg.EffectiveMinWidth(),
+		MinHeight:     minH,
+		MaxWidth:      cardCfg.EffectiveMaxWidth(),
+		MaxHeight:     cardCfg.EffectiveMaxHeight(),
 		Frameless:     cfg.Window.EffectiveFrameless(),
 		Panel:         cfg.Window.EffectivePanel(),
 		AlwaysOnTop:   cfg.Window.AlwaysOnTop,
-		DisableResize: true,
+		DisableResize: false,
 		StateKey:      "card-" + card.ID,
 		Content:       ui.View(func(c *ui.Context) { a.cardView(c, host) }),
 	})
 	host.win = win
 	win.SetMovable(true)
 	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
+	win.OnResize(func() {
+		w, h := win.Size()
+		host.userW, host.userH = w, h
+	})
 	win.OnFocus(func() { win.ShowInactive() })
 	a.applyWindowFlags(win)
 	if a.visible {
@@ -249,26 +254,71 @@ func (a *App) rememberCardPosition(id string, win *mygo.Window) {
 }
 
 func (a *App) cardView(c *ui.Context, host *cardUI) {
+	cfg := a.config()
+	dark := c.Theme().Dark
+	accent := activeColor(cfg.Card.ActiveColor, dark)
+	c.SetTheme(paperTheme(dark, accent))
 	t := c.Theme()
 	surface := t.Surface
-	if host.selected {
-		surface = t.Surface.Mix(t.Accent, 0.12)
+	border := t.Border
+	if host.selected || host.pulse || a.flashing {
+		surface = t.Surface.Mix(accent, 0.16)
+		border = accent
 	}
-	cardCfg := a.config().Card
+	cardCfg := cfg.Card
 	padX := float32(cardCfg.EffectivePaddingX())
 	padY := float32(cardCfg.EffectivePaddingY())
-	ui.Column(c).Fill().
+	motion := ui.ElementTransition{Duration: cfg.Motion.Duration(), Colors: true}
+	if cfg.Motion.Enabled {
+		motion.Enter = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 8}
+		motion.Exit = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 6}
+	}
+	col := ui.Column(c).Fill().
 		Padding(padY, padX, padY, padX).
-		Background(surface).Radius(8).
-		Border(1, t.Border).
+		Background(surface).Radius(14).
+		Border(1, border).
+		Shadow(0, 8, 18, 0, ui.Hex("#3B3128").Alpha(0.18)).
 		FocusRing(false).
-		DragWindow().
-		Children(func() {
-			ui.Text(c, host.display).
-				FontSize(float32(cardCfg.EffectiveFontSize())).
-				Ellipsis("…").
-				MaxLines(cardCfg.EffectiveMaxLines())
-		})
+		DragWindow()
+	if cfg.Motion.Enabled {
+		col = col.Transition(motion)
+	}
+	if host.hiding {
+		col = col.Opacity(0).Scale(0.96, 0.96)
+	}
+	if col.Clicked() {
+		a.selectID(host.card.ID)
+	}
+	col.Children(func() {
+		ui.Text(c, host.display).
+			Font("Georgia").
+			FontSize(float32(cardCfg.EffectiveFontSize())).
+			Ellipsis("…").
+			MaxLines(cardCfg.EffectiveMaxLines())
+		if a.leaderActive() {
+			a.leaderHint(c, host)
+		}
+	})
+}
+
+func (a *App) leaderHint(c *ui.Context, host *cardUI) {
+	t := c.Theme()
+	cfg := a.config().Leader
+	lang := a.config().Language
+	n := a.cardNumber(host.card.ID)
+	ui.Row(c).Gap(8).Padding(4, 0, 0, 0).Children(func() {
+		ui.Text(c, n).FontSize(11).TextColor(t.Accent)
+		ui.Text(c, cfg.Paste+" "+tr(lang, "hint_paste")).FontSize(11).TextColor(t.TextMuted)
+		ui.Text(c, cfg.Delete+" "+tr(lang, "hint_delete")).FontSize(11).TextColor(t.TextMuted)
+		ui.Text(c, cfg.Pin+" "+tr(lang, "hint_pin")).FontSize(11).TextColor(t.TextMuted)
+	})
+}
+
+func (a *App) toggleVisible() {
+	a.mu.Lock()
+	show := !a.visible
+	a.mu.Unlock()
+	a.setAllVisible(show)
 }
 
 func (a *App) setAllVisible(show bool) {
@@ -285,12 +335,127 @@ func (a *App) setAllVisible(show bool) {
 				continue
 			}
 			if show {
+				h.hiding = false
 				h.win.ShowInactive()
 			} else {
-				h.win.Hide()
+				a.hideCard(h)
 			}
 		}
 	})
+}
+
+func (a *App) hideCard(h *cardUI) {
+	if h == nil || h.win == nil {
+		return
+	}
+	cfg := a.config()
+	if !cfg.Motion.Enabled || mygo.Theme.Preferences().ReduceMotion {
+		h.win.Hide()
+		return
+	}
+	h.hiding = true
+	h.win.Invalidate()
+	time.AfterFunc(cfg.Motion.Duration(), func() {
+		mygo.RunOnMain(func() {
+			if h.win != nil {
+				h.win.Hide()
+			}
+			h.hiding = false
+		})
+	})
+}
+
+func (a *App) surfaceCard(id string) {
+	a.selectID(id)
+	a.mu.Lock()
+	h := a.cards[id]
+	a.mu.Unlock()
+	if h == nil || h.win == nil {
+		return
+	}
+	h.pulse = true
+	h.win.ShowInactive()
+	h.win.Invalidate()
+	time.AfterFunc(280*time.Millisecond, func() {
+		mygo.RunOnMain(func() {
+			h.pulse = false
+			if h.win != nil {
+				h.win.Invalidate()
+			}
+		})
+	})
+}
+
+func (a *App) selectID(id string) {
+	a.mu.Lock()
+	for i, oid := range a.order {
+		if oid == id {
+			a.selected = i
+			break
+		}
+	}
+	a.mu.Unlock()
+	a.refreshSelection()
+}
+
+func (a *App) selectNumber(n int) {
+	a.mu.Lock()
+	if n < 1 || n > len(a.order) {
+		a.mu.Unlock()
+		return
+	}
+	id := a.order[len(a.order)-n]
+	a.mu.Unlock()
+	a.selectID(id)
+}
+
+func (a *App) cardNumber(id string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for i, oid := range a.order {
+		if oid == id {
+			n := len(a.order) - i
+			if n > 9 {
+				return ""
+			}
+			return strconv.Itoa(n)
+		}
+	}
+	return ""
+}
+
+func (a *App) flashAll() {
+	a.mu.Lock()
+	was := a.visible
+	a.flashing = true
+	a.mu.Unlock()
+	a.setAllVisible(true)
+	a.invalidateCards()
+	time.AfterFunc(a.config().Leader.PinDuration(), func() {
+		mygo.RunOnMain(func() {
+			a.mu.Lock()
+			a.flashing = false
+			a.mu.Unlock()
+			if !was {
+				a.setAllVisible(false)
+			}
+			a.invalidateCards()
+		})
+	})
+}
+
+func (a *App) invalidateCards() {
+	a.mu.Lock()
+	ids := append([]string(nil), a.order...)
+	a.mu.Unlock()
+	for _, id := range ids {
+		a.mu.Lock()
+		h := a.cards[id]
+		a.mu.Unlock()
+		if h != nil && h.win != nil {
+			h.win.Invalidate()
+		}
+	}
 }
 
 func (a *App) moveSelection(delta int) {
@@ -428,6 +593,7 @@ func (a *App) applyConfig(next config.Config) {
 		}
 	}
 	a.registerShortcuts()
+	a.installMenus()
 
 	for _, id := range a.store.TrimTo(next.EffectiveMaxCards()) {
 		a.detachCard(id)
@@ -444,15 +610,25 @@ func (a *App) applyConfig(next config.Config) {
 		}
 		h.display = a.cardDisplay(h.card)
 		a.applyWindowFlags(h.win)
-		width := next.Card.EstimateWidth(h.display)
-		h.win.SetSize(width, next.Card.EffectiveHeight())
+		if h.userW == 0 {
+			width, height := next.Card.EstimateSize(h.display)
+			h.win.SetSize(width, height)
+		}
 		h.win.Invalidate()
 	}
 }
 
 // LoadConfigFromDefaultPaths loads config.toml from cwd or the user config dir.
 // The path is where Settings writes, even when no file exists yet.
-func LoadConfigFromDefaultPaths() (config.Config, string) {
+// LoadConfigFromDefaultPaths loads config. override wins when set (flag or env), even if the file is still missing.
+func LoadConfigFromDefaultPaths(override string) (config.Config, string) {
+	if override != "" {
+		c, err := config.Load(override)
+		if err != nil {
+			return config.Default(), override
+		}
+		return c, override
+	}
 	cfg := config.Default()
 	fallback := "config.toml"
 	candidates := []string{"config.toml"}

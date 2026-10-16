@@ -28,6 +28,19 @@ func TestStoreAddAllDelete(t *testing.T) {
 	}
 }
 
+func TestFindTextNewest(t *testing.T) {
+	s := New()
+	s.Add("same")
+	second := s.Add("same")
+	got, ok := s.FindText("same")
+	if !ok || got.ID != second.ID {
+		t.Fatalf("got %+v ok %v", got, ok)
+	}
+	if _, ok := s.FindText("missing"); ok {
+		t.Fatal("missing")
+	}
+}
+
 func TestTrimTo(t *testing.T) {
 	s := New()
 	s.Add("a")

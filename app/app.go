@@ -59,10 +59,11 @@ func New(cfg config.Config, configPath string) *App {
 		store:      store.New(),
 		cards:      make(map[string]*cardUI),
 		sec: secrets.Config{
-			Enabled:         cfg.Secrets.MaskEnabled,
-			ExtraPatterns:   cfg.Secrets.ExtraPatterns,
-			MinEntropyBits:  cfg.Secrets.MinEntropyBits,
-			MinSecretLength: cfg.Secrets.MinSecretLength,
+			Enabled:                  cfg.Secrets.MaskEnabled,
+			ExtraPatterns:            cfg.Secrets.ExtraPatterns,
+			MinEntropyBits:           cfg.Secrets.MinEntropyBits,
+			MinSecretLength:          cfg.Secrets.MinSecretLength,
+			HonorPasteboardConcealed: cfg.Pasteboard.HonorConcealed,
 		},
 		cardPositions: make(map[string]cardPosition),
 		pollReset:     make(chan struct{}, 1),
@@ -145,13 +146,19 @@ func (a *App) watchClipboard() {
 		if text == "" {
 			text = strings.TrimSpace(mygo.Clipboard.ReadText())
 		}
+		cfg := a.config()
+		markers := macpaste.ReadMarkers()
+		if cfg.Pasteboard.SkipClipboardChange(markers) {
+			a.lastChange = count
+			continue
+		}
 		a.lastChange = count
 		if text == "" {
 			continue
 		}
-		cfg := a.config()
-		card, evicted := a.store.AddWithLimit(text, cfg.EffectiveMaxCards())
-		display := secrets.DisplayText(card.Text, a.secrets())
+		concealed := cfg.Pasteboard.ConcealedOnCard(markers)
+		card, evicted := a.store.AddWithLimit(text, cfg.EffectiveMaxCards(), concealed)
+		display := a.cardDisplay(card)
 		cardCfg := cfg.Card
 		width := cardCfg.EstimateWidth(display)
 		height := cardCfg.EffectiveHeight()
@@ -170,7 +177,7 @@ func (a *App) watchClipboard() {
 func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool) {
 	host := &cardUI{
 		card:    card,
-		display: secrets.DisplayText(card.Text, a.secrets()),
+		display: a.cardDisplay(card),
 	}
 	a.mu.Lock()
 	a.cards[card.ID] = host
@@ -397,15 +404,20 @@ func (a *App) secrets() secrets.Config {
 	return a.sec
 }
 
+func (a *App) cardDisplay(card store.Card) string {
+	return secrets.DisplayText(card.Text, a.secrets(), card.Concealed)
+}
+
 func (a *App) applyConfig(next config.Config) {
 	a.mu.Lock()
 	prev := a.cfg
 	a.cfg = next
 	a.sec = secrets.Config{
-		Enabled:         next.Secrets.MaskEnabled,
-		ExtraPatterns:   next.Secrets.ExtraPatterns,
-		MinEntropyBits:  next.Secrets.MinEntropyBits,
-		MinSecretLength: next.Secrets.MinSecretLength,
+		Enabled:                  next.Secrets.MaskEnabled,
+		ExtraPatterns:            next.Secrets.ExtraPatterns,
+		MinEntropyBits:           next.Secrets.MinEntropyBits,
+		MinSecretLength:          next.Secrets.MinSecretLength,
+		HonorPasteboardConcealed: next.Pasteboard.HonorConcealed,
 	}
 	a.mu.Unlock()
 
@@ -430,7 +442,7 @@ func (a *App) applyConfig(next config.Config) {
 		if h == nil || h.win == nil {
 			continue
 		}
-		h.display = secrets.DisplayText(h.card.Text, a.secrets())
+		h.display = a.cardDisplay(h.card)
 		a.applyWindowFlags(h.win)
 		width := next.Card.EstimateWidth(h.display)
 		h.win.SetSize(width, next.Card.EffectiveHeight())

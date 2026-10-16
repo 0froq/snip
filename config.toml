@@ -33,6 +33,11 @@ paste = "CmdOrCtrl+Shift+V"
 delete = "CmdOrCtrl+Shift+Backspace"
 settings = "CmdOrCtrl+,"
 
+[pasteboard]
+honor_concealed = true
+skip_transient = true
+skip_auto_generated = true
+
 [secrets]
 mask_enabled = true
 min_entropy_bits = 3.5

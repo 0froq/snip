@@ -10,6 +10,8 @@ type Card struct {
 	ID        string
 	Text      string
 	CreatedAt time.Time
+	// Concealed is true when the copy carried org.nspasteboard.ConcealedType.
+	Concealed bool
 }
 
 // Store holds cards in insertion order (oldest first).
@@ -27,14 +29,14 @@ func New() *Store {
 
 // Add appends a card and returns it.
 func (s *Store) Add(text string) Card {
-	c, _ := s.AddWithLimit(text, 0)
+	c, _ := s.AddWithLimit(text, 0, false)
 	return c
 }
 
 // AddWithLimit appends a card. When maxCards > 0, oldest cards are removed
 // first (FIFO) until len < maxCards, then the new card is added. Returns
 // evicted card IDs in eviction order.
-func (s *Store) AddWithLimit(text string, maxCards int) (Card, []string) {
+func (s *Store) AddWithLimit(text string, maxCards int, concealed bool) (Card, []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var evicted []string
@@ -47,7 +49,7 @@ func (s *Store) AddWithLimit(text string, maxCards int) (Card, []string) {
 	}
 	s.seq++
 	id := formatID(s.seq)
-	c := Card{ID: id, Text: text, CreatedAt: time.Now().UTC()}
+	c := Card{ID: id, Text: text, CreatedAt: time.Now().UTC(), Concealed: concealed}
 	s.byID[id] = c
 	s.order = append(s.order, id)
 	return c, evicted

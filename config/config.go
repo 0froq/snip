@@ -65,7 +65,8 @@ type Config struct {
 	Window          Window    `toml:"window"`
 	Card            Card      `toml:"card"`
 	Shortcuts       Shortcuts `toml:"shortcuts"`
-	Secrets         Secrets   `toml:"secrets"`
+	Secrets         Secrets     `toml:"secrets"`
+	Pasteboard      Pasteboard  `toml:"pasteboard"`
 }
 
 // Default returns built-in defaults aligned with the prototype goals.
@@ -108,6 +109,7 @@ func Default() Config {
 			MinEntropyBits:  3.5,
 			MinSecretLength: 16,
 		},
+		Pasteboard: DefaultPasteboard(),
 	}
 }
 

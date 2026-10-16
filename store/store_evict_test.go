@@ -5,7 +5,7 @@ import "testing"
 func TestAddWithLimitNoEvictionUnderCap(t *testing.T) {
 	s := New()
 	for i := 0; i < 5; i++ {
-		_, evicted := s.AddWithLimit("x", 20)
+		_, evicted := s.AddWithLimit("x", 20, false)
 		if len(evicted) != 0 {
 			t.Fatalf("unexpected eviction at i=%d: %v", i, evicted)
 		}
@@ -19,7 +19,7 @@ func TestAddWithLimitEvictsFIFO(t *testing.T) {
 	s := New()
 	ids := make([]string, 0, 3)
 	for _, text := range []string{"a", "b", "c"} {
-		c, ev := s.AddWithLimit(text, 3)
+		c, ev := s.AddWithLimit(text, 3, false)
 		if len(ev) != 0 {
 			t.Fatalf("add %q evicted early: %v", text, ev)
 		}
@@ -28,7 +28,7 @@ func TestAddWithLimitEvictsFIFO(t *testing.T) {
 	if s.Len() != 3 {
 		t.Fatalf("len %d", s.Len())
 	}
-	newest, evicted := s.AddWithLimit("d", 3)
+	newest, evicted := s.AddWithLimit("d", 3, false)
 	if len(evicted) != 1 || evicted[0] != ids[0] {
 		t.Fatalf("evicted %v want [%s]", evicted, ids[0])
 	}
@@ -48,10 +48,10 @@ func TestAddWithLimitEvictsMultipleWhenBatchWouldOverflow(t *testing.T) {
 	s := New()
 	var ids []string
 	for i := 0; i < 5; i++ {
-		c, _ := s.AddWithLimit("old", 0) // unlimited fill
+		c, _ := s.AddWithLimit("old", 0, false) // unlimited fill
 		ids = append(ids, c.ID)
 	}
-	_, evicted := s.AddWithLimit("new", 2)
+	_, evicted := s.AddWithLimit("new", 2, false)
 	if len(evicted) != 4 {
 		t.Fatalf("evicted %d want 4", len(evicted))
 	}
@@ -72,7 +72,7 @@ func TestAddWithLimitEvictsMultipleWhenBatchWouldOverflow(t *testing.T) {
 func TestAddWithLimitZeroMeansUnlimited(t *testing.T) {
 	s := New()
 	for i := 0; i < 25; i++ {
-		_, ev := s.AddWithLimit("x", 0)
+		_, ev := s.AddWithLimit("x", 0, false)
 		if len(ev) != 0 {
 			t.Fatal("unlimited should not evict")
 		}

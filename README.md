@@ -109,6 +109,7 @@ Change these under `[shortcuts]` in `config.toml` or in Settings. If registratio
 
 1. With `content_protection = true`, start a FaceTime/Zoom/screen recording and confirm cards are **not** visible in the capture (MyGo `SetContentProtection` → `NSWindowSharingNone`).
 2. Copy `password=hunter2` or a `sk-…` OpenAI-style key; the card should show masked text, while paste still uses the real value.
+3. Copy from a password manager that sets `org.nspasteboard.ConcealedType`: the card masks the text even when `content_protection` is off. Transient and auto generated markers can skip creating a card (see `[pasteboard]` in Settings or `config.toml`).
 
 ## Tests (pure logic, any OS)
 

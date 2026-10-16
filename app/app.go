@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -58,6 +59,7 @@ type cardUI struct {
 	selected bool
 	pulse    bool
 	hiding   bool
+	scale    float32
 	userW    int
 	userH    int
 	rendered string
@@ -109,8 +111,9 @@ func (a *App) checkAccessibility() {
 	if !macpaste.Supported {
 		return
 	}
-	if !macpaste.AccessibilityTrusted(true) {
+	if !macpaste.AccessibilityTrusted(false) {
 		log.Println("snip: enable Accessibility for snip in System Settings (required for Cmd+V paste simulation)")
+		macpaste.AccessibilityTrusted(true)
 	}
 }
 
@@ -210,7 +213,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		Height:          height,
 		X:               x,
 		Y:               y,
-		MinWidth:        cardCfg.EffectiveMinWidth(),
+		MinWidth:        cardCfg.WidthFloor(host.display),
 		MinHeight:       minH,
 		MaxWidth:        cardCfg.EffectiveMaxWidth(),
 		MaxHeight:       cardCfg.EffectiveMaxHeight(),
@@ -279,10 +282,10 @@ func (a *App) syncCardHeight(host *cardUI) {
 	defer func() { host.syncing = false }()
 	cardCfg := a.config().Card
 	w, _ := host.win.Size()
-	minW := cardCfg.EffectiveMinWidth()
+	floor := cardCfg.WidthFloor(host.display)
 	maxW := cardCfg.EffectiveMaxWidth()
-	if w < minW {
-		w = minW
+	if w < floor {
+		w = floor
 	}
 	if w > maxW {
 		w = maxW
@@ -336,6 +339,8 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	}
 	if host.hiding {
 		col = col.Opacity(0).Scale(0.96, 0.96)
+	} else if host.scale > 1 {
+		col = col.TransformOrigin(0.5, 0.5).Scale(host.scale, host.scale)
 	}
 	col = cardPointerInput(a, host, host.win, col)
 	col.Children(func() {
@@ -499,36 +504,21 @@ func (a *App) flashAll() {
 	}
 	a.mu.Unlock()
 	a.setAllVisible(true)
+	if !mygo.Theme.Preferences().ReduceMotion {
+		for _, h := range hosts {
+			h.scale = 1.07
+		}
+	}
 	a.invalidateCards()
-	type origin struct {
-		h    *cardUI
-		x, y int
-	}
-	origins := make([]origin, 0, len(hosts))
-	for _, h := range hosts {
-		x, y := h.win.Position()
-		origins = append(origins, origin{h: h, x: x, y: y})
-		h.win.SetPosition(x, y-7)
-	}
-	time.AfterFunc(90*time.Millisecond, func() {
+	time.AfterFunc(120*time.Millisecond, func() {
 		mygo.RunOnMain(func() {
-			for _, o := range origins {
-				if o.h.win != nil {
-					o.h.win.SetPosition(o.x, o.y+2)
-				}
+			for _, h := range hosts {
+				h.scale = 0
 			}
+			a.invalidateCards()
 		})
 	})
-	time.AfterFunc(180*time.Millisecond, func() {
-		mygo.RunOnMain(func() {
-			for _, o := range origins {
-				if o.h.win != nil {
-					o.h.win.SetPosition(o.x, o.y)
-				}
-			}
-		})
-	})
-	time.AfterFunc(320*time.Millisecond, func() {
+	time.AfterFunc(240*time.Millisecond, func() {
 		mygo.RunOnMain(func() {
 			a.mu.Lock()
 			a.flashing = false
@@ -617,7 +607,9 @@ func (a *App) pasteCard(h *cardUI) {
 	mygo.Clipboard.WriteText(text)
 	if err := macpaste.PostCommandV(); err != nil {
 		log.Printf("snip: paste: %v", err)
-		macpaste.OpenAccessibilitySettings()
+		if errors.Is(err, macpaste.ErrAccessibility) {
+			macpaste.OpenAccessibilitySettings()
+		}
 	}
 }
 

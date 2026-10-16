@@ -14,8 +14,17 @@ func TestEstimateSizeOneLine(t *testing.T) {
 	if layout.VisibleLines != 1 || layout.Truncated {
 		t.Fatalf("layout %+v", layout)
 	}
-	if layout.Width != c.EffectiveMinWidth() {
-		t.Fatalf("short width %d", layout.Width)
+	ink, _ := ui.ShapeText("hi", c.cardFont(), 0).Size()
+	want := int(math.Ceil(float64(ink))) + 2*c.EffectivePaddingX() + 2*CardBorderPx()
+	if layout.Width != want {
+		t.Fatalf("width %d want ink+padding %d", layout.Width, want)
+	}
+	if layout.Width >= c.EffectiveMinWidth() {
+		t.Fatalf("short width %d should stay under min %d", layout.Width, c.EffectiveMinWidth())
+	}
+	chosen := c.Layout("hi", 200, 0)
+	if chosen.Width != 200 {
+		t.Fatalf("resized width %d", chosen.Width)
 	}
 }
 

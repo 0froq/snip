@@ -13,11 +13,34 @@ This repo was built and cross-compiled on Linux; run and exercise it on a Mac.
 
 ```bash
 # From repo root — produces build/darwin-arm64/snip.app
-go tool mygo build -platform darwin/arm64
+go tool mygo build -platform darwin/arm64 -sign "snip local"
 
-# Alternative: single binary (no .app bundle)
+# Alternative: single binary (no .app bundle). This ad hoc signature
+# does not keep Accessibility across rebuilds; prefer the command above.
 GOOS=darwin GOARCH=arm64 go build -o snip .
 ```
+
+### Stable code signature
+
+MyGo signs ad hoc by default (`codesign -s -`). That signature’s hash changes on every rebuild, so macOS TCC treats the new binary as a different app. Accessibility can look enabled while double-click paste still opens System Settings.
+
+Create one local code-signing certificate, then reuse it:
+
+1. Open Keychain Access.
+2. Certificate Assistant → Create a Certificate…
+3. Name: `snip local`
+4. Identity Type: Self Signed Root
+5. Certificate Type: Code Signing
+
+```bash
+go tool mygo build -platform darwin/arm64 -sign "snip local"
+# or, after an unsigned build:
+SNIP_SIGN_IDENTITY="snip local" ./scripts/sign-mac.sh
+```
+
+An existing Apple Development identity works the same way (`security find-identity -v -p codesigning` lists them). Grant Accessibility once for that signature. Later builds signed with the same identity keep the grant.
+
+`scripts/sign-mac.sh` refuses to ad hoc sign. snip asks `AXIsProcessTrusted` without the prompt option first, and opens the Accessibility pane only when that check is false.
 
 ## Run on Mac
 
@@ -30,7 +53,7 @@ Optional config: copy `config.toml` to `~/Library/Application Support/snip/confi
 
 `max_cards` (default **20**) caps how many snippets are kept. When a new copy would exceed the limit, the **oldest** cards are closed and removed first (FIFO).
 
-Snippet cards are small paper strips. A short copy stays on one line. A long copy grows to `max_width`, wraps, and ends with an ellipsis after `max_lines`. The window is measured from the text that is actually shown plus its padding. Drag the middle of a card to move it. Drag an edge to change its width or visible line count. Double click a card to paste it. This is on by default and can be turned off.
+Snippet cards are small paper strips. A short copy stays on one line and is only as wide as that text plus padding. A long copy grows up to `max_width`, wraps, and ends with an ellipsis after `max_lines`. `min_width` is the narrowest a longer card can be dragged, and it does not stretch a short note. Drag the middle of a card to move it. Drag an edge to change its width or visible line count. Double click a card to paste it. This is on by default and can be turned off.
 
 New cards are placed with `[card].placement` (default **`near-selection`**). snip asks the frontmost app for the focused selection bounds via the Accessibility API and opens the card just below that text (or above when there is no room), clamped to the monitor work area. When that fails (browsers, Electron, terminals), it falls back to near the mouse cursor. **`near-cursor`** skips the selection step. **`fixed`** keeps the old cascade from the top-left corner.
 
@@ -64,7 +87,7 @@ The file Settings writes is the one snip loaded (`config.toml` in the working di
 
 ### Permissions
 
-1. **Accessibility** (required for paste simulation): System Settings → Privacy & Security → Accessibility → enable **snip**. On first launch the app logs a reminder; failed paste opens the Accessibility pane.
+1. **Accessibility** (required for paste simulation): System Settings → Privacy & Security → Accessibility → enable **snip**. The app prompts only when `AXIsProcessTrusted` is false. A failed paste opens the Accessibility pane only in that case. Sign with a stable identity (see above) so the grant survives rebuilds.
 2. No special permission for clipboard **read** on macOS for this prototype (general pasteboard polling).
 
 ### Shortcuts
@@ -73,7 +96,7 @@ Each action has a direct global shortcut and a leader key. Either field may be e
 
 The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Cards show a small hint sticker in their top corner. Escape cancels the mode. The mode also closes after `timeout_ms`.
 
-Flash brings every card forward, colors it once, and gives it a quick bounce.
+Flash brings every card forward, colors it once, and gives it a quick scale pulse.
 
 ### Language and config path
 

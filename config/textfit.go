@@ -94,16 +94,15 @@ func (c Card) Layout(display string, width, visibleLines int) CardLayout {
 	if !utf8.ValidString(display) {
 		display = string([]rune(display))
 	}
-	minW, maxW := c.EffectiveMinWidth(), c.EffectiveMaxWidth()
-	naturalWidth := width <= 0
+	maxW := c.EffectiveMaxWidth()
 	if width <= 0 {
 		width = c.naturalSlipWidth(display)
 	}
-	if width < minW {
-		width = minW
-	}
 	if width > maxW {
 		width = maxW
+	}
+	if width < 1 {
+		width = 1
 	}
 	full := c.linesForText(display, width)
 	if visibleLines <= 0 {
@@ -119,13 +118,7 @@ func (c Card) Layout(display string, width, visibleLines int) CardLayout {
 		visibleLines = 1
 	}
 	text, truncated := c.truncate(display, width, visibleLines)
-	textW, textH := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width)).Size()
-	if naturalWidth && c.naturalSlipWidth(display) <= maxW {
-		measured := int(math.Ceil(float64(textW))) + 2*c.EffectivePaddingX() + 2*cardBorderPx
-		if measured > minW && measured < width {
-			width = measured
-		}
-	}
+	_, textH := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width)).Size()
 	height := int(math.Ceil(float64(textH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
 	if height > c.EffectiveMaxHeight() {
 		height = c.EffectiveMaxHeight()
@@ -146,8 +139,13 @@ func (c Card) shapedHeight(display string, slipWidth int) (lines int, heightPx i
 }
 
 func (c Card) naturalSlipWidth(display string) int {
-	layout := ui.ShapeText(display, c.cardFont(), 1e6)
-	w, _ := layout.Size()
+	// Width 0 is ui.Text's max-content measure: break only at newlines and
+	// use the ink width. A huge wrap width is not the same number, and
+	// min_width is a resize floor, not part of this measurement.
+	w, _ := ui.ShapeText(display, c.cardFont(), 0).Size()
 	est := int(math.Ceil(float64(w))) + 2*c.EffectivePaddingX() + 2*cardBorderPx
+	if est < 1 {
+		return 1
+	}
 	return est
 }

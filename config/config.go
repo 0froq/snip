@@ -181,18 +181,25 @@ func (c Config) EffectiveMaxCards() int {
 	return c.MaxCards
 }
 
-// EstimateCardWidth returns content width for a snippet (clamped min/max).
+// EstimateWidth is the initial slip width: measured text plus padding, capped
+// at max width. min_width does not stretch a short note.
 func (c Card) EstimateWidth(display string) int {
-	minW := c.EffectiveMinWidth()
-	maxW := c.EffectiveMaxWidth()
 	est := c.naturalSlipWidth(display)
-	if est < minW {
-		return minW
-	}
-	if est > maxW {
-		return maxW
+	if est > c.EffectiveMaxWidth() {
+		return c.EffectiveMaxWidth()
 	}
 	return est
+}
+
+// WidthFloor is the narrowest width a drag may use. A note already narrower
+// than min_width keeps that measured width so the window is not forced wider.
+func (c Card) WidthFloor(display string) int {
+	floor := c.EffectiveMinWidth()
+	natural := c.EstimateWidth(display)
+	if natural < floor {
+		return natural
+	}
+	return floor
 }
 
 func (c Card) EffectiveMinWidth() int {
@@ -238,13 +245,11 @@ func (c Card) EstimateSize(display string) (int, int) {
 
 // HeightForWidth returns the window height needed to show display at the given slip width.
 func (c Card) HeightForWidth(display string, width int) int {
-	minW := c.EffectiveMinWidth()
-	maxW := c.EffectiveMaxWidth()
-	if width < minW {
-		width = minW
+	if width <= 0 {
+		width = c.EstimateWidth(display)
 	}
-	if width > maxW {
-		width = maxW
+	if width > c.EffectiveMaxWidth() {
+		width = c.EffectiveMaxWidth()
 	}
 	_, h := c.shapedHeight(display, width)
 	return h

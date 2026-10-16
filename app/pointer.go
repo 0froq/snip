@@ -117,13 +117,13 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 }
 
 func (a *App) cardResizeEdges(c *ui.Context, host *cardUI, win *mygo.Window) {
-	a.cardResizeEdge(c, host, win, edgeW, ui.CursorResizeW, func(b ui.Element) ui.Element {
+	a.cardResizeEdge(c, host, win, edgeW, ui.CursorResizeEW, func(b ui.Element) ui.Element {
 		return b.Absolute().Left(0).Top(0).Bottom(resizeEdgePx).Width(resizeEdgePx)
 	})
-	a.cardResizeEdge(c, host, win, edgeE, ui.CursorResizeE, func(b ui.Element) ui.Element {
+	a.cardResizeEdge(c, host, win, edgeE, ui.CursorResizeEW, func(b ui.Element) ui.Element {
 		return b.Absolute().Right(0).Top(0).Bottom(resizeEdgePx).Width(resizeEdgePx)
 	})
-	a.cardResizeEdge(c, host, win, edgeS, ui.CursorResizeS, func(b ui.Element) ui.Element {
+	a.cardResizeEdge(c, host, win, edgeS, ui.CursorResizeNS, func(b ui.Element) ui.Element {
 		return b.Absolute().Left(resizeEdgePx).Right(resizeEdgePx).Bottom(0).Height(resizeEdgePx)
 	})
 	a.cardResizeEdge(c, host, win, edgeW|edgeS, ui.CursorResizeNESW, func(b ui.Element) ui.Element {
@@ -188,7 +188,7 @@ func (a *App) applySlipResize(host *cardUI, win *mygo.Window) {
 			dir = -1
 		}
 		var shift int
-		w, shift = resizeWidth(host.resizeStartW, dx, dir, cardCfg.EffectiveMinWidth(), cardCfg.EffectiveMaxWidth())
+		w, shift = resizeWidth(host.resizeStartW, dx, dir, cardCfg.WidthFloor(host.display), cardCfg.EffectiveMaxWidth())
 		x = host.resizeStartX + shift
 	}
 	lines := host.resizeStartLines

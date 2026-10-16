@@ -101,7 +101,7 @@ Change these under `[shortcuts]` in `config.toml` or in Settings. If registratio
 ### 3. Paste selected card
 
 1. Grant Accessibility.
-2. Select a card (Cmd+Shift+] / [ — accent border).
+2. Select a card (Cmd+Shift+] / [ — slight tint on the strip).
 3. Focus a text field in another app.
 4. Press Cmd+Shift+V: clipboard gets the card text and Cmd+V is simulated into the frontmost app.
 

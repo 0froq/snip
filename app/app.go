@@ -175,9 +175,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	a.mu.Lock()
 	a.cards[card.ID] = host
 	a.order = append(a.order, card.ID)
-	if len(a.order) == 1 {
-		a.selected = 0
-	}
+	a.selected = len(a.order) - 1
 	a.mu.Unlock()
 
 	idx := len(a.order) - 1
@@ -203,6 +201,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	host.win = win
 	win.SetMovable(true)
 	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
+	win.OnFocus(func() { win.ShowInactive() })
 	a.applyWindowFlags(win)
 	if a.visible {
 		win.ShowInactive()
@@ -244,17 +243,18 @@ func (a *App) rememberCardPosition(id string, win *mygo.Window) {
 
 func (a *App) cardView(c *ui.Context, host *cardUI) {
 	t := c.Theme()
-	border := ui.Transparent
+	surface := t.Surface
 	if host.selected {
-		border = t.Accent
+		surface = t.Surface.Mix(t.Accent, 0.12)
 	}
 	cardCfg := a.config().Card
 	padX := float32(cardCfg.EffectivePaddingX())
 	padY := float32(cardCfg.EffectivePaddingY())
 	ui.Column(c).Fill().
 		Padding(padY, padX, padY, padX).
-		Background(t.Surface).Radius(8).
-		Border(1, border).
+		Background(surface).Radius(8).
+		Border(1, t.Border).
+		FocusRing(false).
 		DragWindow().
 		Children(func() {
 			ui.Text(c, host.display).

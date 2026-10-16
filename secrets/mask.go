@@ -14,6 +14,8 @@ type Config struct {
 	ExtraPatterns   []string
 	MinEntropyBits  float64
 	MinSecretLength int
+	// HonorPasteboardConcealed masks the whole card when the copy was concealed.
+	HonorPasteboardConcealed bool
 }
 
 var builtinPatterns = []*regexp.Regexp{
@@ -27,8 +29,14 @@ var builtinPatterns = []*regexp.Regexp{
 }
 
 // DisplayText returns text safe to show on a card.
-func DisplayText(raw string, cfg Config) string {
-	if !cfg.Enabled || raw == "" {
+func DisplayText(raw string, cfg Config, pasteboardConcealed bool) string {
+	if raw == "" {
+		return raw
+	}
+	if pasteboardConcealed && cfg.HonorPasteboardConcealed {
+		return maskMatch(raw)
+	}
+	if !cfg.Enabled {
 		return raw
 	}
 	out := raw

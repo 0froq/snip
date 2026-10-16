@@ -9,26 +9,69 @@ frameless = true
 panel = true
 
 [card]
+# placement: near-selection (default), near-cursor, or fixed
+placement = "near-selection"
 min_width = 120
 max_width = 480
-height = 44
+max_height = 220
 max_lines = 2
+active_color = "#C4784A"
+double_click_paste = true
 padding_x = 10
 padding_y = 6
 font_size = 12
-char_width = 7
 cascade_origin_x = 24
 cascade_origin_y = 24
 cascade_step_x = 12
 cascade_step_y = 10
 
-[shortcuts]
-show_all = "CmdOrCtrl+Shift+S"
-hide_all = "CmdOrCtrl+Shift+H"
-next = "CmdOrCtrl+Shift+]"
-prev = "CmdOrCtrl+Shift+["
-paste = "CmdOrCtrl+Shift+V"
-delete = "CmdOrCtrl+Shift+Backspace"
+language = "en"
+
+[motion]
+enabled = true
+duration_ms = 160
+
+[leader]
+shortcut = "CmdOrCtrl+Shift+Space"
+timeout_ms = 1500
+double_press_ms = 400
+pin_ms = 900
+
+[bindings.toggle]
+direct = "CmdOrCtrl+Shift+S"
+leader = "s"
+
+[bindings.next]
+direct = "CmdOrCtrl+Shift+]"
+leader = "j"
+sticky = true
+
+[bindings.prev]
+direct = "CmdOrCtrl+Shift+["
+leader = "k"
+sticky = true
+
+[bindings.paste]
+direct = "CmdOrCtrl+Shift+V"
+leader = "v"
+
+[bindings.delete]
+direct = "CmdOrCtrl+Shift+Backspace"
+leader = "d"
+
+[bindings.pin]
+direct = "CmdOrCtrl+Shift+F"
+leader = "p"
+sticky = true
+
+[bindings.settings]
+direct = "CmdOrCtrl+,"
+leader = ","
+
+[pasteboard]
+honor_concealed = true
+skip_transient = true
+skip_auto_generated = true
 
 [secrets]
 mask_enabled = true

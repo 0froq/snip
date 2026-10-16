@@ -13,11 +13,34 @@ This repo was built and cross-compiled on Linux; run and exercise it on a Mac.
 
 ```bash
 # From repo root — produces build/darwin-arm64/snip.app
-go tool mygo build -platform darwin/arm64
+go tool mygo build -platform darwin/arm64 -sign "snip local"
 
-# Alternative: single binary (no .app bundle)
+# Alternative: single binary (no .app bundle). This ad hoc signature
+# does not keep Accessibility across rebuilds; prefer the command above.
 GOOS=darwin GOARCH=arm64 go build -o snip .
 ```
+
+### Stable code signature
+
+MyGo signs ad hoc by default (`codesign -s -`). That signature’s hash changes on every rebuild, so macOS TCC treats the new binary as a different app. Accessibility can look enabled while double-click paste still opens System Settings.
+
+Create one local code-signing certificate, then reuse it:
+
+1. Open Keychain Access.
+2. Certificate Assistant → Create a Certificate…
+3. Name: `snip local`
+4. Identity Type: Self Signed Root
+5. Certificate Type: Code Signing
+
+```bash
+go tool mygo build -platform darwin/arm64 -sign "snip local"
+# or, after an unsigned build:
+SNIP_SIGN_IDENTITY="snip local" ./scripts/sign-mac.sh
+```
+
+An existing Apple Development identity works the same way (`security find-identity -v -p codesigning` lists them). Grant Accessibility once for that signature. Later builds signed with the same identity keep the grant.
+
+`scripts/sign-mac.sh` refuses to ad hoc sign. snip asks `AXIsProcessTrusted` without the prompt option first, and opens the Accessibility pane only when that check is false.
 
 ## Run on Mac
 
@@ -30,7 +53,9 @@ Optional config: copy `config.toml` to `~/Library/Application Support/snip/confi
 
 `max_cards` (default **20**) caps how many snippets are kept. When a new copy would exceed the limit, the **oldest** cards are closed and removed first (FIFO).
 
-Snippet cards are small paper strips (default about **240×44** pt, auto width between `[card].min_width` and `[card].max_width`, **1–2 lines** with ellipsis). Drag a card by its surface (`ui.Element.DragWindow()` on the frameless window). Positions are remembered per card for the session (and restored via MyGo `StateKey` when IDs repeat).
+Snippet cards are small paper strips. A short copy stays on one line and is only as wide as that text plus padding. A long copy grows up to `max_width`, wraps, and ends with an ellipsis after `max_lines`. `min_width` is the narrowest a longer card can be dragged, and it does not stretch a short note. Drag the middle of a card to move it. Drag an edge to change its width or visible line count. Double click a card to paste it. This is on by default and can be turned off.
+
+New cards are placed with `[card].placement` (default **`near-selection`**). snip asks the frontmost app for the focused selection bounds via the Accessibility API and opens the card just below that text (or above when there is no room), clamped to the monitor work area. When that fails (browsers, Electron, terminals), it falls back to near the mouse cursor. **`near-cursor`** skips the selection step. **`fixed`** keeps the old cascade from the top-left corner.
 
 ### AeroSpace (tiling window manager)
 
@@ -52,22 +77,32 @@ on-window-detected = [
 ]
 ```
 
+Settings is a focusable frameless paper window. Its header moves the window. The close button, Escape, and Cmd W close it.
+
+### Settings
+
+Open Settings from the menu bar item, the snip app menu, or the Settings hotkey (default **Cmd+,**). The panel lists the options most people need. Save writes that file and applies the change right away. The non activating panel waits until the next launch. Card chrome stays frameless unless you set `frameless = false` under `[window]` in `config.toml` for advanced debugging.
+
+The file Settings writes is the one snip loaded (`config.toml` in the working directory, or `~/Library/Application Support/snip/config.toml`). If neither file exists yet, Save creates the Application Support copy.
+
 ### Permissions
 
-1. **Accessibility** (required for paste simulation): System Settings → Privacy & Security → Accessibility → enable **snip**. On first launch the app logs a reminder; failed paste opens the Accessibility pane.
+1. **Accessibility** (required for paste simulation): System Settings → Privacy & Security → Accessibility → enable **snip**. The app prompts only when `AXIsProcessTrusted` is false. A failed paste opens the Accessibility pane only in that case. Sign with a stable identity (see above) so the grant survives rebuilds.
 2. No special permission for clipboard **read** on macOS for this prototype (general pasteboard polling).
 
-### Global shortcuts (defaults)
+### Shortcuts
 
-| Action | Shortcut |
-|--------|----------|
-| Show all cards | Cmd+Shift+S |
-| Hide all cards | Cmd+Shift+H |
-| Select next / previous | Cmd+Shift+] / Cmd+Shift+[ |
-| Paste selected card | Cmd+Shift+V |
-| Delete selected card | Cmd+Shift+Backspace |
+Each action has a direct global shortcut and a leader key. Either field may be empty. Each one can require a double press. A leader binding can stay active after it runs, which is useful for next, previous, and flash.
 
-Change these under `[shortcuts]` in `config.toml`. If registration fails, MyGo logs an error (shortcut taken by another app).
+The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Cards show a small hint sticker in their top corner. Escape cancels the mode. The mode also closes after `timeout_ms`.
+
+Flash brings every card forward, colors it once, and gives it a quick scale pulse.
+
+### Language and config path
+
+`language` is `en` or `zh` (Settings, menus, and leader hints).
+
+Point snip at a config file with `-config path` or the `SNIP_CONFIG` environment variable. Settings shows the path it loaded.
 
 ## What to verify (four capabilities)
 
@@ -77,7 +112,7 @@ Change these under `[shortcuts]` in `config.toml`. If registration fails, MyGo l
 2. Copy plain text from Safari or Notes (Cmd+C).
 3. Expect a new card within ~300 ms showing the text (secrets masked if applicable).
 4. Copy again (different text): another card appears.
-5. Copy the **same** text twice: two cards (changeCount-based detection).
+5. Copy the same text again: the existing card becomes active and pulses. A new card is not created.
 6. With `max_cards = 3`, copy four distinct strings: only the three newest cards remain.
 
 ### 2. Floating cards
@@ -90,7 +125,7 @@ Change these under `[shortcuts]` in `config.toml`. If registration fails, MyGo l
 ### 3. Paste selected card
 
 1. Grant Accessibility.
-2. Select a card (Cmd+Shift+] / [ — accent border).
+2. Select a card with Cmd+Shift+] or Cmd+Shift+[, or click the card. The active card uses your active color.
 3. Focus a text field in another app.
 4. Press Cmd+Shift+V: clipboard gets the card text and Cmd+V is simulated into the frontmost app.
 
@@ -98,6 +133,7 @@ Change these under `[shortcuts]` in `config.toml`. If registration fails, MyGo l
 
 1. With `content_protection = true`, start a FaceTime/Zoom/screen recording and confirm cards are **not** visible in the capture (MyGo `SetContentProtection` → `NSWindowSharingNone`).
 2. Copy `password=hunter2` or a `sk-…` OpenAI-style key; the card should show masked text, while paste still uses the real value.
+3. Copy from a password manager that sets `org.nspasteboard.ConcealedType`: the card masks the text even when `content_protection` is off. Transient and auto generated markers can skip creating a card (see `[pasteboard]` in Settings or `config.toml`).
 
 ## Tests (pure logic, any OS)
 
@@ -110,8 +146,9 @@ go test ./...
 | Path | Role |
 |------|------|
 | `main.go` | MyGo app entry |
-| `app/app.go` | Cards, shortcuts, clipboard loop |
+| `app/app.go` | Cards, shortcuts, clipboard loop, settings window |
 | `internal/macpaste/` | Darwin pasteboard changeCount + CGEvent Cmd+V (purego) |
+| `internal/macplace/` | Card placement (AX selection bounds, cursor, screen clamp) |
 | `secrets/` | Regex / entropy masking |
 | `store/` | In-memory card store |
 | `config/` | TOML config |

@@ -3,7 +3,6 @@
 package macpaste
 
 import (
-	"errors"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -18,26 +17,27 @@ const Supported = true
 type id = objc.ID
 
 var (
-	loadOnce     sync.Once
-	msgSendAddr  uintptr
-	poolPushFn   uintptr
-	poolPopFn    uintptr
-	selCache     = map[string]objc.SEL{}
-	clsCache     = map[string]id{}
-	libObjC      uintptr
-	libCG        uintptr
-	libAppKit    uintptr
-	libAppServ   uintptr
+	loadOnce    sync.Once
+	msgSendAddr uintptr
+	poolPushFn  uintptr
+	poolPopFn   uintptr
+	selCache    = map[string]objc.SEL{}
+	clsCache    = map[string]id{}
+	libObjC     uintptr
+	libCG       uintptr
+	libAppKit   uintptr
+	libAppServ  uintptr
 
 	cgEventCreateKeyboardEvent func(source uintptr, virtualKey uint16, keyDown bool) uintptr
 	cgEventSetFlags            func(event uintptr, flags uint64)
 	cgEventPost                func(tap uint32, event uintptr)
-	axIsProcessTrustedWithOpts func(options uintptr) bool
+	axIsProcessTrusted         func() uint8
+	axIsProcessTrustedWithOpts func(options uintptr) uint8
 )
 
 const (
-	utString              = "public.utf8-plain-text"
-	nsUTF8StringEncoding  = 4
+	utString                = "public.utf8-plain-text"
+	nsUTF8StringEncoding    = 4
 	kCGHIDEventTap          = 0
 	kCGEventKeyDown         = 10
 	kCGEventKeyUp           = 11
@@ -59,6 +59,7 @@ func load() {
 		purego.RegisterLibFunc(&cgEventCreateKeyboardEvent, libCG, "CGEventCreateKeyboardEvent")
 		purego.RegisterLibFunc(&cgEventSetFlags, libCG, "CGEventSetFlags")
 		purego.RegisterLibFunc(&cgEventPost, libCG, "CGEventPost")
+		purego.RegisterLibFunc(&axIsProcessTrusted, libAppServ, "AXIsProcessTrusted")
 		purego.RegisterLibFunc(&axIsProcessTrustedWithOpts, libAppServ, "AXIsProcessTrustedWithOptions")
 	})
 }
@@ -173,19 +174,20 @@ func ReadPlainText() string {
 	return s
 }
 
-// AccessibilityTrusted reports AX trust; prompt opens System Settings when false.
+// AccessibilityTrusted reports AX trust. The prompt option is passed only
+// after a silent check fails, so a trusted app is never asked again.
 func AccessibilityTrusted(prompt bool) bool {
 	load()
 	var trusted bool
 	withPool(func() {
-		if !prompt {
-			trusted = axIsProcessTrustedWithOpts(0)
+		trusted = axIsProcessTrusted() != 0 || axIsProcessTrustedWithOpts(0) != 0
+		if trusted || !prompt {
 			return
 		}
 		key := nsString("AXTrustedCheckOptionPrompt")
 		num := send(class("NSNumber"), "numberWithBool:", uintptr(1))
 		dict := send(class("NSDictionary"), "dictionaryWithObject:forKey:", uintptr(num), uintptr(key))
-		trusted = axIsProcessTrustedWithOpts(uintptr(dict))
+		trusted = axIsProcessTrustedWithOpts(uintptr(dict)) != 0
 	})
 	return trusted
 }
@@ -194,7 +196,7 @@ func AccessibilityTrusted(prompt bool) bool {
 func PostCommandV() error {
 	load()
 	if !AccessibilityTrusted(false) {
-		return errors.New("macpaste: accessibility permission required for simulated paste")
+		return ErrAccessibility
 	}
 	withPool(func() {
 		down := cgEventCreateKeyboardEvent(0, kVK_ANSI_V, true)

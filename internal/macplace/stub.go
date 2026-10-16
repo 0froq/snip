@@ -12,3 +12,5 @@ func Origin(_ config.Placement, _ int, _ int) (x, y int, ok bool) {
 	return 0, 0, false
 }
 
+// SquareWindow is a no-op off macOS.
+func SquareWindow(uintptr) {}

@@ -61,16 +61,18 @@ type cardUI struct {
 	userW    int
 	userH    int
 
-	pointerActive  bool
-	pointerDragged bool
-	dragOffX       int
-	dragOffY       int
-	pressScreenX   int
-	pressScreenY   int
-	resizeEdge     int
-	resizeStartW   int
-	resizeStartX   int
-	syncing        bool
+	pointerActive    bool
+	pointerDragged   bool
+	dragOffX         int
+	dragOffY         int
+	pressScreenX     int
+	pressScreenY     int
+	resizeEdge       int
+	resizeStartW     int
+	resizeStartX     int
+	resizeStartLines int
+	lines            int
+	syncing          bool
 }
 
 // New creates the application state.
@@ -196,7 +198,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	cardCfg := cfg.Card
 	width, height := cardCfg.EstimateSize(host.display)
 	x, y := a.cardOrigin(card.ID, idx, width, height, placeX, placeY, havePlacement)
-	minH := cardCfg.EffectiveLineHeight() + 2*cardCfg.EffectivePaddingY() + 2*config.CardBorderPx()
+	minH := cardCfg.HeightForLines(1)
 
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:           "snip",
@@ -211,10 +213,9 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		Frameless:       cfg.Window.EffectiveFrameless(),
 		Panel:           cfg.Window.EffectivePanel(),
 		AlwaysOnTop:     cfg.Window.AlwaysOnTop,
-		Transparent:     true,
 		DisableShadow:   true,
-		DisableResize:   false,
-		BackgroundColor: "#00000000",
+		DisableResize:   true,
+		BackgroundColor: "light-dark(#F3EADF, #312924)",
 		StateKey:        "card-" + card.ID,
 		Content:         ui.View(func(c *ui.Context) { a.cardView(c, host) }),
 	})
@@ -230,6 +231,8 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		a.visible = true
 		win.ShowInactive()
 	}
+	macplace.SquareWindow(win.NativeHandle())
+	win.SetResizable(false)
 	a.syncCardHeight(host)
 	a.refreshSelection()
 }
@@ -256,6 +259,14 @@ func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, plac
 		c.CascadeOriginY + (cascadeIndex%12)*c.CascadeStepY
 }
 
+func (a *App) slipLines(host *cardUI, width int) int {
+	cardCfg := a.config().Card
+	if width <= 0 {
+		width = cardCfg.EstimateWidth(host.display)
+	}
+	return cardCfg.VisibleLines(host.lines, cardCfg.WrappedLines(host.display, width))
+}
+
 func (a *App) syncCardHeight(host *cardUI) {
 	if host == nil || host.win == nil || host.pointerActive || host.syncing {
 		return
@@ -272,7 +283,7 @@ func (a *App) syncCardHeight(host *cardUI) {
 	if w > maxW {
 		w = maxW
 	}
-	wantH := cardCfg.HeightForWidth(host.display, w)
+	wantH := cardCfg.HeightForLines(a.slipLines(host, w))
 	curW, curH := host.win.Size()
 	if curW != w || curH != wantH {
 		host.win.SetSize(w, wantH)
@@ -291,9 +302,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	cfg := a.config()
 	dark := c.Theme().Dark
 	accent := activeColor(cfg.Card.ActiveColor, dark)
-	theme := paperTheme(dark, accent)
-	theme.Background = ui.Transparent
-	c.SetTheme(theme)
+	c.SetTheme(paperTheme(dark, accent))
 	t := c.Theme()
 	surface := t.Surface
 	border := paperEdge(dark)
@@ -309,14 +318,16 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		motion.Enter = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 8}
 		motion.Exit = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 6}
 	}
-	tl, tr, br, bl := paperCorners(host.card.ID)
 	seed := paperSeed(host.card.ID)
+	slipW := host.userW
+	if host.win != nil {
+		slipW, _ = host.win.Size()
+	}
+	shown := a.slipLines(host, slipW)
 	col := ui.Column(c).Fill().
 		Padding(padY, padX, padY, padX).
 		Background(surface).
-		Radius(tl, tr, br, bl).
 		Border(1, border).
-		Clip().
 		FocusRing(false).
 		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) })
 	if cfg.Motion.Enabled {
@@ -333,7 +344,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 			FixedLineHeight(cardCfg.LineBox()).
 			TextColor(paperInk(dark)).
 			Ellipsis("…").
-			MaxLines(cardCfg.EffectiveMaxLines())
+			MaxLines(shown)
 		if a.leaderActive() {
 			a.leaderHint(c, host)
 		}

@@ -238,13 +238,6 @@ func (c Card) HeightForWidth(display string, width int) int {
 		width = maxW
 	}
 	_, h := c.shapedHeight(display, width)
-	minH := c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*cardBorderPx
-	if h < minH {
-		h = minH
-	}
-	if h > c.EffectiveMaxHeight() {
-		h = c.EffectiveMaxHeight()
-	}
 	return h
 }
 

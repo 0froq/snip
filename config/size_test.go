@@ -46,7 +46,7 @@ func TestHeightForWidthMixedScript(t *testing.T) {
 		t.Fatal("expected at least one line")
 	}
 	h := c.HeightForWidth(text, w)
-	min := lines*c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	min := lines*int(c.LineBox()) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
 	if h < min {
 		t.Fatalf("height %d below shaped minimum %d", h, min)
 	}
@@ -77,6 +77,25 @@ func TestEstimateSizeCapsLines(t *testing.T) {
 	maxH := 2*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
 	if h > maxH {
 		t.Fatalf("height %d over %d", h, maxH)
+	}
+}
+
+func TestVisibleLinesKeepsChoice(t *testing.T) {
+	c := Default().Card
+	if n := c.VisibleLines(0, 5); n != c.EffectiveMaxLines() {
+		t.Fatalf("default cap %d", n)
+	}
+	if n := c.VisibleLines(4, 6); n != 4 {
+		t.Fatalf("chosen %d", n)
+	}
+	if n := c.VisibleLines(4, 3); n != 3 {
+		t.Fatalf("shrink to text %d", n)
+	}
+	if n := c.VisibleLines(1, 8); n != 1 {
+		t.Fatalf("one line %d", n)
+	}
+	if n := c.VisibleLines(100, 100); n != c.LinesThatFit() {
+		t.Fatalf("max height cap %d", n)
 	}
 }
 

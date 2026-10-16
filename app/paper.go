@@ -11,14 +11,6 @@ func paperSeed(id string) uint32 {
 	return h
 }
 
-// paperRadius is the same on every corner so the slip matches a rectangular window.
-const paperRadius = 10
-
-func paperCorners(id string) (float32, float32, float32, float32) {
-	_ = id
-	return paperRadius, paperRadius, paperRadius, paperRadius
-}
-
 func paperInk(dark bool) ui.Color {
 	if dark {
 		return ui.Hex("#E7DDD0")
@@ -50,7 +42,11 @@ func paintPaperGrain(p *ui.Painter, r ui.Rect, dark bool, seed uint32) {
 		fiber = ui.Hex("#140F0C").Alpha(0.22)
 		speck = ui.Hex("#A89884").Alpha(0.05)
 	}
-	p.Clip(r, 4, func() {
+	inner := ui.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 2}
+	if inner.W < 1 || inner.H < 1 {
+		return
+	}
+	p.Clip(inner, 0, func() {
 		n := 8 + int(seed%5)
 		for i := 0; i < n; i++ {
 			h := seed*uint32(i+1)*2246822519 + 3266489917
@@ -62,13 +58,6 @@ func paintPaperGrain(p *ui.Painter, r ui.Rect, dark bool, seed uint32) {
 			if i%3 == 0 {
 				p.Line(x+1, y+2, x+2, y+2, 0.7, speck)
 			}
-		}
-		edge := paperEdge(dark).Alpha(0.55)
-		bite := 3 + int(seed%4)
-		for i := 0; i < bite; i++ {
-			h := seed*uint32(i+9) + 97
-			x := r.X + 6 + float32(h%uint32(max(r.W-12, 1)))
-			p.Line(x, r.Y+r.H-1, x+float32(2+h%3), r.Y+r.H-1, 0.8, edge)
 		}
 	})
 }

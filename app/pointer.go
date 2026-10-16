@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/0froq/snip/config"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -69,6 +70,7 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			}
 			host.pointerActive = true
 			host.pointerDragged = false
+			host.pressClicks = ev.Clicks
 			sp := mygo.Screen.CursorScreenPoint()
 			wx, wy := win.Position()
 			host.pressScreenX, host.pressScreenY = sp.X, sp.Y
@@ -101,6 +103,9 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			host.pointerActive = false
 			if !host.pointerDragged {
 				a.selectID(host.card.ID)
+				if host.pressClicks >= 2 && a.config().Card.DoubleClickPaste {
+					a.pasteCard(host)
+				}
 			}
 			host.pointerDragged = false
 			a.syncCardHeight(host)
@@ -188,16 +193,16 @@ func (a *App) applySlipResize(host *cardUI, win *mygo.Window) {
 	}
 	lines := host.resizeStartLines
 	if edge&edgeS != 0 {
-		full := cardCfg.WrappedLines(host.display, w)
-		if fit := cardCfg.LinesThatFit(); full > fit {
-			full = fit
-		}
-		lines = snapLines(host.resizeStartLines, dy, int(cardCfg.LineBox()), 1, full)
+		full := cardCfg.Layout(host.display, w, 1<<20).FullLines
+		linePx := cardCfg.Layout("M", w, 1).Height - 2*cardCfg.EffectivePaddingY() - 2*config.CardBorderPx()
+		lines = snapLines(host.resizeStartLines, dy, linePx, 1, full)
 		host.lines = lines
 	} else {
 		lines = a.slipLines(host, w)
 	}
-	h := cardCfg.HeightForLines(lines)
+	layout := cardCfg.Layout(host.display, w, lines)
+	host.rendered = layout.Text
+	h := layout.Height
 	_, y := win.Position()
 	win.SetSize(w, h)
 	win.SetPosition(x, y)

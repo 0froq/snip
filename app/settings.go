@@ -139,13 +139,12 @@ func (a *App) settingsView(c *ui.Context) {
 							labeledInput(c, tr(lang, "min_w"), &f.MinWidth)
 							labeledInput(c, tr(lang, "max_w"), &f.MaxWidth)
 							labeledInput(c, tr(lang, "max_h"), &f.MaxHeight)
-							labeledInput(c, tr(lang, "line_h"), &f.LineHeight)
 							labeledInput(c, tr(lang, "max_lines"), &f.MaxLines)
 							labeledInput(c, tr(lang, "pad_x"), &f.PaddingX)
 							labeledInput(c, tr(lang, "pad_y"), &f.PaddingY)
 							labeledInput(c, tr(lang, "font"), &f.FontSize)
-							labeledInput(c, tr(lang, "char_w"), &f.CharWidth)
 							labeledInput(c, tr(lang, "active_color"), &f.ActiveColor)
+							ui.Checkbox(c, &f.DoubleClickPaste, tr(lang, "double_click_paste"))
 							labeledInput(c, "Cascade origin x", &f.CascadeOriginX)
 							labeledInput(c, "Cascade origin y", &f.CascadeOriginY)
 							labeledInput(c, "Cascade step x", &f.CascadeStepX)
@@ -156,28 +155,12 @@ func (a *App) settingsView(c *ui.Context) {
 							labeledInput(c, tr(lang, "motion_ms"), &f.MotionMs)
 						})
 						a.settingsSection(c, tr(lang, "hotkeys"), func() {
-							ui.Checkbox(c, &f.Direct, tr(lang, "direct"))
-							labeledInput(c, tr(lang, "toggle"), &f.Toggle)
-							labeledInput(c, tr(lang, "next"), &f.Next)
-							labeledInput(c, tr(lang, "prev"), &f.Prev)
-							labeledInput(c, tr(lang, "paste"), &f.Paste)
-							labeledInput(c, tr(lang, "delete"), &f.Delete)
-							labeledInput(c, tr(lang, "pin"), &f.Pin)
-							labeledInput(c, tr(lang, "settings"), &f.Settings)
-						})
-						a.settingsSection(c, tr(lang, "leader"), func() {
 							labeledInput(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
 							labeledInput(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
-							labeledInput(c, tr(lang, "leader_toggle"), &f.LeaderToggle)
-							labeledInput(c, tr(lang, "leader_next"), &f.LeaderNext)
-							labeledInput(c, tr(lang, "leader_prev"), &f.LeaderPrev)
-							labeledInput(c, tr(lang, "leader_paste"), &f.LeaderPaste)
-							labeledInput(c, tr(lang, "leader_delete"), &f.LeaderDelete)
-							labeledInput(c, tr(lang, "leader_pin"), &f.LeaderPin)
-							labeledInput(c, tr(lang, "leader_settings"), &f.LeaderSettings)
 							labeledInput(c, tr(lang, "double_ms"), &f.DoublePressMs)
-							ui.Text(c, tr(lang, "double_map")).FontSize(12).TextColor(t.TextMuted).MaxLines(2)
-							ui.TextArea(c, &f.DoubleMap).Height(56)
+							for _, item := range f.Bindings.NamedBindings() {
+								settingsBinding(c, tr(lang, item.Name), item.Binding, lang)
+							}
 						})
 						a.settingsSection(c, tr(lang, "secrets"), func() {
 							ui.Checkbox(c, &f.MaskEnabled, tr(lang, "mask"))
@@ -242,6 +225,19 @@ func labeledInput(c *ui.Context, label string, value *string) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, label).FontSize(12).Grow(1)
 		ui.TextInput(c, value).Width(180)
+	})
+}
+
+func settingsBinding(c *ui.Context, label string, binding *config.ActionBinding, lang string) {
+	ui.Column(c).Gap(6).Padding(8, 0).Children(func() {
+		ui.Text(c, label).Font("Georgia").FontSize(13)
+		labeledInput(c, tr(lang, "direct_binding"), &binding.Direct)
+		ui.Checkbox(c, &binding.DirectDouble, tr(lang, "double_press"))
+		labeledInput(c, tr(lang, "leader_binding"), &binding.Leader)
+		ui.Row(c).Gap(12).Children(func() {
+			ui.Checkbox(c, &binding.LeaderDouble, tr(lang, "double_press"))
+			ui.Checkbox(c, &binding.Sticky, tr(lang, "sticky"))
+		})
 	})
 }
 

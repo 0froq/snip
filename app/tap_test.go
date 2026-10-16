@@ -5,6 +5,23 @@ import (
 	"time"
 )
 
+func TestPressOnlyRequiresSecondPress(t *testing.T) {
+	var fired []string
+	var gate tapGate
+	gate.pressOnly("direct:paste", "paste", true, time.Second, func(action string) {
+		fired = append(fired, action)
+	})
+	if len(fired) != 0 {
+		t.Fatalf("first press fired %v", fired)
+	}
+	gate.pressOnly("direct:paste", "paste", true, time.Second, func(action string) {
+		fired = append(fired, action)
+	})
+	if len(fired) != 1 || fired[0] != "paste" {
+		t.Fatalf("second press fired %v", fired)
+	}
+}
+
 func TestTapStepSingle(t *testing.T) {
 	fire, next, wait := tapStep("", "v", "paste", "", 0, time.Second)
 	if fire != "paste" || next != "" || wait {

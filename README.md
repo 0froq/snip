@@ -30,7 +30,7 @@ Optional config: copy `config.toml` to `~/Library/Application Support/snip/confi
 
 `max_cards` (default **20**) caps how many snippets are kept. When a new copy would exceed the limit, the **oldest** cards are closed and removed first (FIFO).
 
-Snippet cards are small paper strips (default about **240×44** pt, auto width between `[card].min_width` and `[card].max_width`, **1–2 lines** with ellipsis). Drag a card by its surface (`ui.Element.DragWindow()` on the frameless window). Positions are remembered per card for the session (and restored via MyGo `StateKey` when IDs repeat).
+Snippet cards are small paper strips. A short copy stays on one line. A long copy grows to `max_width`, wraps, and ends with an ellipsis after `max_lines`. The window is measured from the text that is actually shown plus its padding. Drag the middle of a card to move it. Drag an edge to change its width or visible line count. Double click a card to paste it. This is on by default and can be turned off.
 
 New cards are placed with `[card].placement` (default **`near-selection`**). snip asks the frontmost app for the focused selection bounds via the Accessibility API and opens the card just below that text (or above when there is no room), clamped to the monitor work area. When that fails (browsers, Electron, terminals), it falls back to near the mouse cursor. **`near-cursor`** skips the selection step. **`fixed`** keeps the old cascade from the top-left corner.
 
@@ -54,7 +54,7 @@ on-window-detected = [
 ]
 ```
 
-Settings is a normal window with a title bar, so it can take keyboard focus. The floating rule above floats that window too. To let AeroSpace tile Settings and still float the cards, skip the window titled Settings.
+Settings is a focusable frameless paper window. Its header moves the window. The close button, Escape, and Cmd W close it.
 
 ### Settings
 
@@ -69,13 +69,11 @@ The file Settings writes is the one snip loaded (`config.toml` in the working di
 
 ### Shortcuts
 
-One shortcut shows or hides every card (`toggle`, default Cmd+Shift+S). Optional direct shortcuts remain for next, previous, paste, delete, flash, and Settings. Turn them off with `direct = false` if they clash with other apps.
+Each action has a direct global shortcut and a leader key. Either field may be empty. Each one can require a double press. A leader binding can stay active after it runs, which is useful for next, previous, and flash.
 
-A leader shortcut (default Cmd+Shift+Space) starts a short chord mode. Then press one key: `s` toggle, `j` and `k` next and previous, `v` paste, `d` delete, `p` flash, comma settings, `1` to `9` pick a card, Escape cancels. Cards show those hints while the leader is active. It times out (`timeout_ms`).
+The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Cards show a small hint sticker in their top corner. Escape cancels the mode. The mode also closes after `timeout_ms`.
 
-Double press: under `[leader]`, `double_press_ms` is the longest gap. `double` maps a key to another action, for example `v = "pin"`. The first press waits. A second press in time runs the mapped action.
-
-Flash (`pin`) brings every card forward with the active color, then puts them back.
+Flash brings every card forward, colors it once, and gives it a quick bounce.
 
 ### Language and config path
 

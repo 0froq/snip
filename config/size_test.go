@@ -2,37 +2,41 @@ package config
 
 import (
 	"math"
+	"strings"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func TestEstimateSizeOneLine(t *testing.T) {
 	c := Default().Card
-	lines, h := c.shapedHeight("hi", c.EstimateWidth("hi"))
-	if lines != 1 {
-		t.Fatalf("lines %d", lines)
+	layout := c.Layout("hi", 0, 0)
+	if layout.VisibleLines != 1 || layout.Truncated {
+		t.Fatalf("layout %+v", layout)
 	}
-	two := 2*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
-	if h >= two {
-		t.Fatalf("one line height %d reaches a second line at %d", h, two)
+	if layout.Width != c.EffectiveMinWidth() {
+		t.Fatalf("short width %d", layout.Width)
+	}
+}
+
+func TestLayoutWrapsOnlyAtMaxWidth(t *testing.T) {
+	c := Default().Card
+	short := c.Layout("short note", 0, 0)
+	if short.Width >= c.EffectiveMaxWidth() || short.FullLines != 1 {
+		t.Fatalf("short layout %+v", short)
+	}
+	long := c.Layout(strings.Repeat("wide text ", 100), 0, 0)
+	if long.Width != c.EffectiveMaxWidth() || long.FullLines <= 1 {
+		t.Fatalf("long layout %+v", long)
 	}
 }
 
 func TestHeightForWidthCJKWraps(t *testing.T) {
 	c := Default().Card
-	text := "还有这个样式，我认为既然要做纸色，窗口可以再纸一点"
-	w := 220
-	lines, _ := c.shapedHeight(text, w)
-	if lines < 2 {
-		t.Fatalf("expected at least 2 wrapped lines for CJK, got %d at width %d", lines, w)
-	}
-	h := c.HeightForWidth(text, w)
-	two := 2*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
-	three := 3*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
-	if h < two {
-		t.Fatalf("height %d too small for two lines (need >= %d)", h, two)
-	}
-	if h >= three {
-		t.Fatalf("height %d includes a blank third line", h)
+	text := strings.Repeat("还有这个样式，我认为既然要做纸色，窗口可以再纸一点", 2)
+	layout := c.Layout(text, 220, 0)
+	if layout.VisibleLines != 2 || !layout.Truncated || !strings.HasSuffix(layout.Text, "…") {
+		t.Fatalf("layout %+v", layout)
 	}
 }
 
@@ -41,14 +45,11 @@ func TestHeightForWidthMixedScript(t *testing.T) {
 	c.MaxWidth = 280
 	text := "hello 你好 world"
 	w := 200
-	lines, _ := c.shapedHeight(text, w)
-	if lines < 1 {
-		t.Fatal("expected at least one line")
-	}
-	h := c.HeightForWidth(text, w)
-	min := lines*int(c.LineBox()) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
-	if h < min {
-		t.Fatalf("height %d below shaped minimum %d", h, min)
+	layout := c.Layout(text, w, 2)
+	_, measured := ui.ShapeText(layout.Text, c.cardFont(), c.textWidthForSlip(w)).Size()
+	want := int(math.Ceil(float64(measured))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	if layout.Height != want {
+		t.Fatalf("height %d want measured %d", layout.Height, want)
 	}
 }
 
@@ -59,10 +60,10 @@ func TestHeightForWidthShrinksWhenWider(t *testing.T) {
 	c.PaddingX = 10
 	c.MaxLines = 4
 	long := "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
-	narrow := c.HeightForWidth(long, 80)
-	wide := c.HeightForWidth(long, 200)
-	if wide >= narrow {
-		t.Fatalf("wide height %d should be less than narrow %d", wide, narrow)
+	narrow := c.Layout(long, 80, 4)
+	wide := c.Layout(long, 200, 4)
+	if wide.Height >= narrow.Height {
+		t.Fatalf("wide height %d should be less than narrow %d", wide.Height, narrow.Height)
 	}
 }
 
@@ -73,39 +74,17 @@ func TestEstimateSizeCapsLines(t *testing.T) {
 	c.PaddingX = 10
 	c.MaxLines = 2
 	long := "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
-	_, h := c.EstimateSize(long)
-	maxH := 2*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
-	if h > maxH {
-		t.Fatalf("height %d over %d", h, maxH)
+	layout := c.Layout(long, 80, 0)
+	if layout.VisibleLines != 2 || !layout.Truncated {
+		t.Fatalf("layout %+v", layout)
 	}
 }
 
-func TestVisibleLinesKeepsChoice(t *testing.T) {
+func TestLayoutKeepsChosenLines(t *testing.T) {
 	c := Default().Card
-	if n := c.VisibleLines(0, 5); n != c.EffectiveMaxLines() {
-		t.Fatalf("default cap %d", n)
-	}
-	if n := c.VisibleLines(4, 6); n != 4 {
-		t.Fatalf("chosen %d", n)
-	}
-	if n := c.VisibleLines(4, 3); n != 3 {
-		t.Fatalf("shrink to text %d", n)
-	}
-	if n := c.VisibleLines(1, 8); n != 1 {
-		t.Fatalf("one line %d", n)
-	}
-	if n := c.VisibleLines(100, 100); n != c.LinesThatFit() {
-		t.Fatalf("max height cap %d", n)
-	}
-}
-
-func TestEffectiveToggleLegacy(t *testing.T) {
-	s := Shortcuts{ShowAll: "Cmd+Shift+S"}
-	if s.EffectiveToggle() != "Cmd+Shift+S" {
-		t.Fatal(s.EffectiveToggle())
-	}
-	s.Toggle = "Cmd+Shift+A"
-	if s.EffectiveToggle() != "Cmd+Shift+A" {
-		t.Fatal(s.EffectiveToggle())
+	text := strings.Repeat("word ", 60)
+	layout := c.Layout(text, 200, 4)
+	if layout.VisibleLines != 4 || !layout.Truncated {
+		t.Fatalf("chosen layout %+v", layout)
 	}
 }

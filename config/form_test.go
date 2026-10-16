@@ -19,8 +19,8 @@ func TestFormRoundTrip(t *testing.T) {
 	if len(got.Secrets.ExtraPatterns) != 2 || got.Secrets.ExtraPatterns[0] != "foo" {
 		t.Fatalf("patterns %#v", got.Secrets.ExtraPatterns)
 	}
-	if got.Shortcuts.Settings != src.Shortcuts.Settings {
-		t.Fatalf("settings shortcut %q", got.Shortcuts.Settings)
+	if got.Bindings.Settings.Direct != src.Bindings.Settings.Direct {
+		t.Fatalf("settings shortcut %q", got.Bindings.Settings.Direct)
 	}
 }
 

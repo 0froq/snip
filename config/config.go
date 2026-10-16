@@ -3,7 +3,6 @@ package config
 import (
 	"github.com/BurntSushi/toml"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -39,37 +38,55 @@ type Card struct {
 	CascadeOriginY int    `toml:"cascade_origin_y"`
 	// Placement is where new cards spawn: near-selection, near-cursor, or fixed.
 	Placement string `toml:"placement"`
+	// DoubleClickPaste pastes a card when it is double clicked.
+	DoubleClickPaste bool `toml:"double_click_paste"`
 }
 
-// Shortcuts are global accelerator strings (MyGo syntax).
-type Shortcuts struct {
-	Toggle   string `toml:"toggle"`
-	ShowAll  string `toml:"show_all"`
-	HideAll  string `toml:"hide_all"`
-	Next     string `toml:"next"`
-	Prev     string `toml:"prev"`
-	Paste    string `toml:"paste"`
-	Delete   string `toml:"delete"`
-	Pin      string `toml:"pin"`
-	Settings string `toml:"settings"`
-	// Direct registers the shortcuts above as global hotkeys.
-	Direct bool `toml:"direct"`
+// ActionBinding gives one action independent direct and leader bindings.
+type ActionBinding struct {
+	Direct       string `toml:"direct"`
+	DirectDouble bool   `toml:"direct_double"`
+	Leader       string `toml:"leader"`
+	LeaderDouble bool   `toml:"leader_double"`
+	Sticky       bool   `toml:"sticky"`
 }
 
-// Leader is the vim style prefix and the single keys that follow it.
+// ActionBindings contains every command that can be bound.
+type ActionBindings struct {
+	Toggle   ActionBinding `toml:"toggle"`
+	Next     ActionBinding `toml:"next"`
+	Prev     ActionBinding `toml:"prev"`
+	Paste    ActionBinding `toml:"paste"`
+	Delete   ActionBinding `toml:"delete"`
+	Pin      ActionBinding `toml:"pin"`
+	Settings ActionBinding `toml:"settings"`
+}
+
+// NamedBindings returns bindings in stable UI order.
+func (b *ActionBindings) NamedBindings() []struct {
+	Name    string
+	Binding *ActionBinding
+} {
+	return []struct {
+		Name    string
+		Binding *ActionBinding
+	}{
+		{"toggle", &b.Toggle},
+		{"next", &b.Next},
+		{"prev", &b.Prev},
+		{"paste", &b.Paste},
+		{"delete", &b.Delete},
+		{"pin", &b.Pin},
+		{"settings", &b.Settings},
+	}
+}
+
+// Leader controls the prefix and timing shared by leader bindings.
 type Leader struct {
-	Shortcut      string            `toml:"shortcut"`
-	TimeoutMs     int               `toml:"timeout_ms"`
-	Toggle        string            `toml:"toggle"`
-	Next          string            `toml:"next"`
-	Prev          string            `toml:"prev"`
-	Paste         string            `toml:"paste"`
-	Delete        string            `toml:"delete"`
-	Pin           string            `toml:"pin"`
-	Settings      string            `toml:"settings"`
-	DoublePressMs int               `toml:"double_press_ms"`
-	Double        map[string]string `toml:"double"`
-	PinMs         int               `toml:"pin_ms"`
+	Shortcut      string `toml:"shortcut"`
+	TimeoutMs     int    `toml:"timeout_ms"`
+	DoublePressMs int    `toml:"double_press_ms"`
+	PinMs         int    `toml:"pin_ms"`
 }
 
 // Motion controls appear and disappear animation.
@@ -88,16 +105,16 @@ type Secrets struct {
 
 // Config is the full snip configuration.
 type Config struct {
-	ClipboardPollMs int        `toml:"clipboard_poll_ms"`
-	MaxCards        int        `toml:"max_cards"`
-	Window          Window     `toml:"window"`
-	Card            Card       `toml:"card"`
-	Shortcuts       Shortcuts  `toml:"shortcuts"`
-	Secrets         Secrets    `toml:"secrets"`
-	Pasteboard      Pasteboard `toml:"pasteboard"`
-	Leader          Leader     `toml:"leader"`
-	Motion          Motion     `toml:"motion"`
-	Language        string     `toml:"language"`
+	ClipboardPollMs int            `toml:"clipboard_poll_ms"`
+	MaxCards        int            `toml:"max_cards"`
+	Window          Window         `toml:"window"`
+	Card            Card           `toml:"card"`
+	Bindings        ActionBindings `toml:"bindings"`
+	Secrets         Secrets        `toml:"secrets"`
+	Pasteboard      Pasteboard     `toml:"pasteboard"`
+	Leader          Leader         `toml:"leader"`
+	Motion          Motion         `toml:"motion"`
+	Language        string         `toml:"language"`
 }
 
 // Default returns built-in defaults aligned with the prototype goals.
@@ -113,44 +130,36 @@ func Default() Config {
 			Panel:                  boolPtr(true),
 		},
 		Card: Card{
-			MinWidth:       120,
-			MaxWidth:       480,
-			Height:         44,
-			MaxHeight:      220,
-			LineHeight:     18,
-			MaxLines:       2,
-			ActiveColor:    "#C4784A",
-			PaddingX:       10,
-			PaddingY:       6,
-			FontSize:       12,
-			CharWidth:      7,
-			CascadeStepX:   12,
-			CascadeStepY:   10,
-			CascadeOriginX: 24,
-			CascadeOriginY: 24,
+			MinWidth:         120,
+			MaxWidth:         480,
+			Height:           44,
+			MaxHeight:        220,
+			LineHeight:       18,
+			MaxLines:         2,
+			ActiveColor:      "#C4784A",
+			PaddingX:         10,
+			PaddingY:         6,
+			FontSize:         12,
+			CharWidth:        7,
+			CascadeStepX:     12,
+			CascadeStepY:     10,
+			CascadeOriginX:   24,
+			CascadeOriginY:   24,
+			DoubleClickPaste: true,
 		},
-		Shortcuts: Shortcuts{
-			Toggle:   "CmdOrCtrl+Shift+S",
-			Next:     "CmdOrCtrl+Shift+]",
-			Prev:     "CmdOrCtrl+Shift+[",
-			Paste:    "CmdOrCtrl+Shift+V",
-			Delete:   "CmdOrCtrl+Shift+Backspace",
-			Pin:      "CmdOrCtrl+Shift+F",
-			Settings: "CmdOrCtrl+,",
-			Direct:   true,
+		Bindings: ActionBindings{
+			Toggle:   ActionBinding{Direct: "CmdOrCtrl+Shift+S", Leader: "s"},
+			Next:     ActionBinding{Direct: "CmdOrCtrl+Shift+]", Leader: "j", Sticky: true},
+			Prev:     ActionBinding{Direct: "CmdOrCtrl+Shift+[", Leader: "k", Sticky: true},
+			Paste:    ActionBinding{Direct: "CmdOrCtrl+Shift+V", Leader: "v"},
+			Delete:   ActionBinding{Direct: "CmdOrCtrl+Shift+Backspace", Leader: "d"},
+			Pin:      ActionBinding{Direct: "CmdOrCtrl+Shift+F", Leader: "p", Sticky: true},
+			Settings: ActionBinding{Direct: "CmdOrCtrl+,", Leader: ","},
 		},
 		Leader: Leader{
 			Shortcut:      "CmdOrCtrl+Shift+Space",
 			TimeoutMs:     1500,
-			Toggle:        "s",
-			Next:          "j",
-			Prev:          "k",
-			Paste:         "v",
-			Delete:        "d",
-			Pin:           "p",
-			Settings:      ",",
 			DoublePressMs: 400,
-			Double:        map[string]string{},
 			PinMs:         900,
 		},
 		Motion:   Motion{Enabled: true, DurationMs: 160},
@@ -274,17 +283,6 @@ func (c Card) EffectiveCharWidth() int {
 		return 7
 	}
 	return c.CharWidth
-}
-
-// EffectiveToggle is the show and hide shortcut. Older configs used show_all.
-func (s Shortcuts) EffectiveToggle() string {
-	if strings.TrimSpace(s.Toggle) != "" {
-		return strings.TrimSpace(s.Toggle)
-	}
-	if strings.TrimSpace(s.ShowAll) != "" {
-		return strings.TrimSpace(s.ShowAll)
-	}
-	return "CmdOrCtrl+Shift+S"
 }
 
 func (l Leader) Timeout() time.Duration {

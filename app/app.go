@@ -60,6 +60,7 @@ type cardUI struct {
 	hiding   bool
 	userW    int
 	userH    int
+	rendered string
 
 	pointerActive    bool
 	pointerDragged   bool
@@ -72,6 +73,7 @@ type cardUI struct {
 	resizeStartX     int
 	resizeStartLines int
 	lines            int
+	pressClicks      int
 	syncing          bool
 }
 
@@ -196,9 +198,11 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	idx := len(a.order) - 1
 	cfg := a.config()
 	cardCfg := cfg.Card
-	width, height := cardCfg.EstimateSize(host.display)
+	layout := cardCfg.Layout(host.display, 0, 0)
+	width, height := layout.Width, layout.Height
+	host.rendered = layout.Text
 	x, y := a.cardOrigin(card.ID, idx, width, height, placeX, placeY, havePlacement)
-	minH := cardCfg.HeightForLines(1)
+	minH := cardCfg.Layout(host.display, width, 1).Height
 
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:           "snip",
@@ -264,7 +268,7 @@ func (a *App) slipLines(host *cardUI, width int) int {
 	if width <= 0 {
 		width = cardCfg.EstimateWidth(host.display)
 	}
-	return cardCfg.VisibleLines(host.lines, cardCfg.WrappedLines(host.display, width))
+	return cardCfg.Layout(host.display, width, host.lines).VisibleLines
 }
 
 func (a *App) syncCardHeight(host *cardUI) {
@@ -283,7 +287,9 @@ func (a *App) syncCardHeight(host *cardUI) {
 	if w > maxW {
 		w = maxW
 	}
-	wantH := cardCfg.HeightForLines(a.slipLines(host, w))
+	layout := cardCfg.Layout(host.display, w, host.lines)
+	wantH := layout.Height
+	host.rendered = layout.Text
 	curW, curH := host.win.Size()
 	if curW != w || curH != wantH {
 		host.win.SetSize(w, wantH)
@@ -319,11 +325,6 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		motion.Exit = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 6}
 	}
 	seed := paperSeed(host.card.ID)
-	slipW := host.userW
-	if host.win != nil {
-		slipW, _ = host.win.Size()
-	}
-	shown := a.slipLines(host, slipW)
 	col := ui.Column(c).Fill().
 		Padding(padY, padX, padY, padX).
 		Background(surface).
@@ -338,13 +339,11 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	}
 	col = cardPointerInput(a, host, host.win, col)
 	col.Children(func() {
-		ui.Text(c, host.display).
+		ui.Text(c, host.rendered).
 			Font("Georgia").
 			FontSize(float32(cardCfg.EffectiveFontSize())).
-			FixedLineHeight(cardCfg.LineBox()).
 			TextColor(paperInk(dark)).
-			Ellipsis("…").
-			MaxLines(shown)
+			MaxLines(max(a.slipLines(host, host.userW), 1))
 		if a.leaderActive() {
 			a.leaderHint(c, host)
 		}
@@ -354,15 +353,28 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 
 func (a *App) leaderHint(c *ui.Context, host *cardUI) {
 	t := c.Theme()
-	cfg := a.config().Leader
 	lang := a.config().Language
 	n := a.cardNumber(host.card.ID)
-	ui.Row(c).Gap(8).Padding(4, 0, 0, 0).Children(func() {
-		ui.Text(c, n).FontSize(11).TextColor(t.Accent)
-		ui.Text(c, cfg.Paste+" "+tr(lang, "hint_paste")).FontSize(11).TextColor(t.TextMuted)
-		ui.Text(c, cfg.Delete+" "+tr(lang, "hint_delete")).FontSize(11).TextColor(t.TextMuted)
-		ui.Text(c, cfg.Pin+" "+tr(lang, "hint_pin")).FontSize(11).TextColor(t.TextMuted)
-	})
+	cfg := a.config()
+	paste := strings.TrimSpace(cfg.Bindings.Paste.Leader)
+	deleteKey := strings.TrimSpace(cfg.Bindings.Delete.Leader)
+	pin := strings.TrimSpace(cfg.Bindings.Pin.Leader)
+	ui.Row(c).Absolute().Right(4).Top(4).Gap(5).Padding(3, 6).
+		Background(t.SurfaceHover).Border(1, t.Border).PassThrough().
+		Children(func() {
+			if n != "" {
+				ui.Text(c, n).FontSize(10).TextColor(t.Accent)
+			}
+			if paste != "" {
+				ui.Text(c, paste+" "+tr(lang, "hint_paste")).FontSize(10).TextColor(t.TextMuted)
+			}
+			if deleteKey != "" {
+				ui.Text(c, deleteKey+" "+tr(lang, "hint_delete")).FontSize(10).TextColor(t.TextMuted)
+			}
+			if pin != "" {
+				ui.Text(c, pin+" "+tr(lang, "hint_pin")).FontSize(10).TextColor(t.TextMuted)
+			}
+		})
 }
 
 func (a *App) toggleVisible() {
@@ -479,10 +491,44 @@ func (a *App) flashAll() {
 	a.mu.Lock()
 	was := a.visible
 	a.flashing = true
+	hosts := make([]*cardUI, 0, len(a.order))
+	for _, id := range a.order {
+		if h := a.cards[id]; h != nil && h.win != nil {
+			hosts = append(hosts, h)
+		}
+	}
 	a.mu.Unlock()
 	a.setAllVisible(true)
 	a.invalidateCards()
-	time.AfterFunc(a.config().Leader.PinDuration(), func() {
+	type origin struct {
+		h    *cardUI
+		x, y int
+	}
+	origins := make([]origin, 0, len(hosts))
+	for _, h := range hosts {
+		x, y := h.win.Position()
+		origins = append(origins, origin{h: h, x: x, y: y})
+		h.win.SetPosition(x, y-7)
+	}
+	time.AfterFunc(90*time.Millisecond, func() {
+		mygo.RunOnMain(func() {
+			for _, o := range origins {
+				if o.h.win != nil {
+					o.h.win.SetPosition(o.x, o.y+2)
+				}
+			}
+		})
+	})
+	time.AfterFunc(180*time.Millisecond, func() {
+		mygo.RunOnMain(func() {
+			for _, o := range origins {
+				if o.h.win != nil {
+					o.h.win.SetPosition(o.x, o.y)
+				}
+			}
+		})
+	})
+	time.AfterFunc(320*time.Millisecond, func() {
 		mygo.RunOnMain(func() {
 			a.mu.Lock()
 			a.flashing = false
@@ -554,6 +600,13 @@ func (a *App) pasteSelected() {
 	id := a.order[a.selected]
 	h := a.cards[id]
 	a.mu.Unlock()
+	if h == nil {
+		return
+	}
+	a.pasteCard(h)
+}
+
+func (a *App) pasteCard(h *cardUI) {
 	if h == nil {
 		return
 	}

@@ -17,7 +17,6 @@ type Form struct {
 	AlwaysOnTop            bool
 	VisibleOnAllWorkspaces bool
 	ContentProtection      bool
-	Frameless              bool
 	Panel                  bool
 	Placement              string
 	MinWidth               string
@@ -54,8 +53,7 @@ func FormFrom(c Config) Form {
 		AlwaysOnTop:            c.Window.AlwaysOnTop,
 		VisibleOnAllWorkspaces: c.Window.VisibleOnAllWorkspaces,
 		ContentProtection:      c.Window.ContentProtection,
-		Frameless:              c.Window.Frameless,
-		Panel:                  c.Window.Panel,
+		Panel:                  c.Window.EffectivePanel(),
 		Placement:              string(c.EffectivePlacement()),
 		MinWidth:               strconv.Itoa(c.Card.MinWidth),
 		MaxWidth:               strconv.Itoa(c.Card.MaxWidth),
@@ -83,9 +81,9 @@ func FormFrom(c Config) Form {
 	}
 }
 
-// Parse validates the draft and returns a config.
-func (f Form) Parse() (Config, error) {
-	var cfg Config
+// Parse validates the draft and merges it onto prev.
+func (f Form) Parse(prev Config) (Config, error) {
+	cfg := prev
 	var err error
 	if cfg.ClipboardPollMs, err = positiveInt(f.ClipboardPollMs, "Poll interval"); err != nil {
 		return Config{}, err
@@ -93,13 +91,11 @@ func (f Form) Parse() (Config, error) {
 	if cfg.MaxCards, err = positiveInt(f.MaxCards, "Max cards"); err != nil {
 		return Config{}, err
 	}
-	cfg.Window = Window{
-		AlwaysOnTop:            f.AlwaysOnTop,
-		VisibleOnAllWorkspaces: f.VisibleOnAllWorkspaces,
-		ContentProtection:      f.ContentProtection,
-		Frameless:              f.Frameless,
-		Panel:                  f.Panel,
-	}
+	cfg.Window.AlwaysOnTop = f.AlwaysOnTop
+	cfg.Window.VisibleOnAllWorkspaces = f.VisibleOnAllWorkspaces
+	cfg.Window.ContentProtection = f.ContentProtection
+	panel := f.Panel
+	cfg.Window.Panel = &panel
 	place := strings.ToLower(strings.TrimSpace(f.Placement))
 	switch place {
 	case "near-selection", "near-cursor", "fixed":
@@ -145,6 +141,7 @@ func (f Form) Parse() (Config, error) {
 		Settings: strings.TrimSpace(f.Settings),
 	}
 	cfg.Secrets.MaskEnabled = f.MaskEnabled
+	cfg.Secrets.ExtraPatterns = nil
 	for _, line := range strings.Split(f.ExtraPatterns, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
@@ -164,7 +161,8 @@ func (f Form) Parse() (Config, error) {
 
 // NeedsRestart reports window options that only apply to new card windows.
 func NeedsRestart(prev, next Config) bool {
-	return prev.Window.Frameless != next.Window.Frameless || prev.Window.Panel != next.Window.Panel
+	return prev.Window.EffectiveFrameless() != next.Window.EffectiveFrameless() ||
+		prev.Window.EffectivePanel() != next.Window.EffectivePanel()
 }
 
 // Save writes cfg as TOML, creating parent directories when needed.
@@ -179,7 +177,19 @@ func Save(path string, cfg Config) error {
 		return err
 	}
 	defer f.Close()
-	return toml.NewEncoder(f).Encode(cfg)
+	return toml.NewEncoder(f).Encode(normalizeForSave(cfg))
+}
+
+// normalizeForSave omits window keys that match built in defaults so a
+// settings save does not pin advanced values the UI never touched.
+func normalizeForSave(cfg Config) Config {
+	if cfg.Window.EffectiveFrameless() {
+		cfg.Window.Frameless = nil
+	}
+	if cfg.Window.EffectivePanel() {
+		cfg.Window.Panel = nil
+	}
+	return cfg
 }
 
 func positiveInt(raw, name string) (int, error) {

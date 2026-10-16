@@ -58,7 +58,7 @@ Settings is a normal window with a title bar, so it can take keyboard focus. The
 
 ### Settings
 
-Open Settings from the menu bar item, the snip app menu, or the Settings hotkey (default **Cmd+,**). The panel lists every option in `config.toml`. Save writes that file and applies the change right away. Frameless cards and the non activating panel wait until the next launch. The window says so next to those two options.
+Open Settings from the menu bar item, the snip app menu, or the Settings hotkey (default **Cmd+,**). The panel lists the options most people need. Save writes that file and applies the change right away. The non activating panel waits until the next launch. Card chrome stays frameless unless you set `frameless = false` under `[window]` in `config.toml` for advanced debugging.
 
 The file Settings writes is the one snip loaded (`config.toml` in the working directory, or `~/Library/Application Support/snip/config.toml`). If neither file exists yet, Save creates the Application Support copy.
 

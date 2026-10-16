@@ -9,7 +9,7 @@ func TestFormRoundTrip(t *testing.T) {
 	src := Default()
 	src.Card.Placement = "near-cursor"
 	src.Secrets.ExtraPatterns = []string{"foo", "bar"}
-	got, err := FormFrom(src).Parse()
+	got, err := FormFrom(src).Parse(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestFormRoundTrip(t *testing.T) {
 func TestFormRejectsBadPlacement(t *testing.T) {
 	f := FormFrom(Default())
 	f.Placement = "beside"
-	if _, err := f.Parse(); err == nil {
+	if _, err := f.Parse(Default()); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -38,7 +38,8 @@ func TestNeedsRestart(t *testing.T) {
 	if NeedsRestart(a, b) {
 		t.Fatal("same config")
 	}
-	b.Window.Panel = !b.Window.Panel
+	off := !b.Window.EffectivePanel()
+	b.Window.Panel = &off
 	if !NeedsRestart(a, b) {
 		t.Fatal("panel change")
 	}

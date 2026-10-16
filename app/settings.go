@@ -80,8 +80,8 @@ func (a *App) settingsView(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().Background(t.Background).Padding(16).Gap(12).Children(func() {
 		ui.Text(c, "Settings").FontSize(18)
-		ui.Text(c, "Most options apply as soon as you save. Frameless cards and the non activating panel need a restart.").
-			FontSize(12).TextColor(t.TextMuted).MaxLines(3)
+		ui.Text(c, "Most options apply as soon as you save. The non activating panel needs a restart.").
+			FontSize(12).TextColor(t.TextMuted).MaxLines(2)
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).Gap(12).Padding(0, 4, 8, 0).Children(func() {
 				a.settingsSection(c, "Clipboard", func() {
@@ -94,8 +94,6 @@ func (a *App) settingsView(c *ui.Context) {
 					ui.Checkbox(c, &f.AlwaysOnTop, "Always on top")
 					ui.Checkbox(c, &f.VisibleOnAllWorkspaces, "Visible on all Spaces")
 					ui.Checkbox(c, &f.ContentProtection, "Hide from screen capture")
-					ui.Checkbox(c, &f.Frameless, "Frameless cards")
-					ui.Text(c, "Applies after restart").FontSize(11).TextColor(t.TextMuted)
 					ui.Checkbox(c, &f.Panel, "Non activating panel")
 					ui.Text(c, "Applies after restart").FontSize(11).TextColor(t.TextMuted)
 				})
@@ -162,7 +160,7 @@ func (a *App) saveSettings() {
 	if f == nil {
 		return
 	}
-	next, err := f.Parse()
+	next, err := f.Parse(a.config())
 	if err != nil {
 		f.Message = err.Error()
 		if a.settingsWin != nil {
@@ -180,7 +178,7 @@ func (a *App) saveSettings() {
 	restart := config.NeedsRestart(a.config(), next)
 	a.applyConfig(next)
 	if restart {
-		f.Message = "Saved. Frameless cards and the non activating panel apply after you restart snip."
+		f.Message = "Saved. The non activating panel applies after you restart snip."
 	} else {
 		f.Message = "Saved."
 	}

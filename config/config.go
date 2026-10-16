@@ -13,10 +13,12 @@ type Window struct {
 	AlwaysOnTop            bool `toml:"always_on_top"`
 	VisibleOnAllWorkspaces bool `toml:"visible_on_all_workspaces"`
 	ContentProtection      bool `toml:"content_protection"`
-	Frameless              bool `toml:"frameless"`
+	// Frameless is omitted from config when true (default). Set false in TOML
+	// only for advanced debugging; not exposed in Settings.
+	Frameless *bool `toml:"frameless"`
 	// Panel uses a non-normal window level (launcher-style) so tiling WMs
 	// are less likely to manage snip cards as regular app windows.
-	Panel bool `toml:"panel"`
+	Panel *bool `toml:"panel"`
 }
 
 // Card controls the paper-strip snippet appearance.
@@ -75,8 +77,8 @@ func Default() Config {
 			AlwaysOnTop:            true,
 			VisibleOnAllWorkspaces: true,
 			ContentProtection:      true,
-			Frameless:              true,
-			Panel:                  true,
+			Frameless:              boolPtr(true),
+			Panel:                  boolPtr(true),
 		},
 		Card: Card{
 			MinWidth:       120,

@@ -132,41 +132,6 @@ func selectionBounds() (Rect, bool) {
 	return rect, true
 }
 
-// FocusedFrame returns the focused element's screen bounds when Accessibility can see it.
-func FocusedFrame() (Rect, bool) {
-	load()
-	var rect Rect
-	var ok bool
-	withPool(func() {
-		pid := frontmostPID()
-		if pid == 0 {
-			return
-		}
-		app := axUIElementCreateApplication(pid)
-		if app == 0 {
-			return
-		}
-		axUIElementSetMessagingTimeout(app, axMessagingTimeoutSec)
-		focused := copyAttribute(app, "AXFocusedUIElement")
-		if focused == 0 {
-			return
-		}
-		defer release(focused)
-		val := copyAttribute(focused, "AXFrame")
-		if val == 0 {
-			return
-		}
-		defer release(val)
-		var r cgRect
-		if !axValueGetValue(val, kAXValueCGRectType, unsafe.Pointer(&r)) {
-			return
-		}
-		rect = axCGRectToScreen(r)
-		ok = rect.Width > 0 && rect.Height > 0
-	})
-	return rect, ok
-}
-
 func axCGRectToScreen(r cgRect) Rect {
 	// AX CGRect uses Quartz global display coordinates (origin top-left).
 	return Rect{

@@ -11,6 +11,20 @@ func TestEstimateSizeOneLine(t *testing.T) {
 	}
 }
 
+func TestHeightForWidthShrinksWhenWider(t *testing.T) {
+	c := Default().Card
+	c.MaxWidth = 200
+	c.CharWidth = 10
+	c.PaddingX = 10
+	c.MaxLines = 4
+	long := "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
+	narrow := c.HeightForWidth(long, 80)
+	wide := c.HeightForWidth(long, 200)
+	if wide >= narrow {
+		t.Fatalf("wide height %d should be less than narrow %d", wide, narrow)
+	}
+}
+
 func TestEstimateSizeCapsLines(t *testing.T) {
 	c := Default().Card
 	c.MaxWidth = 80

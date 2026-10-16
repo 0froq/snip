@@ -156,7 +156,6 @@ func (a *App) settingsView(c *ui.Context) {
 					labeledInput(c, tr(lang, "double_ms"), &f.DoublePressMs)
 					ui.Text(c, tr(lang, "double_map")).FontSize(12).TextColor(t.TextMuted).MaxLines(2)
 					ui.TextArea(c, &f.DoubleMap).Height(56)
-					ui.Checkbox(c, &f.DimOverlay, tr(lang, "dim"))
 				})
 				a.settingsSection(c, tr(lang, "secrets"), func() {
 					ui.Checkbox(c, &f.MaskEnabled, tr(lang, "mask"))

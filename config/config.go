@@ -71,8 +71,6 @@ type Leader struct {
 	Settings      string            `toml:"settings"`
 	DoublePressMs int               `toml:"double_press_ms"`
 	Double        map[string]string `toml:"double"`
-	DimOverlay    bool              `toml:"dim_overlay"`
-	DimOpacity    float64           `toml:"dim_opacity"`
 	PinMs         int               `toml:"pin_ms"`
 }
 
@@ -155,7 +153,6 @@ func Default() Config {
 			Settings:      ",",
 			DoublePressMs: 400,
 			Double:        map[string]string{},
-			DimOpacity:    0.45,
 			PinMs:         900,
 		},
 		Motion:   Motion{Enabled: true, DurationMs: 160},
@@ -232,6 +229,19 @@ func (c Card) EffectiveLineHeight() int {
 // EstimateSize returns a width and a height that fit the text, from one line up to max lines.
 func (c Card) EstimateSize(display string) (int, int) {
 	width := c.EstimateWidth(display)
+	return width, c.HeightForWidth(display, width)
+}
+
+// HeightForWidth returns the window height needed to show display at the given width.
+func (c Card) HeightForWidth(display string, width int) int {
+	minW := c.EffectiveMinWidth()
+	maxW := c.EffectiveMaxWidth()
+	if width < minW {
+		width = minW
+	}
+	if width > maxW {
+		width = maxW
+	}
 	inner := width - 2*c.EffectivePaddingX()
 	charW := c.EffectiveCharWidth()
 	if inner < charW {
@@ -253,14 +263,15 @@ func (c Card) EstimateSize(display string) (int, int) {
 	if lines < 1 {
 		lines = 1
 	}
+	minH := c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
 	h := lines*c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
-	if h < c.EffectiveLineHeight()+2*c.EffectivePaddingY() {
-		h = c.EffectiveLineHeight() + 2*c.EffectivePaddingY()
+	if h < minH {
+		h = minH
 	}
 	if h > c.EffectiveMaxHeight() {
 		h = c.EffectiveMaxHeight()
 	}
-	return width, h
+	return h
 }
 
 func (c Card) EffectiveMaxLines() int {

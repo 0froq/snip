@@ -54,8 +54,6 @@ delete = "d"
 pin = "p"
 settings = ","
 double_press_ms = 400
-dim_overlay = false
-dim_opacity = 0.45
 pin_ms = 900
 
 [pasteboard]

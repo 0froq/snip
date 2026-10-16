@@ -43,9 +43,7 @@ type App struct {
 	leaderKeys    []string
 	taps          tapGate
 	flashing      bool
-	tray          *mygo.Tray
-	dimWins       []*mygo.Window
-	dimCut        cutout
+	tray *mygo.Tray
 }
 
 type cardPosition struct {
@@ -62,6 +60,10 @@ type cardUI struct {
 	hiding   bool
 	userW    int
 	userH    int
+
+	selectPressing bool
+	selectPressX   float32
+	selectPressY   float32
 }
 
 // New creates the application state.
@@ -209,10 +211,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	host.win = win
 	win.SetMovable(true)
 	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
-	win.OnResize(func() {
-		w, h := win.Size()
-		host.userW, host.userH = w, h
-	})
+	win.OnResize(func() { a.syncCardHeight(host) })
 	win.OnFocus(func() { win.ShowInactive() })
 	a.applyWindowFlags(win)
 	if a.visible {
@@ -244,6 +243,28 @@ func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, plac
 	c := a.config().Card
 	return c.CascadeOriginX + (cascadeIndex%8)*c.CascadeStepX,
 		c.CascadeOriginY + (cascadeIndex%12)*c.CascadeStepY
+}
+
+func (a *App) syncCardHeight(host *cardUI) {
+	if host == nil || host.win == nil {
+		return
+	}
+	cardCfg := a.config().Card
+	w, _ := host.win.Size()
+	minW := cardCfg.EffectiveMinWidth()
+	maxW := cardCfg.EffectiveMaxWidth()
+	if w < minW {
+		w = minW
+	}
+	if w > maxW {
+		w = maxW
+	}
+	wantH := cardCfg.HeightForWidth(host.display, w)
+	curW, curH := host.win.Size()
+	if curW != w || curH != wantH {
+		host.win.SetSize(w, wantH)
+	}
+	host.userW, host.userH = w, wantH
 }
 
 func (a *App) rememberCardPosition(id string, win *mygo.Window) {
@@ -286,9 +307,26 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	if host.hiding {
 		col = col.Opacity(0).Scale(0.96, 0.96)
 	}
-	if col.Clicked() {
-		a.selectID(host.card.ID)
-	}
+	col = col.HandleInput(func(ev ui.InputEvent) bool {
+		const slop = 6.0
+		switch ev.Kind {
+		case ui.InputPointerDown:
+			if ev.Button == 0 {
+				host.selectPressX, host.selectPressY = ev.X, ev.Y
+				host.selectPressing = true
+			}
+		case ui.InputPointerUp:
+			if ev.Button == 0 && host.selectPressing {
+				host.selectPressing = false
+				dx := ev.X - host.selectPressX
+				dy := ev.Y - host.selectPressY
+				if dx*dx+dy*dy < slop*slop {
+					a.selectID(host.card.ID)
+				}
+			}
+		}
+		return false
+	})
 	col.Children(func() {
 		ui.Text(c, host.display).
 			Font("Georgia").

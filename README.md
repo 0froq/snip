@@ -77,8 +77,6 @@ Double press: under `[leader]`, `double_press_ms` is the longest gap. `double` m
 
 Flash (`pin`) brings every card forward with the active color, then puts them back.
 
-`dim_overlay` (default off) dims the screen behind the cards while the leader is active. The overlay ignores clicks. When Accessibility can see the focused field, that rectangle stays undimmed.
-
 ### Language and config path
 
 `language` is `en` or `zh` (Settings, menus, and leader hints).

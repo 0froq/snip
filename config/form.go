@@ -60,7 +60,6 @@ type Form struct {
 	LeaderSettings         string
 	DoublePressMs          string
 	DoubleMap              string
-	DimOverlay             bool
 	MotionEnabled          bool
 	MotionMs               string
 	Language               string
@@ -118,7 +117,6 @@ func FormFrom(c Config) Form {
 		LeaderSettings:         c.Leader.Settings,
 		DoublePressMs:          strconv.Itoa(c.Leader.DoublePressMs),
 		DoubleMap:              formatDouble(c.Leader.Double),
-		DimOverlay:             c.Leader.DimOverlay,
 		MotionEnabled:          c.Motion.Enabled,
 		MotionMs:               strconv.Itoa(c.Motion.DurationMs),
 		Language:               c.Language,
@@ -230,7 +228,6 @@ func (f Form) Parse(prev Config) (Config, error) {
 	cfg.Leader.Settings = strings.TrimSpace(f.LeaderSettings)
 	cfg.Leader.DoublePressMs = gap
 	cfg.Leader.Double = parseDouble(f.DoubleMap)
-	cfg.Leader.DimOverlay = f.DimOverlay
 	cfg.Motion.Enabled = f.MotionEnabled
 	cfg.Motion.DurationMs = motionMs
 	lang := strings.TrimSpace(f.Language)

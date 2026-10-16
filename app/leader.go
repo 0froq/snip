@@ -79,9 +79,6 @@ func (a *App) armLeader() {
 	a.mu.Unlock()
 	a.registerLeaderKeys()
 	a.invalidateCards()
-	if cfg.Leader.DimOverlay {
-		a.showDim()
-	}
 	time.AfterFunc(cfg.Leader.Timeout(), func() {
 		mygo.RunOnMain(func() { a.expireLeader(gen) })
 	})
@@ -96,7 +93,6 @@ func (a *App) expireLeader(gen int) {
 	a.leaderOn = false
 	a.mu.Unlock()
 	a.clearLeaderKeys()
-	a.hideDim()
 	a.invalidateCards()
 }
 
@@ -157,7 +153,6 @@ func (a *App) endLeader() {
 	a.leaderGen++
 	a.mu.Unlock()
 	a.clearLeaderKeys()
-	a.hideDim()
 	a.invalidateCards()
 }
 

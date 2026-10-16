@@ -93,6 +93,23 @@ func (s *Store) deleteID(id string) bool {
 	return true
 }
 
+// TrimTo drops the oldest cards until at most max remain.
+// max <= 0 leaves the store unchanged. Evicted IDs are oldest first.
+func (s *Store) TrimTo(max int) []string {
+	if max <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var evicted []string
+	for len(s.order) > max {
+		id := s.order[0]
+		s.deleteID(id)
+		evicted = append(evicted, id)
+	}
+	return evicted
+}
+
 // Len returns the number of cards.
 func (s *Store) Len() int {
 	s.mu.RLock()

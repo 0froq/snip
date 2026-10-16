@@ -8,31 +8,35 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"github.com/0froq/snip/config"
 	"github.com/0froq/snip/internal/macpaste"
 	"github.com/0froq/snip/internal/macplace"
 	"github.com/0froq/snip/secrets"
 	"github.com/0froq/snip/store"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 // App coordinates clipboard watching, cards, and shortcuts.
 type App struct {
-	cfg     config.Config
-	store   *store.Store
-	cards   map[string]*cardUI
-	order   []string
+	cfg      config.Config
+	store    *store.Store
+	cards    map[string]*cardUI
+	order    []string
 	selected int
 	visible  bool
 
-	mu            sync.Mutex
-	lastChange    int
+	mu               sync.Mutex
+	lastChange       int
 	ignoreNextChange bool
 
-	sec   secrets.Config
+	sec secrets.Config
 
 	cardPositions map[string]cardPosition
+	configPath    string
+	pollReset     chan struct{}
+	settingsWin   *mygo.Window
+	settingsForm  *config.Form
 }
 
 type cardPosition struct {
@@ -48,11 +52,12 @@ type cardUI struct {
 }
 
 // New creates the application state.
-func New(cfg config.Config) *App {
+func New(cfg config.Config, configPath string) *App {
 	return &App{
-		cfg:   cfg,
-		store: store.New(),
-		cards: make(map[string]*cardUI),
+		cfg:        cfg,
+		configPath: configPath,
+		store:      store.New(),
+		cards:      make(map[string]*cardUI),
 		sec: secrets.Config{
 			Enabled:         cfg.Secrets.MaskEnabled,
 			ExtraPatterns:   cfg.Secrets.ExtraPatterns,
@@ -60,12 +65,14 @@ func New(cfg config.Config) *App {
 			MinSecretLength: cfg.Secrets.MinSecretLength,
 		},
 		cardPositions: make(map[string]cardPosition),
+		pollReset:     make(chan struct{}, 1),
 	}
 }
 
 // WhenReady registers UI hooks (call inside mygo.App.WhenReady).
 func (a *App) WhenReady() {
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	a.installMenus()
 	a.registerShortcuts()
 	a.checkAccessibility()
 	go a.watchClipboard()
@@ -81,6 +88,8 @@ func (a *App) checkAccessibility() {
 }
 
 func (a *App) registerShortcuts() {
+	mygo.GlobalShortcut.UnregisterAll()
+	sc := a.config().Shortcuts
 	reg := func(acc string, fn func()) {
 		if acc == "" {
 			return
@@ -89,12 +98,19 @@ func (a *App) registerShortcuts() {
 			log.Printf("snip: shortcut %q: %v", acc, err)
 		}
 	}
-	reg(a.cfg.Shortcuts.ShowAll, func() { a.setAllVisible(true) })
-	reg(a.cfg.Shortcuts.HideAll, func() { a.setAllVisible(false) })
-	reg(a.cfg.Shortcuts.Next, func() { a.moveSelection(1) })
-	reg(a.cfg.Shortcuts.Prev, func() { a.moveSelection(-1) })
-	reg(a.cfg.Shortcuts.Paste, func() { a.pasteSelected() })
-	reg(a.cfg.Shortcuts.Delete, func() { a.deleteSelected() })
+	reg(sc.ShowAll, func() { a.setAllVisible(true) })
+	reg(sc.HideAll, func() { a.setAllVisible(false) })
+	reg(sc.Next, func() { a.moveSelection(1) })
+	reg(sc.Prev, func() { a.moveSelection(-1) })
+	reg(sc.Paste, func() { a.pasteSelected() })
+	reg(sc.Delete, func() { a.deleteSelected() })
+	reg(sc.Settings, func() { a.showSettings() })
+}
+
+func (a *App) config() config.Config {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg
 }
 
 func (a *App) watchClipboard() {
@@ -103,9 +119,15 @@ func (a *App) watchClipboard() {
 		return
 	}
 	a.lastChange = macpaste.ChangeCount()
-	tick := time.NewTicker(a.cfg.PollInterval())
+	tick := time.NewTicker(a.config().PollInterval())
 	defer tick.Stop()
-	for range tick.C {
+	for {
+		select {
+		case <-a.pollReset:
+			tick.Reset(a.config().PollInterval())
+			continue
+		case <-tick.C:
+		}
 		count := macpaste.ChangeCount()
 		if count == a.lastChange {
 			continue
@@ -127,12 +149,13 @@ func (a *App) watchClipboard() {
 		if text == "" {
 			continue
 		}
-		card, evicted := a.store.AddWithLimit(text, a.cfg.EffectiveMaxCards())
-		display := secrets.DisplayText(card.Text, a.sec)
-		cardCfg := a.cfg.Card
+		cfg := a.config()
+		card, evicted := a.store.AddWithLimit(text, cfg.EffectiveMaxCards())
+		display := secrets.DisplayText(card.Text, a.secrets())
+		cardCfg := cfg.Card
 		width := cardCfg.EstimateWidth(display)
 		height := cardCfg.EffectiveHeight()
-		mode := a.cfg.EffectivePlacement()
+		mode := cfg.EffectivePlacement()
 		macplace.ResolveOrigin(mode, width, height, func(x, y int, ok bool) {
 			mygo.RunOnMain(func() {
 				for _, id := range evicted {
@@ -147,7 +170,7 @@ func (a *App) watchClipboard() {
 func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool) {
 	host := &cardUI{
 		card:    card,
-		display: secrets.DisplayText(card.Text, a.sec),
+		display: secrets.DisplayText(card.Text, a.secrets()),
 	}
 	a.mu.Lock()
 	a.cards[card.ID] = host
@@ -158,7 +181,8 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	a.mu.Unlock()
 
 	idx := len(a.order) - 1
-	cardCfg := a.cfg.Card
+	cfg := a.config()
+	cardCfg := cfg.Card
 	width := cardCfg.EstimateWidth(host.display)
 	height := cardCfg.EffectiveHeight()
 	x, y := a.cardOrigin(card.ID, idx, width, height, placeX, placeY, havePlacement)
@@ -169,9 +193,9 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		Height:        height,
 		X:             x,
 		Y:             y,
-		Frameless:     a.cfg.Window.Frameless,
-		Panel:         a.cfg.Window.Panel,
-		AlwaysOnTop:   a.cfg.Window.AlwaysOnTop,
+		Frameless:     cfg.Window.Frameless,
+		Panel:         cfg.Window.Panel,
+		AlwaysOnTop:   cfg.Window.AlwaysOnTop,
 		DisableResize: true,
 		StateKey:      "card-" + card.ID,
 		Content:       ui.View(func(c *ui.Context) { a.cardView(c, host) }),
@@ -190,12 +214,10 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 }
 
 func (a *App) applyWindowFlags(win *mygo.Window) {
-	if a.cfg.Window.VisibleOnAllWorkspaces {
-		win.SetVisibleOnAllWorkspaces(true)
-	}
-	if a.cfg.Window.ContentProtection {
-		win.SetContentProtection(true)
-	}
+	w := a.config().Window
+	win.SetVisibleOnAllWorkspaces(w.VisibleOnAllWorkspaces)
+	win.SetContentProtection(w.ContentProtection)
+	win.SetAlwaysOnTop(w.AlwaysOnTop)
 }
 
 func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, placeY int, havePlacement bool) (int, int) {
@@ -208,7 +230,7 @@ func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, plac
 	if havePlacement {
 		return placeX, placeY
 	}
-	c := a.cfg.Card
+	c := a.config().Card
 	return c.CascadeOriginX + (cascadeIndex%8)*c.CascadeStepX,
 		c.CascadeOriginY + (cascadeIndex%12)*c.CascadeStepY
 }
@@ -226,7 +248,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	if host.selected {
 		border = t.Accent
 	}
-	cardCfg := a.cfg.Card
+	cardCfg := a.config().Card
 	padX := float32(cardCfg.EffectivePaddingX())
 	padY := float32(cardCfg.EffectivePaddingY())
 	ui.Column(c).Fill().
@@ -369,18 +391,68 @@ func (a *App) detachCard(id string) {
 	a.refreshSelection()
 }
 
-// LoadConfigFromDefaultPaths loads config.toml from cwd or user config dir.
-func LoadConfigFromDefaultPaths() config.Config {
+func (a *App) secrets() secrets.Config {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.sec
+}
+
+func (a *App) applyConfig(next config.Config) {
+	a.mu.Lock()
+	prev := a.cfg
+	a.cfg = next
+	a.sec = secrets.Config{
+		Enabled:         next.Secrets.MaskEnabled,
+		ExtraPatterns:   next.Secrets.ExtraPatterns,
+		MinEntropyBits:  next.Secrets.MinEntropyBits,
+		MinSecretLength: next.Secrets.MinSecretLength,
+	}
+	a.mu.Unlock()
+
+	if prev.PollInterval() != next.PollInterval() {
+		select {
+		case a.pollReset <- struct{}{}:
+		default:
+		}
+	}
+	a.registerShortcuts()
+
+	for _, id := range a.store.TrimTo(next.EffectiveMaxCards()) {
+		a.detachCard(id)
+	}
+	a.mu.Lock()
+	ids := append([]string(nil), a.order...)
+	a.mu.Unlock()
+	for _, id := range ids {
+		a.mu.Lock()
+		h := a.cards[id]
+		a.mu.Unlock()
+		if h == nil || h.win == nil {
+			continue
+		}
+		h.display = secrets.DisplayText(h.card.Text, a.secrets())
+		a.applyWindowFlags(h.win)
+		width := next.Card.EstimateWidth(h.display)
+		h.win.SetSize(width, next.Card.EffectiveHeight())
+		h.win.Invalidate()
+	}
+}
+
+// LoadConfigFromDefaultPaths loads config.toml from cwd or the user config dir.
+// The path is where Settings writes, even when no file exists yet.
+func LoadConfigFromDefaultPaths() (config.Config, string) {
 	cfg := config.Default()
+	fallback := "config.toml"
 	candidates := []string{"config.toml"}
 	if dir, err := os.UserConfigDir(); err == nil {
-		candidates = append(candidates, filepath.Join(dir, "snip", "config.toml"))
+		fallback = filepath.Join(dir, "snip", "config.toml")
+		candidates = append(candidates, fallback)
 	}
 	for _, p := range candidates {
 		c, err := config.Load(p)
 		if err == nil {
-			return c
+			return c, p
 		}
 	}
-	return cfg
+	return cfg, fallback
 }

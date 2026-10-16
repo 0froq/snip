@@ -54,6 +54,14 @@ on-window-detected = [
 ]
 ```
 
+Settings is a normal window with a title bar, so it can take keyboard focus. The floating rule above floats that window too. To let AeroSpace tile Settings and still float the cards, skip the window titled Settings.
+
+### Settings
+
+Open Settings from the menu bar item, the snip app menu, or the Settings hotkey (default **Cmd+,**). The panel lists every option in `config.toml`. Save writes that file and applies the change right away. Frameless cards and the non activating panel wait until the next launch. The window says so next to those two options.
+
+The file Settings writes is the one snip loaded (`config.toml` in the working directory, or `~/Library/Application Support/snip/config.toml`). If neither file exists yet, Save creates the Application Support copy.
+
 ### Permissions
 
 1. **Accessibility** (required for paste simulation): System Settings → Privacy & Security → Accessibility → enable **snip**. On first launch the app logs a reminder; failed paste opens the Accessibility pane.
@@ -68,8 +76,9 @@ on-window-detected = [
 | Select next / previous | Cmd+Shift+] / Cmd+Shift+[ |
 | Paste selected card | Cmd+Shift+V |
 | Delete selected card | Cmd+Shift+Backspace |
+| Settings | Cmd+, |
 
-Change these under `[shortcuts]` in `config.toml`. If registration fails, MyGo logs an error (shortcut taken by another app).
+Change these under `[shortcuts]` in `config.toml` or in Settings. If registration fails, MyGo logs an error (shortcut taken by another app).
 
 ## What to verify (four capabilities)
 
@@ -112,7 +121,7 @@ go test ./...
 | Path | Role |
 |------|------|
 | `main.go` | MyGo app entry |
-| `app/app.go` | Cards, shortcuts, clipboard loop |
+| `app/app.go` | Cards, shortcuts, clipboard loop, settings window |
 | `internal/macpaste/` | Darwin pasteboard changeCount + CGEvent Cmd+V (purego) |
 | `internal/macplace/` | Card placement (AX selection bounds, cursor, screen clamp) |
 | `secrets/` | Regex / entropy masking |

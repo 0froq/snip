@@ -4,13 +4,13 @@ package main
 import (
 	"log"
 
-	"github.com/egoist/mygo"
 	"github.com/0froq/snip/app"
+	"github.com/egoist/mygo"
 )
 
 func main() {
-	cfg := app.LoadConfigFromDefaultPaths()
-	snip := app.New(cfg)
+	cfg, path := app.LoadConfigFromDefaultPaths()
+	snip := app.New(cfg, path)
 	mygo.App.WhenReady(snip.WhenReady)
 	mygo.App.OnWindowAllClosed(func() {
 		// Menu-bar style: keep running for clipboard watch.

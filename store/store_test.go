@@ -23,9 +23,21 @@ func TestStoreAddAllDelete(t *testing.T) {
 	if !ok || got.Text != "two" {
 		t.Fatalf("get b: %+v ok=%v", got, ok)
 	}
-	if !s.Delete("missing") {
-		// expected false
-	} else {
+	if s.Delete("missing") {
 		t.Fatal("deleted missing")
+	}
+}
+
+func TestTrimTo(t *testing.T) {
+	s := New()
+	s.Add("a")
+	s.Add("b")
+	s.Add("c")
+	evicted := s.TrimTo(1)
+	if len(evicted) != 2 || s.Len() != 1 {
+		t.Fatalf("evicted %v len %d", evicted, s.Len())
+	}
+	if s.All()[0].Text != "c" {
+		t.Fatalf("kept %+v", s.All())
 	}
 }

@@ -31,6 +31,7 @@ next = "CmdOrCtrl+Shift+]"
 prev = "CmdOrCtrl+Shift+["
 paste = "CmdOrCtrl+Shift+V"
 delete = "CmdOrCtrl+Shift+Backspace"
+settings = "CmdOrCtrl+,"
 
 [secrets]
 mask_enabled = true

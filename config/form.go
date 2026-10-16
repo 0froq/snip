@@ -1,0 +1,199 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/BurntSushi/toml"
+)
+
+// Form is the settings panel draft. Numbers stay text until Save.
+type Form struct {
+	ClipboardPollMs        string
+	MaxCards               string
+	AlwaysOnTop            bool
+	VisibleOnAllWorkspaces bool
+	ContentProtection      bool
+	Frameless              bool
+	Panel                  bool
+	Placement              string
+	MinWidth               string
+	MaxWidth               string
+	Height                 string
+	MaxLines               string
+	PaddingX               string
+	PaddingY               string
+	FontSize               string
+	CharWidth              string
+	CascadeOriginX         string
+	CascadeOriginY         string
+	CascadeStepX           string
+	CascadeStepY           string
+	ShowAll                string
+	HideAll                string
+	Next                   string
+	Prev                   string
+	Paste                  string
+	Delete                 string
+	Settings               string
+	MaskEnabled            bool
+	ExtraPatterns          string
+	MinEntropyBits         string
+	MinSecretLength        string
+	Message                string
+}
+
+// FormFrom copies a config into editable fields.
+func FormFrom(c Config) Form {
+	return Form{
+		ClipboardPollMs:        strconv.Itoa(c.ClipboardPollMs),
+		MaxCards:               strconv.Itoa(c.MaxCards),
+		AlwaysOnTop:            c.Window.AlwaysOnTop,
+		VisibleOnAllWorkspaces: c.Window.VisibleOnAllWorkspaces,
+		ContentProtection:      c.Window.ContentProtection,
+		Frameless:              c.Window.Frameless,
+		Panel:                  c.Window.Panel,
+		Placement:              string(c.EffectivePlacement()),
+		MinWidth:               strconv.Itoa(c.Card.MinWidth),
+		MaxWidth:               strconv.Itoa(c.Card.MaxWidth),
+		Height:                 strconv.Itoa(c.Card.Height),
+		MaxLines:               strconv.Itoa(c.Card.MaxLines),
+		PaddingX:               strconv.Itoa(c.Card.PaddingX),
+		PaddingY:               strconv.Itoa(c.Card.PaddingY),
+		FontSize:               strconv.Itoa(c.Card.FontSize),
+		CharWidth:              strconv.Itoa(c.Card.CharWidth),
+		CascadeOriginX:         strconv.Itoa(c.Card.CascadeOriginX),
+		CascadeOriginY:         strconv.Itoa(c.Card.CascadeOriginY),
+		CascadeStepX:           strconv.Itoa(c.Card.CascadeStepX),
+		CascadeStepY:           strconv.Itoa(c.Card.CascadeStepY),
+		ShowAll:                c.Shortcuts.ShowAll,
+		HideAll:                c.Shortcuts.HideAll,
+		Next:                   c.Shortcuts.Next,
+		Prev:                   c.Shortcuts.Prev,
+		Paste:                  c.Shortcuts.Paste,
+		Delete:                 c.Shortcuts.Delete,
+		Settings:               c.Shortcuts.Settings,
+		MaskEnabled:            c.Secrets.MaskEnabled,
+		ExtraPatterns:          strings.Join(c.Secrets.ExtraPatterns, "\n"),
+		MinEntropyBits:         strconv.FormatFloat(c.Secrets.MinEntropyBits, 'f', -1, 64),
+		MinSecretLength:        strconv.Itoa(c.Secrets.MinSecretLength),
+	}
+}
+
+// Parse validates the draft and returns a config.
+func (f Form) Parse() (Config, error) {
+	var cfg Config
+	var err error
+	if cfg.ClipboardPollMs, err = positiveInt(f.ClipboardPollMs, "Poll interval"); err != nil {
+		return Config{}, err
+	}
+	if cfg.MaxCards, err = positiveInt(f.MaxCards, "Max cards"); err != nil {
+		return Config{}, err
+	}
+	cfg.Window = Window{
+		AlwaysOnTop:            f.AlwaysOnTop,
+		VisibleOnAllWorkspaces: f.VisibleOnAllWorkspaces,
+		ContentProtection:      f.ContentProtection,
+		Frameless:              f.Frameless,
+		Panel:                  f.Panel,
+	}
+	place := strings.ToLower(strings.TrimSpace(f.Placement))
+	switch place {
+	case "near-selection", "near-cursor", "fixed":
+		cfg.Card.Placement = place
+	default:
+		return Config{}, fmt.Errorf("placement must be near-selection, near-cursor, or fixed")
+	}
+	ints := []struct {
+		dst  *int
+		raw  string
+		name string
+	}{
+		{&cfg.Card.MinWidth, f.MinWidth, "Min width"},
+		{&cfg.Card.MaxWidth, f.MaxWidth, "Max width"},
+		{&cfg.Card.Height, f.Height, "Height"},
+		{&cfg.Card.MaxLines, f.MaxLines, "Max lines"},
+		{&cfg.Card.PaddingX, f.PaddingX, "Padding x"},
+		{&cfg.Card.PaddingY, f.PaddingY, "Padding y"},
+		{&cfg.Card.FontSize, f.FontSize, "Font size"},
+		{&cfg.Card.CharWidth, f.CharWidth, "Char width"},
+		{&cfg.Card.CascadeOriginX, f.CascadeOriginX, "Cascade origin x"},
+		{&cfg.Card.CascadeOriginY, f.CascadeOriginY, "Cascade origin y"},
+		{&cfg.Card.CascadeStepX, f.CascadeStepX, "Cascade step x"},
+		{&cfg.Card.CascadeStepY, f.CascadeStepY, "Cascade step y"},
+	}
+	for _, item := range ints {
+		n, err := nonNegativeInt(item.raw, item.name)
+		if err != nil {
+			return Config{}, err
+		}
+		*item.dst = n
+	}
+	if cfg.Card.MinWidth > cfg.Card.MaxWidth {
+		return Config{}, fmt.Errorf("min width cannot be larger than max width")
+	}
+	cfg.Shortcuts = Shortcuts{
+		ShowAll:  strings.TrimSpace(f.ShowAll),
+		HideAll:  strings.TrimSpace(f.HideAll),
+		Next:     strings.TrimSpace(f.Next),
+		Prev:     strings.TrimSpace(f.Prev),
+		Paste:    strings.TrimSpace(f.Paste),
+		Delete:   strings.TrimSpace(f.Delete),
+		Settings: strings.TrimSpace(f.Settings),
+	}
+	cfg.Secrets.MaskEnabled = f.MaskEnabled
+	for _, line := range strings.Split(f.ExtraPatterns, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			cfg.Secrets.ExtraPatterns = append(cfg.Secrets.ExtraPatterns, line)
+		}
+	}
+	bits, err := strconv.ParseFloat(strings.TrimSpace(f.MinEntropyBits), 64)
+	if err != nil || bits < 0 {
+		return Config{}, fmt.Errorf("min entropy must be a number that is zero or more")
+	}
+	cfg.Secrets.MinEntropyBits = bits
+	if cfg.Secrets.MinSecretLength, err = nonNegativeInt(f.MinSecretLength, "Min secret length"); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+// NeedsRestart reports window options that only apply to new card windows.
+func NeedsRestart(prev, next Config) bool {
+	return prev.Window.Frameless != next.Window.Frameless || prev.Window.Panel != next.Window.Panel
+}
+
+// Save writes cfg as TOML, creating parent directories when needed.
+func Save(path string, cfg Config) error {
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return toml.NewEncoder(f).Encode(cfg)
+}
+
+func positiveInt(raw, name string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("%s must be a whole number greater than zero", name)
+	}
+	return n, nil
+}
+
+func nonNegativeInt(raw, name string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%s must be a whole number that is zero or more", name)
+	}
+	return n, nil
+}

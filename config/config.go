@@ -21,16 +21,16 @@ type Window struct {
 
 // Card controls the paper-strip snippet appearance.
 type Card struct {
-	MinWidth      int `toml:"min_width"`
-	MaxWidth      int `toml:"max_width"`
-	Height        int `toml:"height"`
-	MaxLines      int `toml:"max_lines"`
-	PaddingX      int `toml:"padding_x"`
-	PaddingY      int `toml:"padding_y"`
-	FontSize      int `toml:"font_size"`
-	CharWidth     int `toml:"char_width"`
-	CascadeStepX  int `toml:"cascade_step_x"`
-	CascadeStepY  int `toml:"cascade_step_y"`
+	MinWidth       int `toml:"min_width"`
+	MaxWidth       int `toml:"max_width"`
+	Height         int `toml:"height"`
+	MaxLines       int `toml:"max_lines"`
+	PaddingX       int `toml:"padding_x"`
+	PaddingY       int `toml:"padding_y"`
+	FontSize       int `toml:"font_size"`
+	CharWidth      int `toml:"char_width"`
+	CascadeStepX   int `toml:"cascade_step_x"`
+	CascadeStepY   int `toml:"cascade_step_y"`
 	CascadeOriginX int `toml:"cascade_origin_x"`
 	CascadeOriginY int `toml:"cascade_origin_y"`
 	// Placement is where new cards spawn: near-selection, near-cursor, or fixed.
@@ -39,20 +39,21 @@ type Card struct {
 
 // Shortcuts are global accelerator strings (MyGo syntax).
 type Shortcuts struct {
-	ShowAll   string `toml:"show_all"`
-	HideAll   string `toml:"hide_all"`
-	Next      string `toml:"next"`
-	Prev      string `toml:"prev"`
-	Paste     string `toml:"paste"`
-	Delete    string `toml:"delete"`
+	ShowAll  string `toml:"show_all"`
+	HideAll  string `toml:"hide_all"`
+	Next     string `toml:"next"`
+	Prev     string `toml:"prev"`
+	Paste    string `toml:"paste"`
+	Delete   string `toml:"delete"`
+	Settings string `toml:"settings"`
 }
 
 // Secrets controls on-screen masking (not clipboard contents).
 type Secrets struct {
-	MaskEnabled      bool     `toml:"mask_enabled"`
-	ExtraPatterns    []string `toml:"extra_patterns"`
-	MinEntropyBits   float64  `toml:"min_entropy_bits"`
-	MinSecretLength  int      `toml:"min_secret_length"`
+	MaskEnabled     bool     `toml:"mask_enabled"`
+	ExtraPatterns   []string `toml:"extra_patterns"`
+	MinEntropyBits  float64  `toml:"min_entropy_bits"`
+	MinSecretLength int      `toml:"min_secret_length"`
 }
 
 // Config is the full snip configuration.
@@ -92,12 +93,13 @@ func Default() Config {
 			CascadeOriginY: 24,
 		},
 		Shortcuts: Shortcuts{
-			ShowAll: "CmdOrCtrl+Shift+S",
-			HideAll: "CmdOrCtrl+Shift+H",
-			Next:    "CmdOrCtrl+Shift+]",
-			Prev:    "CmdOrCtrl+Shift+[",
-			Paste:   "CmdOrCtrl+Shift+V",
-			Delete:  "CmdOrCtrl+Shift+Backspace",
+			ShowAll:  "CmdOrCtrl+Shift+S",
+			HideAll:  "CmdOrCtrl+Shift+H",
+			Next:     "CmdOrCtrl+Shift+]",
+			Prev:     "CmdOrCtrl+Shift+[",
+			Paste:    "CmdOrCtrl+Shift+V",
+			Delete:   "CmdOrCtrl+Shift+Backspace",
+			Settings: "CmdOrCtrl+,",
 		},
 		Secrets: Secrets{
 			MaskEnabled:     true,

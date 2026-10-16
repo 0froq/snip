@@ -23,15 +23,25 @@ func (c Card) textWidthForSlip(slipWidth int) float32 {
 	return float32(inner)
 }
 
+// LineBox is the Georgia line height the card text actually draws, in DIPs.
+func (c Card) LineBox() float32 {
+	m := c.cardFont().Metrics()
+	h := m.Ascent + m.Descent + m.LineGap
+	if h < 1 {
+		return float32(c.EffectiveLineHeight())
+	}
+	return h
+}
+
 func (c Card) shapedHeight(display string, slipWidth int) (lines int, heightPx int) {
 	textW := c.textWidthForSlip(slipWidth)
 	layout := ui.ShapeText(display, c.cardFont(), textW)
 	_, textH := layout.Size()
-	lineH := float32(c.EffectiveLineHeight())
-	if lineH < 1 {
-		lineH = 1
+	line := float64(c.LineBox())
+	if line < 1 {
+		line = 1
 	}
-	lines = int(math.Ceil(float64(textH) / float64(lineH)))
+	lines = int(math.Round(float64(textH) / line))
 	if lines < 1 {
 		lines = 1
 	}
@@ -39,7 +49,7 @@ func (c Card) shapedHeight(display string, slipWidth int) (lines int, heightPx i
 	if lines > maxLines {
 		lines = maxLines
 	}
-	heightPx = int(math.Ceil(float64(lines)*float64(lineH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
+	heightPx = int(math.Ceil(float64(lines)*line)) + 2*c.EffectivePaddingY() + 2*cardBorderPx
 	return lines, heightPx
 }
 

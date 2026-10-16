@@ -67,6 +67,10 @@ type cardUI struct {
 	dragOffY       int
 	pressScreenX   int
 	pressScreenY   int
+	resizeEdge     int
+	resizeStartW   int
+	resizeStartX   int
+	syncing        bool
 }
 
 // New creates the application state.
@@ -226,6 +230,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		a.visible = true
 		win.ShowInactive()
 	}
+	a.syncCardHeight(host)
 	a.refreshSelection()
 }
 
@@ -252,9 +257,11 @@ func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, plac
 }
 
 func (a *App) syncCardHeight(host *cardUI) {
-	if host == nil || host.win == nil || host.pointerActive {
+	if host == nil || host.win == nil || host.pointerActive || host.syncing {
 		return
 	}
+	host.syncing = true
+	defer func() { host.syncing = false }()
 	cardCfg := a.config().Card
 	w, _ := host.win.Size()
 	minW := cardCfg.EffectiveMinWidth()
@@ -309,10 +316,8 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		Background(surface).
 		Radius(tl, tr, br, bl).
 		Border(1, border).
-		Shadow(0, 2, 6, 0, paperShadow(dark)).
 		Clip().
 		FocusRing(false).
-		Rotate(paperSlant(host.card.ID)).
 		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) })
 	if cfg.Motion.Enabled {
 		col = col.Transition(motion)
@@ -325,12 +330,14 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		ui.Text(c, host.display).
 			Font("Georgia").
 			FontSize(float32(cardCfg.EffectiveFontSize())).
+			FixedLineHeight(cardCfg.LineBox()).
 			TextColor(paperInk(dark)).
 			Ellipsis("…").
 			MaxLines(cardCfg.EffectiveMaxLines())
 		if a.leaderActive() {
 			a.leaderHint(c, host)
 		}
+		a.cardResizeEdges(c, host, host.win)
 	})
 }
 

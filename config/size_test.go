@@ -1,13 +1,19 @@
 package config
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestEstimateSizeOneLine(t *testing.T) {
 	c := Default().Card
-	_, h := c.EstimateSize("hi")
-	one := c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*CardBorderPx()
-	if h != one {
-		t.Fatalf("one line height %d want %d", h, one)
+	lines, h := c.shapedHeight("hi", c.EstimateWidth("hi"))
+	if lines != 1 {
+		t.Fatalf("lines %d", lines)
+	}
+	two := 2*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	if h >= two {
+		t.Fatalf("one line height %d reaches a second line at %d", h, two)
 	}
 }
 
@@ -20,9 +26,13 @@ func TestHeightForWidthCJKWraps(t *testing.T) {
 		t.Fatalf("expected at least 2 wrapped lines for CJK, got %d at width %d", lines, w)
 	}
 	h := c.HeightForWidth(text, w)
-	two := 2*c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	two := 2*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	three := 3*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
 	if h < two {
 		t.Fatalf("height %d too small for two lines (need >= %d)", h, two)
+	}
+	if h >= three {
+		t.Fatalf("height %d includes a blank third line", h)
 	}
 }
 
@@ -64,7 +74,7 @@ func TestEstimateSizeCapsLines(t *testing.T) {
 	c.MaxLines = 2
 	long := "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
 	_, h := c.EstimateSize(long)
-	maxH := 2*c.EffectiveLineHeight() + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	maxH := 2*int(math.Ceil(float64(c.LineBox()))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
 	if h > maxH {
 		t.Fatalf("height %d over %d", h, maxH)
 	}

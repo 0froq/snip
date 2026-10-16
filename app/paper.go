@@ -11,19 +11,12 @@ func paperSeed(id string) uint32 {
 	return h
 }
 
-// paperSlant is a small clockwise tilt in degrees, stable for an id.
-func paperSlant(id string) float32 {
-	n := int(paperSeed(id)%15) - 7
-	return float32(n) * 0.1
-}
+// paperRadius is the same on every corner so the slip matches a rectangular window.
+const paperRadius = 10
 
-// paperCorners returns slightly uneven corner radii so each slip is cut, not stamped.
 func paperCorners(id string) (float32, float32, float32, float32) {
-	h := paperSeed(id)
-	r := func(shift uint) float32 {
-		return 1.5 + float32((h>>shift)%4)*0.5
-	}
-	return r(0), r(3), r(6), r(9)
+	_ = id
+	return paperRadius, paperRadius, paperRadius, paperRadius
 }
 
 func paperInk(dark bool) ui.Color {

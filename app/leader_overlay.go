@@ -526,7 +526,6 @@ func (a *App) whichKeyView(c *ui.Context) {
 		Background(fill).
 		Radius(float32(macplace.WindowCornerRadius)).
 		Border(1, paperEdge(dark).Alpha(0.9)).
-		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, paperSeed("which-key")) }).
 		Children(func() {
 			for _, item := range items {
 				key, name := item.Key, item.Name

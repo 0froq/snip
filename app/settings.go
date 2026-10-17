@@ -118,7 +118,6 @@ func (a *App) settingsView(c *ui.Context) {
 	ui.Column(c).Fill().Background(t.Background).Radius(t.Radius).Padding(14).Children(func() {
 		ui.Column(c).Fill().Background(t.Surface).Radius(t.Radius).Border(1, paperEdge(dark)).
 			Shadow(0, 4, 14, 0, paperShadow(dark)).
-			Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, paperSeed("settings")) }).
 			Children(func() {
 				ui.Row(c).Shrink(0).Padding(14, 14, 10, 14).Gap(10).AlignItems(ui.Center).
 					DragWindow().
@@ -233,7 +232,6 @@ func (a *App) settingsSection(c *ui.Context, title string, body func()) {
 	t := c.Theme()
 	dark := t.Dark
 	ui.Column(c).Gap(8).Padding(14).Background(t.SurfaceHover.Mix(t.Surface, 0.35)).Radius(t.Radius).Border(1, paperEdge(dark).Alpha(0.7)).
-		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, paperSeed(title)) }).
 		Children(func() {
 			ui.Text(c, title).FontSize(16).TextColor(paperInk(dark))
 			body()

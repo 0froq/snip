@@ -482,14 +482,12 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	if cfg.Motion.Enabled {
 		motion.Enter = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 8}
 	}
-	seed := paperSeed(host.card.ID)
 	col := ui.Column(c).Fill().
 		Padding(padY, padX, padY, padX).
 		Background(surface).
 		Radius(float32(macplace.WindowCornerRadius)).
 		Border(1, border).
-		FocusRing(false).
-		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) })
+		FocusRing(false)
 	if cfg.Motion.Enabled {
 		col = col.Transition(motion)
 	}

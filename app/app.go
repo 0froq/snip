@@ -239,6 +239,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		}
 		a.syncCardHeight(host)
 	})
+	macplace.UseFrameResizeCursors()
 	macplace.PreventWindowFocus(win.NativeHandle())
 	a.applyWindowFlags(win)
 	macplace.SquareWindow(win.NativeHandle())

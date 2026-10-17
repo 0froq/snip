@@ -25,3 +25,4 @@ func DisplayWindow(uintptr) {}
 func ConstrainWindowResize(_ uintptr, _ func(int, int) (int, int)) func() { return func() {} }
 
 func InLiveResize(handle uintptr) bool { return false }
+func UseFrameResizeCursors()           {}

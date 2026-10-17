@@ -37,9 +37,12 @@ duration_ms = 160
 shortcut = "CmdOrCtrl+Shift+Space"
 timeout_ms = 1500
 double_press_ms = 400
-pin_ms = 900
-# which_key_corner: top-left, top-right, bottom-left, or bottom-right
-which_key_corner = "bottom-right"
+# which_key_x/y: 0..100 percent of the work area. align is which point of the
+# panel sits there: start (left/top), center, or end (right/bottom).
+which_key_x = 100
+which_key_y = 100
+which_key_align_x = "end"
+which_key_align_y = "end"
 
 [bindings.toggle]
 direct = "CmdOrCtrl+Shift+S"

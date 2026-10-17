@@ -35,7 +35,7 @@ func (a *App) perform(action string) {
 	case "delete":
 		a.deleteSelected()
 	case "pin":
-		a.flashAll()
+		a.bringAllToFront()
 	case "settings":
 		a.showSettings()
 	case "leader":

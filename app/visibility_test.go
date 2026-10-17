@@ -9,8 +9,9 @@ type recordingNoteWindow struct {
 	calls []string
 }
 
-func (w *recordingNoteWindow) ShowInactive() { w.calls = append(w.calls, "show inactive") }
-func (w *recordingNoteWindow) Invalidate()   { w.calls = append(w.calls, "invalidate") }
+func (w *recordingNoteWindow) ShowInactive()      { w.calls = append(w.calls, "show inactive") }
+func (w *recordingNoteWindow) Invalidate()        { w.calls = append(w.calls, "invalidate") }
+func (w *recordingNoteWindow) SetOpacity(float64) { w.calls = append(w.calls, "opacity") }
 func (w *recordingNoteWindow) NativeHandle() uintptr {
 	w.calls = append(w.calls, "native display")
 	return 0 // No AppKit/display server needed, including on Darwin.
@@ -28,7 +29,7 @@ func TestShowNoteWindowAlwaysRequestsFreshContent(t *testing.T) {
 		if h.hiding || h.hideGen != gen+1 {
 			t.Fatalf("show must reset hiding and supersede pending hides: hiding=%v generation=%d (was %d)", h.hiding, h.hideGen, gen)
 		}
-		want := []string{"show inactive", "invalidate", "native display"}
+		want := []string{"invalidate", "native display", "show inactive", "opacity"}
 		if !reflect.DeepEqual(w.calls, want) {
 			t.Fatalf("show calls = %v, want %v", w.calls, want)
 		}

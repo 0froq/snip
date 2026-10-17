@@ -6,20 +6,18 @@ import (
 	"testing"
 )
 
-func TestWhichKeyCornerDefault(t *testing.T) {
-	got := Default().Leader.EffectiveWhichKeyCorner()
-	if got != WhichKeyBottomRight {
-		t.Fatalf("default corner %q", got)
-	}
-	if Default().Leader.WhichKeyCorner != WhichKeyBottomRight {
-		t.Fatalf("default field %q", Default().Leader.WhichKeyCorner)
+func TestWhichKeyDefault(t *testing.T) {
+	l := Default().Leader
+	x, y := l.WhichKeyPercents()
+	if x != 100 || y != 100 || l.EffectiveAlignX() != AlignEnd || l.EffectiveAlignY() != AlignEnd {
+		t.Fatalf("default placement %d,%d %s %s", x, y, l.EffectiveAlignX(), l.EffectiveAlignY())
 	}
 }
 
-func TestWhichKeyCornerParse(t *testing.T) {
+func TestWhichKeyParseAndLegacyCorner(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	body := "[leader]\nwhich_key_corner = \"top-left\"\n"
+	body := "[leader]\nwhich_key_x = 10\nwhich_key_y = 40\nwhich_key_align_x = \"center\"\nwhich_key_align_y = \"start\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -27,52 +25,62 @@ func TestWhichKeyCornerParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Leader.EffectiveWhichKeyCorner() != WhichKeyTopLeft {
-		t.Fatalf("parsed %q", got.Leader.WhichKeyCorner)
+	x, y := got.Leader.WhichKeyPercents()
+	if x != 10 || y != 40 || got.Leader.EffectiveAlignX() != AlignCenter || got.Leader.EffectiveAlignY() != AlignStart {
+		t.Fatalf("parsed %d,%d %s %s", x, y, got.Leader.EffectiveAlignX(), got.Leader.EffectiveAlignY())
 	}
 
-	if err := os.WriteFile(path, []byte("[leader]\ntimeout_ms = 900\n"), 0o644); err != nil {
+	// A corner alone still maps onto the percent anchor.
+	if err := os.WriteFile(path, []byte("[leader]\nwhich_key_corner = \"top-left\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got, err = Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Leader.EffectiveWhichKeyCorner() != WhichKeyBottomRight {
-		t.Fatalf("omitted corner %q", got.Leader.WhichKeyCorner)
-	}
-	if got.Leader.TimeoutMs != 900 {
-		t.Fatalf("timeout %d", got.Leader.TimeoutMs)
+	x, y = got.Leader.WhichKeyPercents()
+	if x != 0 || y != 0 || got.Leader.EffectiveAlignX() != AlignStart || got.Leader.EffectiveAlignY() != AlignStart {
+		t.Fatalf("legacy corner %d,%d %s %s", x, y, got.Leader.EffectiveAlignX(), got.Leader.EffectiveAlignY())
 	}
 
-	if err := os.WriteFile(path, []byte("[leader]\nwhich_key_corner = \"CENTER\"\n"), 0o644); err != nil {
+	// Explicit percent keys win over a leftover corner.
+	if err := os.WriteFile(path, []byte("[leader]\nwhich_key_corner = \"top-left\"\nwhich_key_x = 100\nwhich_key_y = 100\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got, err = Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Leader.EffectiveWhichKeyCorner() != WhichKeyBottomRight {
-		t.Fatalf("invalid corner %q", got.Leader.EffectiveWhichKeyCorner())
+	x, y = got.Leader.WhichKeyPercents()
+	if x != 100 || y != 100 || got.Leader.EffectiveAlignX() != AlignEnd {
+		t.Fatalf("percent overrides corner: %d,%d %s", x, y, got.Leader.EffectiveAlignX())
 	}
 }
 
-func TestWhichKeyCornerForm(t *testing.T) {
+func TestWhichKeyForm(t *testing.T) {
 	f := FormFrom(Default())
-	if f.WhichKeyCorner != WhichKeyBottomRight {
-		t.Fatalf("form default %q", f.WhichKeyCorner)
+	if f.WhichKeyX != "100" || f.WhichKeyY != "100" || f.WhichKeyAlignX != AlignEnd || f.WhichKeyAlignY != AlignEnd {
+		t.Fatalf("form default %+v", f)
 	}
-	f.WhichKeyCorner = "Top-Left"
+	f.WhichKeyX = "0"
+	f.WhichKeyY = "50"
+	f.WhichKeyAlignX = "Start"
+	f.WhichKeyAlignY = "center"
 	got, err := f.Parse(Default())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Leader.WhichKeyCorner != WhichKeyTopLeft {
-		t.Fatalf("parsed form %q", got.Leader.WhichKeyCorner)
+	if got.Leader.WhichKeyX != 0 || got.Leader.WhichKeyY != 50 || got.Leader.WhichKeyAlignX != AlignStart || got.Leader.WhichKeyAlignY != AlignCenter {
+		t.Fatalf("parsed form %+v", got.Leader)
 	}
-	f.WhichKeyCorner = "middle"
+	f.WhichKeyAlignX = "middle"
 	if _, err := f.Parse(Default()); err == nil {
-		t.Fatal("expected error")
+		t.Fatal("expected align error")
+	}
+	f.WhichKeyAlignX = AlignStart
+	f.WhichKeyX = "120"
+	if _, err := f.Parse(Default()); err == nil {
+		t.Fatal("expected percent error")
 	}
 }
 
@@ -108,13 +116,14 @@ func TestFontFamilyDefaultAndForm(t *testing.T) {
 	}
 }
 
-func TestRepoConfigWhichKeyCorner(t *testing.T) {
+func TestRepoConfigWhichKey(t *testing.T) {
 	got, err := Load(filepath.Join("..", "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Leader.EffectiveWhichKeyCorner() != WhichKeyBottomRight {
-		t.Fatalf("repo config %q", got.Leader.WhichKeyCorner)
+	x, y := got.Leader.WhichKeyPercents()
+	if x != 100 || y != 100 || got.Leader.EffectiveAlignX() != AlignEnd || got.Leader.EffectiveAlignY() != AlignEnd {
+		t.Fatalf("repo config %d,%d %s %s", x, y, got.Leader.EffectiveAlignX(), got.Leader.EffectiveAlignY())
 	}
 	if got.Card.FontSize != DefaultFontSize || got.Card.EffectiveFontFamily() != DefaultFontFamily {
 		t.Fatalf("repo font %q %d", got.Card.FontFamily, got.Card.FontSize)

@@ -135,26 +135,41 @@ func TestBadgeFrameCentersOnTopRight(t *testing.T) {
 	}
 }
 
-func TestPlaceWhichKeyCorners(t *testing.T) {
+func TestPlaceWhichKeyAnchor(t *testing.T) {
 	screen := frame{X: 10, Y: 30, W: 1000, H: 800}
 	const winW, winH, margin = 120, 80, whichKeyMargin
 	cases := []struct {
-		corner string
-		x, y   int
+		name       string
+		xPct, yPct int
+		ax, ay     string
+		x, y       int
 	}{
-		{config.WhichKeyTopLeft, screen.X + margin, screen.Y + margin},
-		{config.WhichKeyTopRight, screen.X + screen.W - winW - margin, screen.Y + margin},
-		{config.WhichKeyBottomLeft, screen.X + margin, screen.Y + screen.H - winH - margin},
-		{config.WhichKeyBottomRight, screen.X + screen.W - winW - margin, screen.Y + screen.H - winH - margin},
+		{"top-left", 0, 0, config.AlignStart, config.AlignStart, screen.X + margin, screen.Y + margin},
+		{"top-right", 100, 0, config.AlignEnd, config.AlignStart, screen.X + screen.W - winW - margin, screen.Y + margin},
+		{"bottom-left", 0, 100, config.AlignStart, config.AlignEnd, screen.X + margin, screen.Y + screen.H - winH - margin},
+		{"bottom-right", 100, 100, config.AlignEnd, config.AlignEnd, screen.X + screen.W - winW - margin, screen.Y + screen.H - winH - margin},
 	}
 	for _, tc := range cases {
-		x, y := placeWhichKey(screen, tc.corner, winW, winH, margin)
+		x, y := placeWhichKey(screen, tc.xPct, tc.yPct, tc.ax, tc.ay, winW, winH, margin)
 		if x != tc.x || y != tc.y {
-			t.Fatalf("%s got (%d,%d) want (%d,%d)", tc.corner, x, y, tc.x, tc.y)
+			t.Fatalf("%s got (%d,%d) want (%d,%d)", tc.name, x, y, tc.x, tc.y)
 		}
-		if x < screen.X+margin || y < screen.Y+margin || x+winW > screen.X+screen.W-margin || y+winH > screen.Y+screen.H-margin {
-			t.Fatalf("%s window not inside the margin", tc.corner)
-		}
+	}
+	innerW := screen.W - 2*margin
+	innerH := screen.H - 2*margin
+	cx := screen.X + margin + innerW/2
+	cy := screen.Y + margin + innerH/2
+	x, y := placeWhichKey(screen, 50, 50, config.AlignCenter, config.AlignCenter, winW, winH, margin)
+	if x != cx-winW/2 || y != cy-winH/2 {
+		t.Fatalf("center got (%d,%d) want (%d,%d)", x, y, cx-winW/2, cy-winH/2)
+	}
+	x, y = placeWhichKey(screen, 100, 100, config.AlignEnd, config.AlignEnd, screen.W+40, screen.H+40, margin)
+	if x != screen.X || y != screen.Y {
+		t.Fatalf("oversized panel (%d,%d)", x, y)
+	}
+	x, y = placeWhichKey(screen, 0, 0, config.AlignEnd, config.AlignEnd, winW, winH, margin)
+	if x < screen.X || y < screen.Y || x+winW > screen.X+screen.W || y+winH > screen.Y+screen.H {
+		t.Fatalf("clamped panel (%d,%d) leaves the screen", x, y)
 	}
 }
 

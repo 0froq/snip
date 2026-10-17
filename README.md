@@ -92,11 +92,11 @@ The file Settings writes is the one snip loaded (`config.toml` in the working di
 
 ### Shortcuts
 
-Each action has a direct global shortcut and a leader key. Either field may be empty. Each one can require a double press. A leader binding can stay active after it runs, which is useful for next, previous, and flash.
+Each action has a direct global shortcut and a leader key. Either field may be empty. Each one can require a double press. A leader binding can stay active after it runs, which is useful for next and previous.
 
-The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Each card shows a jump badge centered on its top-right corner (digits 1–9, then 0, then keys that are not already leader actions). The other leader actions are listed in one which-key window, in the corner set by `[leader].which_key_corner` (default `bottom-right`). That window is a translucent blurred panel. Cards, the which-key window and settings share a 6pt corner radius. Escape cancels the mode. The mode also closes after `timeout_ms`. A sticky leader binding keeps that window up.
+The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Each card shows a jump badge centered on its top-right corner (digits 1–9, then 0, then keys that are not already leader actions). The other leader actions are listed in one which-key window. `[leader].which_key_x` and `which_key_y` (0–100) place an anchor on the work area, and `which_key_align_x` / `which_key_align_y` (`start`, `center`, or `end`) choose which point of the panel sits there. The default is the bottom-right corner (`100`, `100`, `end`, `end`), inset by a margin. An old `which_key_corner` value still applies when those four keys are absent. The panel uses a monospace face and a translucent blur. Cards, the which-key window and settings share a 6pt corner radius. Escape cancels the mode. The mode also closes after `timeout_ms`. A sticky leader binding keeps that window up.
 
-Flash brings every card forward, colors it once, and gives it a quick scale pulse.
+Bring to front shows every card and orders it above other windows. It does not flash or recolor them.
 
 ### Language and config path
 

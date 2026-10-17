@@ -47,7 +47,6 @@ type App struct {
 	whichItems    []whichKeyItem
 	whichWin      *mygo.Window
 	taps          tapGate
-	flashing      bool
 	tray          *mygo.Tray
 }
 
@@ -64,7 +63,6 @@ type cardUI struct {
 	pulse     bool
 	hiding    bool
 	hideGen   uint64
-	scale     float32
 	userW     int
 	userH     int
 	userLines int
@@ -384,7 +382,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	t := c.Theme()
 	surface := t.Surface
 	border := paperEdge(dark)
-	if host.selected || host.pulse || a.flashing {
+	if host.selected || host.pulse {
 		surface = t.Surface.Mix(accent, 0.14)
 		border = accent
 	}
@@ -394,7 +392,6 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	motion := ui.ElementTransition{Duration: cfg.Motion.Duration(), Colors: true}
 	if cfg.Motion.Enabled {
 		motion.Enter = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 8}
-		motion.Exit = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 6}
 	}
 	seed := paperSeed(host.card.ID)
 	col := ui.Column(c).Fill().
@@ -406,11 +403,6 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) })
 	if cfg.Motion.Enabled {
 		col = col.Transition(motion)
-	}
-	if host.hiding {
-		col = col.Opacity(0).Scale(0.96, 0.96)
-	} else if host.scale > 1 {
-		col = col.TransformOrigin(0.5, 0.5).Scale(host.scale, host.scale)
 	}
 	col = cardPointerInput(a, host, host.win, col).Cursor(edgeCursor(host.hoverEdge))
 	col.Children(func() {
@@ -456,30 +448,12 @@ func (a *App) hideCard(h *cardUI) {
 		return
 	}
 	h.hideGen++
-	gen := h.hideGen
-	cfg := a.config()
-	if !cfg.Motion.Enabled || mygo.Theme.Preferences().ReduceMotion {
-		h.hiding = false
-		h.win.Hide()
-		a.hideBadge(h)
-		return
-	}
-	h.hiding = true
-	h.win.Invalidate()
-	time.AfterFunc(cfg.Motion.Duration(), func() {
-		mygo.RunOnMain(func() {
-			// A show (or a newer hide) supersedes this animation. In
-			// particular, an old timer must not hide a freshly shown note.
-			if h.hideGen != gen {
-				return
-			}
-			if h.win != nil {
-				h.win.Hide()
-			}
-			h.hiding = false
-			a.hideBadge(h)
-		})
-	})
+	h.hiding = false
+	// Drop the whole window before any repaint. Fading or clearing the text
+	// first left the rounded background on screen with the note gone.
+	h.win.SetOpacity(0)
+	h.win.Hide()
+	a.hideBadge(h)
 }
 
 func (a *App) surfaceCard(id string) {
@@ -525,43 +499,11 @@ func (a *App) selectNumber(n int) {
 	a.selectID(id)
 }
 
-func (a *App) flashAll() {
-	a.mu.Lock()
-	was := a.visible
-	a.flashing = true
-	hosts := make([]*cardUI, 0, len(a.order))
-	for _, id := range a.order {
-		if h := a.cards[id]; h != nil && h.win != nil {
-			hosts = append(hosts, h)
-		}
-	}
-	a.mu.Unlock()
+// bringAllToFront shows every card and orders it front. The old pin action
+// also flashed a color and a scale pulse, then hid the cards again; that
+// effect is gone.
+func (a *App) bringAllToFront() {
 	a.setAllVisible(true)
-	if !mygo.Theme.Preferences().ReduceMotion {
-		for _, h := range hosts {
-			h.scale = 1.07
-		}
-	}
-	a.invalidateCards()
-	time.AfterFunc(120*time.Millisecond, func() {
-		mygo.RunOnMain(func() {
-			for _, h := range hosts {
-				h.scale = 0
-			}
-			a.invalidateCards()
-		})
-	})
-	time.AfterFunc(240*time.Millisecond, func() {
-		mygo.RunOnMain(func() {
-			a.mu.Lock()
-			a.flashing = false
-			a.mu.Unlock()
-			if !was {
-				a.setAllVisible(false)
-			}
-			a.invalidateCards()
-		})
-	})
 }
 
 func (a *App) invalidateCards() {

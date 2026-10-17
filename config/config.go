@@ -91,10 +91,14 @@ type Leader struct {
 	Shortcut      string `toml:"shortcut"`
 	TimeoutMs     int    `toml:"timeout_ms"`
 	DoublePressMs int    `toml:"double_press_ms"`
-	PinMs         int    `toml:"pin_ms"`
-	// WhichKeyCorner is the screen corner for the leader which-key window:
-	// top-left, top-right, bottom-left, or bottom-right.
-	WhichKeyCorner string `toml:"which_key_corner"`
+	// WhichKeyX and WhichKeyY are where the panel anchor sits, as a percent
+	// of the screen work area (0..100). WhichKeyAlignX and WhichKeyAlignY
+	// choose which point of the panel sits there: start (left/top), center,
+	// or end (right/bottom).
+	WhichKeyX      int    `toml:"which_key_x"`
+	WhichKeyY      int    `toml:"which_key_y"`
+	WhichKeyAlignX string `toml:"which_key_align_x"`
+	WhichKeyAlignY string `toml:"which_key_align_y"`
 }
 
 // Motion controls appear and disappear animation.
@@ -169,8 +173,10 @@ func Default() Config {
 			Shortcut:       "CmdOrCtrl+Shift+Space",
 			TimeoutMs:      1500,
 			DoublePressMs:  400,
-			PinMs:          900,
-			WhichKeyCorner: WhichKeyBottomRight,
+			WhichKeyX:      100,
+			WhichKeyY:      100,
+			WhichKeyAlignX: AlignEnd,
+			WhichKeyAlignY: AlignEnd,
 		},
 		Motion:   Motion{Enabled: true, DurationMs: 160},
 		Language: "en",
@@ -327,13 +333,6 @@ func (l Leader) DoubleGap() time.Duration {
 	return time.Duration(l.DoublePressMs) * time.Millisecond
 }
 
-func (l Leader) PinDuration() time.Duration {
-	if l.PinMs <= 0 {
-		return 900 * time.Millisecond
-	}
-	return time.Duration(l.PinMs) * time.Millisecond
-}
-
 func (m Motion) Duration() time.Duration {
 	if m.DurationMs <= 0 {
 		return 160 * time.Millisecond
@@ -359,5 +358,27 @@ func Load(path string) (Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return cfg, err
 	}
+	cfg.Leader.applyLegacyWhichKeyFile(data)
 	return cfg, nil
+}
+
+// applyLegacyWhichKeyFile honors which_key_corner only when the file does
+// not set the percent or align keys. Those replace the corner option.
+func (l *Leader) applyLegacyWhichKeyFile(data []byte) {
+	var raw struct {
+		Leader struct {
+			Corner string  `toml:"which_key_corner"`
+			X      *int    `toml:"which_key_x"`
+			Y      *int    `toml:"which_key_y"`
+			AlignX *string `toml:"which_key_align_x"`
+			AlignY *string `toml:"which_key_align_y"`
+		} `toml:"leader"`
+	}
+	if err := toml.Unmarshal(data, &raw); err != nil || raw.Leader.Corner == "" {
+		return
+	}
+	if raw.Leader.X != nil || raw.Leader.Y != nil || raw.Leader.AlignX != nil || raw.Leader.AlignY != nil {
+		return
+	}
+	l.ApplyLegacyWhichKeyCorner(raw.Leader.Corner)
 }

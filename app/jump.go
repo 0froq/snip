@@ -140,24 +140,79 @@ func freeJumpKeys(bound map[string]struct{}, pool []string) []string {
 	return free
 }
 
-// placeWhichKey puts a window of the given size inside screen, inset by margin,
-// in one of the four corners.
-func placeWhichKey(screen frame, corner string, winW, winH, margin int) (int, int) {
+// placeWhichKey puts the panel anchor at xPct,yPct of the work area inset by
+// margin, then shifts so alignX/alignY of the panel sits on that point.
+// The panel is clamped so it stays fully inside the screen.
+func placeWhichKey(screen frame, xPct, yPct int, alignX, alignY string, winW, winH, margin int) (int, int) {
 	if margin < 0 {
 		margin = 0
 	}
-	switch corner {
-	case config.WhichKeyTopLeft:
-		return screen.X + margin, screen.Y + margin
-	case config.WhichKeyTopRight:
-		return screen.X + screen.W - winW - margin, screen.Y + margin
-	case config.WhichKeyBottomLeft:
-		return screen.X + margin, screen.Y + screen.H - winH - margin
-	case config.WhichKeyBottomRight:
-		return screen.X + screen.W - winW - margin, screen.Y + screen.H - winH - margin
-	default:
-		panic("unhandled which-key corner: " + corner)
+	if xPct < 0 {
+		xPct = 0
 	}
+	if xPct > 100 {
+		xPct = 100
+	}
+	if yPct < 0 {
+		yPct = 0
+	}
+	if yPct > 100 {
+		yPct = 100
+	}
+	inner := screen
+	if screen.W > 2*margin && screen.H > 2*margin {
+		inner.X += margin
+		inner.Y += margin
+		inner.W -= 2 * margin
+		inner.H -= 2 * margin
+	}
+	ax := inner.X + int(math.Round(float64(inner.W)*float64(xPct)/100))
+	ay := inner.Y + int(math.Round(float64(inner.H)*float64(yPct)/100))
+	x := whichKeyOrigin(ax, winW, alignX)
+	y := whichKeyOrigin(ay, winH, alignY)
+	if winW >= screen.W {
+		x = screen.X
+	} else {
+		if x < screen.X {
+			x = screen.X
+		}
+		if x+winW > screen.X+screen.W {
+			x = screen.X + screen.W - winW
+		}
+	}
+	if winH >= screen.H {
+		y = screen.Y
+	} else {
+		if y < screen.Y {
+			y = screen.Y
+		}
+		if y+winH > screen.Y+screen.H {
+			y = screen.Y + screen.H - winH
+		}
+	}
+	return x, y
+}
+
+func whichKeyOrigin(anchor, size int, align string) int {
+	switch align {
+	case config.AlignStart:
+		return anchor
+	case config.AlignCenter:
+		return anchor - size/2
+	case config.AlignEnd:
+		return anchor - size
+	default:
+		panic("unhandled which-key align: " + align)
+	}
+}
+
+// whichKeyFont is a monospace face so keys and labels share column widths,
+// with a CJK sans for glyphs the mono face lacks.
+func whichKeyFont(size int) ui.Font {
+	if size <= 0 {
+		size = config.DefaultFontSize
+	}
+	return ui.Font{Family: "ui-monospace, SF Mono, Menlo, PingFang SC, monospace", Size: float32(size)}
 }
 
 func whichKeyItems(cfg config.Config) []whichKeyItem {

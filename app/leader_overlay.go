@@ -299,7 +299,7 @@ func (a *App) syncWhichKey() {
 		a.discardWhichKey()
 		return
 	}
-	w, h := whichKeySize(a.whichItems, a.config().Card.UIFont(0))
+	w, h := whichKeySize(a.whichItems, whichKeyFont(a.config().Card.EffectiveFontSize()))
 	if a.whichWin == nil {
 		a.whichWin = a.newChromeWindow(40, 40, w, h, false, ui.View(func(c *ui.Context) {
 			a.whichKeyView(c)
@@ -392,8 +392,9 @@ func (a *App) positionWhichKey() {
 		return
 	}
 	w, h := a.whichWin.Size()
-	corner := a.config().Leader.EffectiveWhichKeyCorner()
-	x, y := placeWhichKey(screen, corner, w, h, whichKeyMargin)
+	leader := a.config().Leader
+	xPct, yPct := leader.WhichKeyPercents()
+	x, y := placeWhichKey(screen, xPct, yPct, leader.EffectiveAlignX(), leader.EffectiveAlignY(), w, h, whichKeyMargin)
 	cx, cy := a.whichWin.Position()
 	if cx != x || cy != y {
 		a.whichWin.SetPosition(x, y)
@@ -504,10 +505,17 @@ func (a *App) whichKeyView(c *ui.Context) {
 	dark := c.Theme().Dark
 	cfg := a.config()
 	accent := activeColor(cfg.Card.ActiveColor, dark)
-	font := cfg.Card.UIFont(0)
+	font := whichKeyFont(cfg.Card.EffectiveFontSize())
 	c.SetTheme(paperTheme(dark, accent, font))
 	t := c.Theme()
 	items := append([]whichKeyItem(nil), a.whichItems...)
+	var keyW float32
+	for _, item := range items {
+		w, _ := ui.ShapeText(item.Key, font, 0).Size()
+		if w > keyW {
+			keyW = w
+		}
+	}
 	// A paper tint over the vibrancy material. Opaque text stays readable
 	// in both appearances; the window itself is not a solid fill.
 	fill := t.Surface.Alpha(0.82)
@@ -523,7 +531,7 @@ func (a *App) whichKeyView(c *ui.Context) {
 			for _, item := range items {
 				key, name := item.Key, item.Name
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, key).Font(font.Family).FontSize(font.Size).TextColor(t.Accent)
+					ui.Text(c, key).Width(keyW).Font(font.Family).FontSize(font.Size).TextColor(t.Accent)
 					ui.Text(c, name).Font(font.Family).FontSize(font.Size).TextColor(paperInk(dark))
 				})
 			}

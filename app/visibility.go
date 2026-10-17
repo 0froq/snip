@@ -18,17 +18,17 @@ func (a *App) showCard(h *cardUI) {
 type noteWindow interface {
 	ShowInactive()
 	Invalidate()
+	SetOpacity(float64)
 	NativeHandle() uintptr
 }
 
 func (h *cardUI) showWindow(win noteWindow) {
 	h.hideGen++ // Cancel any pending animated hide, including its posted callback.
 	h.hiding = false
-	win.ShowInactive()
-	// Ordering a non-key window front does not invalidate MyGo's cached UI.
-	// In particular, animated hide may have left a zero-opacity frame behind.
-	// Ask MyGo to rebuild, then explicitly dirty the native view hierarchy so
-	// rendering does not depend on activation, a click, or a display-link tick.
+	// Paint the full note while the window is still ordered out (hide leaves
+	// it at alpha 0) and only then order it in and reveal it.
 	win.Invalidate()
 	macplace.DisplayWindow(win.NativeHandle())
+	win.ShowInactive()
+	win.SetOpacity(1)
 }

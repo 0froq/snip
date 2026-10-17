@@ -171,13 +171,12 @@ func (a *App) settingsView(c *ui.Context) {
 							labeledInput(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
 							labeledInput(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
 							labeledInput(c, tr(lang, "double_ms"), &f.DoublePressMs)
-							ui.Text(c, tr(lang, "which_key_corner")).FontSize(12)
-							ui.Select(c, &f.WhichKeyCorner, []string{
-								config.WhichKeyTopLeft,
-								config.WhichKeyTopRight,
-								config.WhichKeyBottomLeft,
-								config.WhichKeyBottomRight,
-							})
+							labeledInput(c, tr(lang, "which_key_x"), &f.WhichKeyX)
+							labeledInput(c, tr(lang, "which_key_y"), &f.WhichKeyY)
+							ui.Text(c, tr(lang, "which_key_align_x")).FontSize(12)
+							ui.Select(c, &f.WhichKeyAlignX, []string{config.AlignStart, config.AlignCenter, config.AlignEnd})
+							ui.Text(c, tr(lang, "which_key_align_y")).FontSize(12)
+							ui.Select(c, &f.WhichKeyAlignY, []string{config.AlignStart, config.AlignCenter, config.AlignEnd})
 							for _, item := range f.Bindings.NamedBindings() {
 								settingsBinding(c, tr(lang, item.Name), item.Binding, lang)
 							}

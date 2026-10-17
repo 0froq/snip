@@ -305,15 +305,20 @@ func (a *App) fitCardWidth(host *cardUI, w int) config.CardLayout {
 // (capped by max height), so the bottom edge stops once everything is visible.
 func (a *App) fitCardSize(host *cardUI, w, h int) config.CardLayout {
 	cardCfg := a.config().Card
+	// max_lines is only the default; a drag may reveal every line of the
+	// original text, bounded by max height. Count lines on the full text.
 	host.userLines = 0
-	full := a.fitCardWidth(host, w)
+	base := a.fitCardWidth(host, w)
+	maxN := base.FullLines
 	lines := 1
-	for n := 1; n <= full.VisibleLines; n++ {
-		if cardCfg.Layout(host.display, full.Width, n).Height <= h {
-			lines = n
+	for n := 1; n <= maxN; n++ {
+		l := cardCfg.Layout(host.display, base.Width, n)
+		if l.VisibleLines < n || l.Height > h {
+			break
 		}
+		lines = n
 	}
-	if lines >= full.VisibleLines {
+	if lines == cardCfg.EffectiveMaxLines() && base.VisibleLines == lines {
 		lines = 0
 	}
 	host.userLines = lines

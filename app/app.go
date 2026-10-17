@@ -53,17 +53,18 @@ type cardPosition struct {
 }
 
 type cardUI struct {
-	card     store.Card
-	win      *mygo.Window
-	display  string
-	selected bool
-	pulse    bool
-	hiding   bool
-	hideGen  uint64
-	scale    float32
-	userW    int
-	userH    int
-	rendered string
+	card      store.Card
+	win       *mygo.Window
+	display   string
+	selected  bool
+	pulse     bool
+	hiding    bool
+	hideGen   uint64
+	scale     float32
+	userW     int
+	userH     int
+	userLines int
+	rendered  string
 
 	pointerActive  bool
 	pointerDragged bool
@@ -234,8 +235,8 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	a.applyWindowFlags(win)
 	macplace.SquareWindow(win.NativeHandle())
 	win.SetResizable(true)
-	cleanupResize := macplace.ConstrainWindowResize(win.NativeHandle(), func(width int) (int, int) {
-		layout := a.fitCardWidth(host, width)
+	cleanupResize := macplace.ConstrainWindowResize(win.NativeHandle(), func(width, height int) (int, int) {
+		layout := a.fitCardSize(host, width, height)
 		win.Invalidate()
 		return layout.Width, layout.Height
 	})
@@ -289,10 +290,30 @@ func (a *App) fitCardWidth(host *cardUI, w int) config.CardLayout {
 	if w > maxW {
 		w = maxW
 	}
-	layout := cardCfg.Layout(host.display, w, 0)
+	layout := cardCfg.Layout(host.display, w, host.userLines)
 	host.rendered = layout.Text
 	host.userW, host.userH = layout.Width, layout.Height
 	return layout
+}
+
+// fitCardSize handles a native drag: width as fitCardWidth, and the dragged
+// height picks how many lines show, from one line up to all of the text
+// (capped by max height), so the bottom edge stops once everything is visible.
+func (a *App) fitCardSize(host *cardUI, w, h int) config.CardLayout {
+	cardCfg := a.config().Card
+	host.userLines = 0
+	full := a.fitCardWidth(host, w)
+	lines := 1
+	for n := 1; n <= full.VisibleLines; n++ {
+		if cardCfg.Layout(host.display, full.Width, n).Height <= h {
+			lines = n
+		}
+	}
+	if lines >= full.VisibleLines {
+		lines = 0
+	}
+	host.userLines = lines
+	return a.fitCardWidth(host, w)
 }
 
 func (a *App) syncCardHeight(host *cardUI) {

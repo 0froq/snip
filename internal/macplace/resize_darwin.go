@@ -22,14 +22,14 @@ var (
 	resizeLoadOnce sync.Once
 	setObjectClass func(id, objc.Class) objc.Class
 	resizeClasses  = map[objc.Class]objc.Class{}
-	resizeSizes    = map[id]func(int) (int, int){}
+	resizeSizes    = map[id]func(int, int) (int, int){}
 )
 
 // ConstrainWindowResize installs content-bound native resizing. Call on the
 // main thread, after creating the window, and call the returned cleanup on
 // OnClosed. size receives the proposed width in points and returns the exact
 // width and height; AppKit still owns edge tracking, cursors and frame origins.
-func ConstrainWindowResize(handle uintptr, size func(int) (int, int)) func() {
+func ConstrainWindowResize(handle uintptr, size func(int, int) (int, int)) func() {
 	if handle == 0 {
 		return func() {}
 	}
@@ -47,7 +47,7 @@ func ConstrainWindowResize(handle uintptr, size func(int) (int, int)) func() {
 	return cleanup
 }
 
-func constrainDelegate(delegate id, size func(int) (int, int)) func() {
+func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {
 	resizeLoadOnce.Do(func() {
 		purego.RegisterLibFunc(&setObjectClass, libObjC, "object_setClass")
 	})
@@ -89,7 +89,7 @@ func constrainDelegate(delegate id, size func(int) (int, int)) func() {
 
 func windowWillResize(self id, _ objc.SEL, _ id, proposed NSSize) NSSize {
 	if size := resizeSizes[self]; size != nil {
-		w, h := size(int(math.Round(proposed.Width)))
+		w, h := size(int(math.Round(proposed.Width)), int(math.Round(proposed.Height)))
 		return NSSize{Width: float64(w), Height: float64(h)}
 	}
 	return proposed

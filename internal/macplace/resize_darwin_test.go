@@ -53,10 +53,10 @@ func TestResizeDelegateNSSizeABIAndLifetime(t *testing.T) {
 		defer send(window, "release")
 
 		before := len(resizeSizes)
-		makeSizer := func() func(int) (int, int) {
+		makeSizer := func() func(int, int) (int, int) {
 			offset := new(int)
 			*offset = 7
-			return func(w int) (int, int) { return w + *offset, w/3 + 23 }
+			return func(w, _ int) (int, int) { return w + *offset, w/3 + 23 }
 		}
 		cleanup := ConstrainWindowResize(uintptr(window), makeSizer())
 		defer cleanup()

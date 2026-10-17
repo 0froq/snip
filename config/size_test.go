@@ -42,7 +42,7 @@ func TestLayoutWrapsOnlyAtMaxWidth(t *testing.T) {
 
 func TestHeightForWidthCJKWraps(t *testing.T) {
 	c := Default().Card
-	text := strings.Repeat("还有这个样式，我认为既然要做纸色，窗口可以再纸一点", 2)
+	text := strings.Repeat("还有这个样式，我认为既然要做纸色，窗口可以再纸一点", 3)
 	layout := c.Layout(text, 220, 0)
 	if layout.VisibleLines != c.EffectiveMaxLines() || !layout.Truncated || !strings.Contains(layout.Text, "\n…\n") {
 		t.Fatalf("layout %+v", layout)

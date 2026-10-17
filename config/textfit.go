@@ -2,6 +2,7 @@ package config
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -44,17 +45,33 @@ type CardLayout struct {
 	Truncated    bool
 }
 
+// linesForText counts the visual lines MyGo actually lays out, by distinct
+// caret rows. Dividing the height by the Latin line box overcounts lines
+// that use a taller CJK fallback font.
 func (c Card) linesForText(text string, width int) int {
-	_, h := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width)).Size()
-	line := float64(c.lineBox())
-	if line < 1 {
-		line = 1
-	}
-	n := int(math.Round(float64(h) / line))
-	if n < 1 {
+	if text == "" {
 		return 1
 	}
-	return n
+	tl := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width))
+	// Carets on one line can sit at different heights when Latin and CJK
+	// fallback glyphs mix, so cluster caret centers within half a line box.
+	n := len(text)
+	ys := make([]float64, 0, n+1)
+	for i := 0; i <= n; i++ {
+		r := tl.Caret(i)
+		ys = append(ys, float64(r.Y+r.H/2))
+	}
+	sort.Float64s(ys)
+	gap := float64(c.lineBox()) / 2
+	rows := 1
+	start := ys[0]
+	for _, y := range ys[1:] {
+		if y-start > gap {
+			rows++
+			start = y
+		}
+	}
+	return rows
 }
 
 func (c Card) truncate(display string, width, lines int) (string, bool) {
@@ -78,7 +95,7 @@ func (c Card) truncate(display string, width, lines int) (string, bool) {
 	return string(runes[:lo]) + "…", true
 }
 
-// head is the longest prefix that fits in n lines.
+// head is the longest prefix that fits in n lines (kept for reference callers).
 func (c Card) head(runes []rune, width, n int) string {
 	lo, hi := 0, len(runes)
 	for lo < hi {
@@ -90,6 +107,21 @@ func (c Card) head(runes []rune, width, n int) string {
 		}
 	}
 	return strings.TrimRight(string(runes[:lo]), "\n")
+}
+
+// headWithEllipsis is the longest prefix p such that p + "\n…" fits in n lines.
+func (c Card) headWithEllipsis(runes []rune, width, n int) string {
+	lo, hi := 0, len(runes)
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		cand := strings.TrimRight(string(runes[:mid]), "\n") + "\n…"
+		if c.linesForText(cand, width) <= n {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return strings.TrimRight(string(runes[:lo]), "\n") + "\n…"
 }
 
 // tail is the longest suffix that fits on one line.
@@ -123,10 +155,13 @@ func (c Card) truncateMiddle(display string, width, n int) (string, bool) {
 		return c.truncate(display, width, 1)
 	}
 	runes := []rune(display)
+	// Measure the head together with the ellipsis line: a head that exactly
+	// fills its last line can make the following newline wrap an empty line.
 	if n == 2 {
-		return c.head(runes, width, 1) + "\n…", true
+		return c.headWithEllipsis(runes, width, 2), true
 	}
-	return c.head(runes, width, n-2) + "\n…\n" + c.tail(runes, width), true
+	head := c.headWithEllipsis(runes, width, n-1)
+	return head + "\n" + c.tail(runes, width), true
 }
 
 // Layout truncates first, then measures the exact text that the card draws.

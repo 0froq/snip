@@ -1,8 +1,11 @@
 package app
 
-import "github.com/egoist/mygo/ui"
+import (
+	"github.com/0froq/snip/internal/macplace"
+	"github.com/egoist/mygo/ui"
+)
 
-func paperTheme(dark bool, active ui.Color) *ui.Theme {
+func paperTheme(dark bool, active ui.Color, font ui.Font) *ui.Theme {
 	t := ui.LightTheme()
 	if dark {
 		t = ui.DarkTheme()
@@ -21,7 +24,11 @@ func paperTheme(dark bool, active ui.Color) *ui.Theme {
 		t.TextMuted = ui.Hex("#8A7764")
 	}
 	t.Accent = active
-	t.Radius = 3
+	t.Radius = float32(macplace.WindowCornerRadius)
+	t.Font = font.Family
+	if font.Size > 0 {
+		t.FontSize = font.Size
+	}
 	return t
 }
 

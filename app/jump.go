@@ -1,9 +1,11 @@
 package app
 
 import (
+	"math"
 	"strings"
 
 	"github.com/0froq/snip/config"
+	"github.com/egoist/mygo/ui"
 )
 
 // BadgeDiameter is the jump-badge window size. It is even so the badge center
@@ -178,24 +180,44 @@ func actionHint(lang, action string) string {
 	return tr(lang, key)
 }
 
-func whichKeySize(items []whichKeyItem) (int, int) {
+func whichKeySize(items []whichKeyItem, font ui.Font) (int, int) {
 	if len(items) == 0 {
 		return 0, 0
 	}
-	maxKey, maxName := 1, 1
+	const padX, padY, gap, rowGap = 12, 10, 10, 4
+	var maxW, lineH float32
 	for _, it := range items {
-		if n := len([]rune(it.Key)); n > maxKey {
-			maxKey = n
+		kw, kh := ui.ShapeText(it.Key, font, 0).Size()
+		nw, nh := ui.ShapeText(it.Name, font, 0).Size()
+		if row := kw + float32(gap) + nw; row > maxW {
+			maxW = row
 		}
-		if n := len([]rune(it.Name)); n > maxName {
-			maxName = n
+		if h := max(kh, nh); h > lineH {
+			lineH = h
 		}
 	}
-	const padX, padY, gap, keyW, nameW, line, rowGap = 12, 10, 10, 10, 14, 22, 4
-	w := padX*2 + maxKey*keyW + gap + maxName*nameW + 8
-	h := padY*2 + len(items)*line + (len(items)-1)*rowGap + 4
+	w := int(math.Ceil(float64(maxW))) + padX*2 + 8
+	h := padY*2 + int(math.Ceil(float64(lineH)))*len(items) + rowGap*(len(items)-1) + 4
 	if w < 120 {
 		w = 120
 	}
 	return w, h
+}
+
+// badgeGlyphNudge is the Y delta for a label whose line box is already
+// centered in the badge. A lining figure or capital sits on the baseline
+// and fills about 0.70em, not the descent and not the accent space in the
+// ascent, so the line-box center hangs low. Negative moves the glyph up.
+// Line gap is split above and below the em box, so it does not move the
+// baseline relative to that center.
+func badgeGlyphNudge(m ui.FontMetrics, size float32) float32 {
+	if m.Ascent <= 0 {
+		return 0
+	}
+	if size <= 0 {
+		size = m.Ascent + m.Descent
+	}
+	const capRatio = 0.70
+	baselineBelowCenter := (m.Ascent - m.Descent) / 2
+	return size*capRatio/2 - baselineBelowCenter
 }

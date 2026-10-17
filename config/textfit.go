@@ -15,7 +15,16 @@ const cardBorderPx = 1
 func CardBorderPx() int { return cardBorderPx }
 
 func (c Card) cardFont() ui.Font {
-	return ui.Font{Family: "Georgia", Size: float32(c.EffectiveFontSize())}
+	return c.UIFont(c.EffectiveFontSize())
+}
+
+// UIFont is the face used for cards, badges, which-key text and for measuring
+// lines. size <= 0 uses the configured font size.
+func (c Card) UIFont(size int) ui.Font {
+	if size <= 0 {
+		size = c.EffectiveFontSize()
+	}
+	return ui.Font{Family: c.EffectiveFontFamily(), Size: float32(size)}
 }
 
 func (c Card) textWidthForSlip(slipWidth int) float32 {

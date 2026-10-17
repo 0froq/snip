@@ -26,6 +26,7 @@ type Form struct {
 	ActiveColor            string
 	PaddingX               string
 	PaddingY               string
+	FontFamily             string
 	FontSize               string
 	CascadeOriginX         string
 	CascadeOriginY         string
@@ -67,6 +68,7 @@ func FormFrom(c Config) Form {
 		ActiveColor:            c.Card.ActiveColor,
 		PaddingX:               strconv.Itoa(c.Card.PaddingX),
 		PaddingY:               strconv.Itoa(c.Card.PaddingY),
+		FontFamily:             c.Card.EffectiveFontFamily(),
 		FontSize:               strconv.Itoa(c.Card.FontSize),
 		CascadeOriginX:         strconv.Itoa(c.Card.CascadeOriginX),
 		CascadeOriginY:         strconv.Itoa(c.Card.CascadeOriginY),
@@ -139,6 +141,7 @@ func (f Form) Parse(prev Config) (Config, error) {
 	if cfg.Card.MinWidth > cfg.Card.MaxWidth {
 		return Config{}, fmt.Errorf("min width cannot be larger than max width")
 	}
+	cfg.Card.FontFamily = strings.TrimSpace(f.FontFamily)
 	cfg.Card.ActiveColor = strings.TrimSpace(f.ActiveColor)
 	cfg.Card.DoubleClickPaste = f.DoubleClickPaste
 	cfg.Bindings = f.Bindings

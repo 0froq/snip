@@ -299,11 +299,18 @@ func (a *App) syncWhichKey() {
 		a.discardWhichKey()
 		return
 	}
+	w, h := whichKeySize(a.whichItems, a.config().Card.UIFont(0))
 	if a.whichWin == nil {
-		w, h := whichKeySize(a.whichItems)
 		a.whichWin = a.newChromeWindow(40, 40, w, h, false, ui.View(func(c *ui.Context) {
 			a.whichKeyView(c)
 		}))
+	} else {
+		cw, ch := a.whichWin.Size()
+		if cw != w || ch != h {
+			a.whichWin.SetMinimumSize(w, h)
+			a.whichWin.SetMaximumSize(w, h)
+			a.whichWin.SetSize(w, h)
+		}
 	}
 	a.positionWhichKey()
 }
@@ -430,7 +437,10 @@ func (a *App) newChromeWindow(x, y, w, h int, transparent bool, content mygo.Con
 		Content:           content,
 	}
 	if !transparent {
-		opts.BackgroundColor = "light-dark(#F3EADF, #312924)"
+		// which-key: blur behind a translucent paper tint. The content
+		// stays partly open so the material shows through.
+		opts.Transparent = true
+		opts.Vibrancy = mygo.VibrancyPopover
 	}
 	win := mygo.NewWindow(opts)
 	if nudge {
@@ -440,6 +450,7 @@ func (a *App) newChromeWindow(x, y, w, h int, transparent bool, content mygo.Con
 	win.SetResizable(false)
 	win.SetIgnoreMouseEvents(true)
 	macplace.PreventWindowFocus(win.NativeHandle())
+	macplace.SquareWindow(win.NativeHandle())
 	a.applyWindowFlags(win)
 	return win
 }
@@ -457,15 +468,16 @@ func (a *App) badgeView(c *ui.Context, h *cardUI) {
 	dark := c.Theme().Dark
 	cfg := a.config()
 	accent := activeColor(cfg.Card.ActiveColor, dark)
-	th := paperTheme(dark, accent)
+	label := h.jumpLabel
+	size := cfg.Card.EffectiveFontSize()
+	if len([]rune(label)) > 1 && size > 2 {
+		size -= 2
+	}
+	font := cfg.Card.UIFont(size)
+	th := paperTheme(dark, accent, font)
 	th.Background = ui.Transparent
 	c.SetTheme(th)
-	label := h.jumpLabel
-	size := float32(12)
-	if len([]rune(label)) > 1 {
-		size = 10
-	}
-	ui.Column(c).Fill().Center().PassThrough().Draw(func(p *ui.Painter, r ui.Rect) {
+	ui.Column(c).Fill().PassThrough().Draw(func(p *ui.Painter, r ui.Rect) {
 		inset := ui.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 2}
 		if inset.W < 2 || inset.H < 2 {
 			return
@@ -476,8 +488,15 @@ func (a *App) badgeView(c *ui.Context, h *cardUI) {
 		}
 		p.Fill(inset, th.Surface, radius)
 		p.Stroke(inset, accent, radius, 1)
-	}).Children(func() {
-		ui.Text(c, label).Font("Georgia").FontSize(size).TextColor(paperInk(dark))
+		if label == "" {
+			return
+		}
+		layout := ui.ShapeText(label, font, 0)
+		tw, thh := layout.Size()
+		nudge := badgeGlyphNudge(font.Metrics(), font.Size)
+		x := r.X + (r.W-tw)/2
+		y := r.Y + (r.H-thh)/2 + nudge
+		p.TextLayout(layout, x, y, paperInk(dark))
 	})
 }
 
@@ -485,18 +504,27 @@ func (a *App) whichKeyView(c *ui.Context) {
 	dark := c.Theme().Dark
 	cfg := a.config()
 	accent := activeColor(cfg.Card.ActiveColor, dark)
-	c.SetTheme(paperTheme(dark, accent))
+	font := cfg.Card.UIFont(0)
+	c.SetTheme(paperTheme(dark, accent, font))
 	t := c.Theme()
 	items := append([]whichKeyItem(nil), a.whichItems...)
+	// A paper tint over the vibrancy material. Opaque text stays readable
+	// in both appearances; the window itself is not a solid fill.
+	fill := t.Surface.Alpha(0.82)
+	if dark {
+		fill = t.Surface.Alpha(0.78)
+	}
 	ui.Column(c).Fill().Padding(10, 12).Gap(4).
-		Background(t.Surface).Border(1, paperEdge(dark)).
+		Background(fill).
+		Radius(float32(macplace.WindowCornerRadius)).
+		Border(1, paperEdge(dark).Alpha(0.9)).
 		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, paperSeed("which-key")) }).
 		Children(func() {
 			for _, item := range items {
 				key, name := item.Key, item.Name
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, key).Font("Georgia").FontSize(12).TextColor(t.Accent)
-					ui.Text(c, name).FontSize(12).TextColor(paperInk(dark))
+					ui.Text(c, key).Font(font.Family).FontSize(font.Size).TextColor(t.Accent)
+					ui.Text(c, name).Font(font.Family).FontSize(font.Size).TextColor(paperInk(dark))
 				})
 			}
 		})

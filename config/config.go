@@ -1,9 +1,11 @@
 package config
 
 import (
-	"github.com/BurntSushi/toml"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/BurntSushi/toml"
 )
 
 // Window holds floating-card window defaults (overridable per deployment).
@@ -21,15 +23,18 @@ type Window struct {
 
 // Card controls the paper-strip snippet appearance.
 type Card struct {
-	MinWidth       int    `toml:"min_width"`
-	MaxWidth       int    `toml:"max_width"`
-	Height         int    `toml:"height"`
-	MaxHeight      int    `toml:"max_height"`
-	LineHeight     int    `toml:"line_height"`
-	MaxLines       int    `toml:"max_lines"`
-	ActiveColor    string `toml:"active_color"`
-	PaddingX       int    `toml:"padding_x"`
-	PaddingY       int    `toml:"padding_y"`
+	MinWidth    int    `toml:"min_width"`
+	MaxWidth    int    `toml:"max_width"`
+	Height      int    `toml:"height"`
+	MaxHeight   int    `toml:"max_height"`
+	LineHeight  int    `toml:"line_height"`
+	MaxLines    int    `toml:"max_lines"`
+	ActiveColor string `toml:"active_color"`
+	PaddingX    int    `toml:"padding_x"`
+	PaddingY    int    `toml:"padding_y"`
+	// FontFamily is a comma-separated list. The first face that exists is
+	// the UI font; later faces (PingFang SC) cover glyphs it lacks.
+	FontFamily     string `toml:"font_family"`
 	FontSize       int    `toml:"font_size"`
 	CharWidth      int    `toml:"char_width"`
 	CascadeStepX   int    `toml:"cascade_step_x"`
@@ -142,7 +147,8 @@ func Default() Config {
 			ActiveColor:      "#C4784A",
 			PaddingX:         10,
 			PaddingY:         6,
-			FontSize:         12,
+			FontFamily:       DefaultFontFamily,
+			FontSize:         DefaultFontSize,
 			CharWidth:        7,
 			CascadeStepX:     12,
 			CascadeStepY:     10,
@@ -280,9 +286,22 @@ func (c Card) EffectivePaddingY() int {
 	return c.PaddingY
 }
 
+// DefaultFontFamily is the system sans with a CJK sans fallback.
+const DefaultFontFamily = "-apple-system, PingFang SC, Hiragino Sans GB, sans-serif"
+
+// DefaultFontSize is the card, badge and which-key text size in points.
+const DefaultFontSize = 14
+
+func (c Card) EffectiveFontFamily() string {
+	if strings.TrimSpace(c.FontFamily) == "" {
+		return DefaultFontFamily
+	}
+	return strings.TrimSpace(c.FontFamily)
+}
+
 func (c Card) EffectiveFontSize() int {
 	if c.FontSize <= 0 {
-		return 12
+		return DefaultFontSize
 	}
 	return c.FontSize
 }

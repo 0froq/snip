@@ -379,7 +379,8 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	cfg := a.config()
 	dark := c.Theme().Dark
 	accent := activeColor(cfg.Card.ActiveColor, dark)
-	c.SetTheme(paperTheme(dark, accent))
+	font := cfg.Card.UIFont(0)
+	c.SetTheme(paperTheme(dark, accent, font))
 	t := c.Theme()
 	surface := t.Surface
 	border := paperEdge(dark)
@@ -399,6 +400,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	col := ui.Column(c).Fill().
 		Padding(padY, padX, padY, padX).
 		Background(surface).
+		Radius(float32(macplace.WindowCornerRadius)).
 		Border(1, border).
 		FocusRing(false).
 		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, seed) })
@@ -413,8 +415,8 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	col = cardPointerInput(a, host, host.win, col).Cursor(edgeCursor(host.hoverEdge))
 	col.Children(func() {
 		ui.Text(c, host.rendered).
-			Font("Georgia").
-			FontSize(float32(cardCfg.EffectiveFontSize())).
+			Font(font.Family).
+			FontSize(font.Size).
 			TextColor(paperInk(dark)).
 			MaxLines(max(a.slipLines(host, host.userW), 1))
 	})

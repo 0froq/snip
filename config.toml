@@ -19,7 +19,9 @@ active_color = "#C4784A"
 double_click_paste = true
 padding_x = 10
 padding_y = 6
-font_size = 12
+# font_family: system sans, then a CJK sans for glyphs it lacks
+font_family = "-apple-system, PingFang SC, Hiragino Sans GB, sans-serif"
+font_size = 14
 cascade_origin_x = 24
 cascade_origin_y = 24
 cascade_step_x = 12

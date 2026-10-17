@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/0froq/snip/config"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestAssignJumpLabelsDigitsFirst(t *testing.T) {
@@ -176,6 +177,21 @@ func TestWhichKeyItemsLanguage(t *testing.T) {
 	}
 	if enPaste != "paste" || zhPaste != "粘贴" {
 		t.Fatalf("paste hint en %q zh %q", enPaste, zhPaste)
+	}
+}
+
+func TestBadgeGlyphNudgeLiftsFigures(t *testing.T) {
+	// Extra ascent above a 0.70em cap leaves the figure low in a centered line box.
+	n := badgeGlyphNudge(ui.FontMetrics{Ascent: 16, Descent: 4}, 14)
+	if n >= 0 || n < -3 {
+		t.Fatalf("nudge %v should be a small upward shift", n)
+	}
+	// Line gap does not move the baseline relative to the line-box center.
+	if badgeGlyphNudge(ui.FontMetrics{Ascent: 16, Descent: 4, LineGap: 4}, 14) != n {
+		t.Fatal("line gap changed the nudge")
+	}
+	if badgeGlyphNudge(ui.FontMetrics{}, 14) != 0 {
+		t.Fatal("missing metrics should not nudge")
 	}
 }
 

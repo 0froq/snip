@@ -42,7 +42,7 @@ func TestFitCardWidthMeasuresRenderedTextWithoutBlankHeight(t *testing.T) {
 		if !got.Truncated || !strings.Contains(got.Text, "\n…\n") || got.VisibleLines != 4 {
 			t.Fatalf("width %d: expected ellipsis: %+v", w, got)
 		}
-		font := ui.Font{Family: "Georgia", Size: float32(cfg.Card.EffectiveFontSize())}
+		font := cfg.Card.UIFont(cfg.Card.EffectiveFontSize())
 		inner := float32(got.Width - 2*cfg.Card.EffectivePaddingX() - 2*config.CardBorderPx())
 		_, textH := ui.ShapeText(got.Text, font, inner).Size()
 		wantH := int(math.Ceil(float64(textH))) + 2*cfg.Card.EffectivePaddingY() + 2*config.CardBorderPx()

@@ -2,8 +2,11 @@ package app
 
 import (
 	"log"
+	"strconv"
+	"strings"
 
 	"github.com/0froq/snip/config"
+	"github.com/0froq/snip/internal/macplace"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -47,6 +50,14 @@ func (a *App) installMenus() {
 	a.tray = tray
 }
 
+func atoiOr(s string, fallback int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
+}
+
 func (a *App) showSettings() {
 	mygo.RunOnMain(a.openSettings)
 }
@@ -78,6 +89,7 @@ func (a *App) openSettings() {
 		StateKey:        "settings",
 		Content:         ui.View(func(c *ui.Context) { a.settingsView(c) }),
 	})
+	macplace.SquareWindow(win.NativeHandle())
 	a.settingsWin = win
 	win.OnClosed(func() {
 		a.settingsWin = nil
@@ -93,7 +105,8 @@ func (a *App) settingsView(c *ui.Context) {
 		return
 	}
 	dark := c.Theme().Dark
-	c.SetTheme(paperTheme(dark, activeColor(f.ActiveColor, dark)))
+	font := config.Card{FontFamily: f.FontFamily, FontSize: atoiOr(f.FontSize, config.DefaultFontSize)}.UIFont(0)
+	c.SetTheme(paperTheme(dark, activeColor(f.ActiveColor, dark), font))
 	t := c.Theme()
 	lang := f.Language
 	if lang == "" {
@@ -102,8 +115,8 @@ func (a *App) settingsView(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyW) || c.Shortcut(0, ui.KeyEscape) {
 		a.closeSettings()
 	}
-	ui.Column(c).Fill().Background(t.Background).Padding(14).Children(func() {
-		ui.Column(c).Fill().Background(t.Surface).Radius(3).Border(1, paperEdge(dark)).
+	ui.Column(c).Fill().Background(t.Background).Radius(t.Radius).Padding(14).Children(func() {
+		ui.Column(c).Fill().Background(t.Surface).Radius(t.Radius).Border(1, paperEdge(dark)).
 			Shadow(0, 4, 14, 0, paperShadow(dark)).
 			Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, paperSeed("settings")) }).
 			Children(func() {
@@ -111,7 +124,7 @@ func (a *App) settingsView(c *ui.Context) {
 					DragWindow().
 					Children(func() {
 						ui.Column(c).Grow(1).Gap(4).Children(func() {
-							ui.Text(c, tr(lang, "settings")).Font("Georgia").FontSize(22).TextColor(paperInk(dark))
+							ui.Text(c, tr(lang, "settings")).FontSize(22).TextColor(paperInk(dark))
 							ui.Text(c, tr(lang, "settings_hint")).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
 						})
 						a.settingsCloseButton(c, lang, dark)
@@ -141,6 +154,7 @@ func (a *App) settingsView(c *ui.Context) {
 							labeledInput(c, tr(lang, "max_lines"), &f.MaxLines)
 							labeledInput(c, tr(lang, "pad_x"), &f.PaddingX)
 							labeledInput(c, tr(lang, "pad_y"), &f.PaddingY)
+							labeledInput(c, tr(lang, "font_family"), &f.FontFamily)
 							labeledInput(c, tr(lang, "font"), &f.FontSize)
 							labeledInput(c, tr(lang, "active_color"), &f.ActiveColor)
 							ui.Checkbox(c, &f.DoubleClickPaste, tr(lang, "double_click_paste"))
@@ -204,7 +218,7 @@ func (a *App) settingsView(c *ui.Context) {
 func (a *App) settingsCloseButton(c *ui.Context, lang string, dark bool) {
 	t := c.Theme()
 	label := tr(lang, "close")
-	btn := ui.ButtonBase(c).Size(28, 28).Radius(3).Center().
+	btn := ui.ButtonBase(c).Size(28, 28).Radius(t.Radius).Center().
 		Label(label).Tooltip(label).
 		Border(1, paperEdge(dark)).Background(t.SurfaceHover.Mix(t.Surface, 0.5)).
 		TextColor(t.TextMuted)
@@ -219,10 +233,10 @@ func (a *App) settingsCloseButton(c *ui.Context, lang string, dark bool) {
 func (a *App) settingsSection(c *ui.Context, title string, body func()) {
 	t := c.Theme()
 	dark := t.Dark
-	ui.Column(c).Gap(8).Padding(14).Background(t.SurfaceHover.Mix(t.Surface, 0.35)).Radius(3).Border(1, paperEdge(dark).Alpha(0.7)).
+	ui.Column(c).Gap(8).Padding(14).Background(t.SurfaceHover.Mix(t.Surface, 0.35)).Radius(t.Radius).Border(1, paperEdge(dark).Alpha(0.7)).
 		Draw(func(p *ui.Painter, r ui.Rect) { paintPaperGrain(p, r, dark, paperSeed(title)) }).
 		Children(func() {
-			ui.Text(c, title).Font("Georgia").FontSize(15).TextColor(paperInk(dark))
+			ui.Text(c, title).FontSize(16).TextColor(paperInk(dark))
 			body()
 		})
 }
@@ -236,7 +250,7 @@ func labeledInput(c *ui.Context, label string, value *string) {
 
 func settingsBinding(c *ui.Context, label string, binding *config.ActionBinding, lang string) {
 	ui.Column(c).Gap(6).Padding(8, 0).Children(func() {
-		ui.Text(c, label).Font("Georgia").FontSize(13)
+		ui.Text(c, label).FontSize(14)
 		labeledInput(c, tr(lang, "direct_binding"), &binding.Direct)
 		ui.Checkbox(c, &binding.DirectDouble, tr(lang, "double_press"))
 		labeledInput(c, tr(lang, "leader_binding"), &binding.Leader)

@@ -53,7 +53,7 @@ Optional config: copy `config.toml` to `~/Library/Application Support/snip/confi
 
 `max_cards` (default **20**) caps how many snippets are kept. When a new copy would exceed the limit, the **oldest** cards are closed and removed first (FIFO).
 
-Snippet cards are small paper strips. A short copy stays on one line and is only as wide as that text plus padding. A long copy grows up to `max_width`, wraps, and ends with an ellipsis after `max_lines`. `min_width` is the narrowest a longer card can be dragged, and it does not stretch a short note. Drag the middle of a card to move it. Drag an edge to change its width or visible line count. Double click a card to paste it. This is on by default and can be turned off.
+Snippet cards are small paper strips in the system sans (`[card].font_family`, default `-apple-system` with PingFang SC) at `[card].font_size` (default 14). A short copy stays on one line and is only as wide as that text plus padding. A long copy grows up to `max_width`, wraps, and ends with an ellipsis after `max_lines`. `min_width` is the narrowest a longer card can be dragged, and it does not stretch a short note. Drag the middle of a card to move it. Drag an edge to change its width or visible line count. Double click a card to paste it. This is on by default and can be turned off.
 
 New cards are placed with `[card].placement` (default **`near-selection`**). snip asks the frontmost app for the focused selection bounds via the Accessibility API and opens the card just below that text (or above when there is no room), clamped to the monitor work area. When that fails (browsers, Electron, terminals), it falls back to near the mouse cursor. **`near-cursor`** skips the selection step. **`fixed`** keeps the old cascade from the top-left corner.
 
@@ -94,7 +94,7 @@ The file Settings writes is the one snip loaded (`config.toml` in the working di
 
 Each action has a direct global shortcut and a leader key. Either field may be empty. Each one can require a double press. A leader binding can stay active after it runs, which is useful for next, previous, and flash.
 
-The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Each card shows a jump badge centered on its top-right corner (digits 1–9, then 0, then keys that are not already leader actions). The other leader actions are listed in one which-key window, in the corner set by `[leader].which_key_corner` (default `bottom-right`). Escape cancels the mode. The mode also closes after `timeout_ms`. A sticky leader binding keeps that window up.
+The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Each card shows a jump badge centered on its top-right corner (digits 1–9, then 0, then keys that are not already leader actions). The other leader actions are listed in one which-key window, in the corner set by `[leader].which_key_corner` (default `bottom-right`). That window is a translucent blurred panel. Cards, the which-key window and settings share a 6pt corner radius. Escape cancels the mode. The mode also closes after `timeout_ms`. A sticky leader binding keeps that window up.
 
 Flash brings every card forward, colors it once, and gives it a quick scale pulse.
 

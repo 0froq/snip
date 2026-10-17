@@ -224,7 +224,6 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		AlwaysOnTop:     cfg.Window.AlwaysOnTop,
 		DisableShadow:   true,
 		BackgroundColor: "light-dark(#F3EADF, #312924)",
-		StateKey:        "card-" + card.ID,
 		Content:         ui.View(func(c *ui.Context) { a.cardView(c, host) }),
 	})
 	host.win = win

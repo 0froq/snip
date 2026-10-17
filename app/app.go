@@ -229,7 +229,12 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	host.win = win
 	win.SetMovable(true)
 	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
-	win.OnResize(func() { a.syncCardHeight(host) })
+	win.OnResize(func() {
+		if macplace.InLiveResize(win.NativeHandle()) {
+			return
+		}
+		a.syncCardHeight(host)
+	})
 	macplace.PreventWindowFocus(win.NativeHandle())
 	a.applyWindowFlags(win)
 	macplace.SquareWindow(win.NativeHandle())

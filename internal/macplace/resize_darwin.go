@@ -87,10 +87,23 @@ func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {
 	}
 }
 
-func windowWillResize(self id, _ objc.SEL, _ id, proposed NSSize) NSSize {
+func windowWillResize(self id, _ objc.SEL, window id, proposed NSSize) NSSize {
+	// Only a live user drag picks the size. Programmatic frame changes (MyGo
+	// constraints, SetSize) also pass through here and must not reset it.
+	if window != 0 && sendInt(window, "inLiveResize")&0xff == 0 {
+		return proposed
+	}
 	if size := resizeSizes[self]; size != nil {
 		w, h := size(int(math.Round(proposed.Width)), int(math.Round(proposed.Height)))
 		return NSSize{Width: float64(w), Height: float64(h)}
 	}
 	return proposed
+}
+
+// InLiveResize reports whether the user is dragging the window's edge.
+func InLiveResize(handle uintptr) bool {
+	if handle == 0 {
+		return false
+	}
+	return sendInt(id(handle), "inLiveResize")&0xff != 0
 }

@@ -11,6 +11,42 @@ const pointerSlop = 6.0
 // This is only a drag-to-move exclusion, not a resize grip or hit tracker.
 const nativeResizeMargin = 10
 
+const (
+	edgeLeft = 1 << iota
+	edgeRight
+	edgeBottom
+)
+
+// cardEdge reports which resize edges a window-local point is on. The
+// native AppKit border is only a few points wide, so the card handles its
+// own wider band (nativeResizeMargin) on the left, right and bottom.
+func cardEdge(x, y, width, height int) int {
+	e := 0
+	if x < nativeResizeMargin {
+		e |= edgeLeft
+	} else if x >= width-nativeResizeMargin {
+		e |= edgeRight
+	}
+	if y >= height-nativeResizeMargin {
+		e |= edgeBottom
+	}
+	return e
+}
+
+func edgeCursor(e int) ui.Cursor {
+	switch {
+	case e&edgeBottom != 0 && e&edgeRight != 0:
+		return ui.CursorResizeNWSE
+	case e&edgeBottom != 0 && e&edgeLeft != 0:
+		return ui.CursorResizeNESW
+	case e&edgeBottom != 0:
+		return ui.CursorResizeNS
+	case e != 0:
+		return ui.CursorResizeEW
+	}
+	return ui.CursorDefault
+}
+
 func cardMoveInterior(x, y, width, height int) bool {
 	return x >= nativeResizeMargin && y >= nativeResizeMargin &&
 		x < width-nativeResizeMargin && y < height-nativeResizeMargin
@@ -31,6 +67,13 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			sp := mygo.Screen.CursorScreenPoint()
 			wx, wy := win.Position()
 			ww, wh := win.Size()
+			if e := cardEdge(sp.X-wx, sp.Y-wy, ww, wh); e != 0 {
+				host.resizeEdge = e
+				host.pointerActive = true
+				host.pressScreenX, host.pressScreenY = sp.X, sp.Y
+				host.startX, host.startY, host.startW, host.startH = wx, wy, ww, wh
+				return true
+			}
 			if !cardMoveInterior(sp.X-wx, sp.Y-wy, ww, wh) {
 				return false
 			}
@@ -42,12 +85,37 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			host.dragOffY = sp.Y - wy
 			return true
 		case ui.InputPointerMove:
+			sp := mygo.Screen.CursorScreenPoint()
 			if !host.pointerActive {
+				wx, wy := win.Position()
+				ww, wh := win.Size()
+				if e := cardEdge(sp.X-wx, sp.Y-wy, ww, wh); e != host.hoverEdge {
+					host.hoverEdge = e
+					win.Invalidate()
+				}
 				return false
 			}
-			sp := mygo.Screen.CursorScreenPoint()
 			dx := sp.X - host.pressScreenX
 			dy := sp.Y - host.pressScreenY
+			if e := host.resizeEdge; e != 0 {
+				w, h := host.startW, host.startH
+				if e&edgeRight != 0 {
+					w += dx
+				}
+				if e&edgeLeft != 0 {
+					w -= dx
+				}
+				if e&edgeBottom != 0 {
+					h += dy
+				}
+				l := a.fitCardSize(host, w, h)
+				win.SetSize(l.Width, l.Height)
+				if e&edgeLeft != 0 {
+					win.SetPosition(host.startX+host.startW-l.Width, host.startY)
+				}
+				win.Invalidate()
+				return true
+			}
 			if !host.pointerDragged {
 				if dx*dx+dy*dy < pointerSlop*pointerSlop {
 					return true
@@ -65,6 +133,11 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 				return false
 			}
 			host.pointerActive = false
+			if host.resizeEdge != 0 {
+				host.resizeEdge = 0
+				a.syncCardHeight(host)
+				return true
+			}
 			if !host.pointerDragged {
 				a.selectID(host.card.ID)
 				if host.pressClicks >= 2 && a.config().Card.DoubleClickPaste {

@@ -67,6 +67,10 @@ type cardUI struct {
 	rendered  string
 
 	pointerActive  bool
+	resizeEdge     int
+	hoverEdge      int
+	startX, startY int
+	startW, startH int
 	pointerDragged bool
 	dragOffX       int
 	dragOffY       int
@@ -381,7 +385,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	} else if host.scale > 1 {
 		col = col.TransformOrigin(0.5, 0.5).Scale(host.scale, host.scale)
 	}
-	col = cardPointerInput(a, host, host.win, col)
+	col = cardPointerInput(a, host, host.win, col).Cursor(edgeCursor(host.hoverEdge))
 	col.Children(func() {
 		ui.Text(c, host.rendered).
 			Font("Georgia").

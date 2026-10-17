@@ -38,12 +38,14 @@ func TestResizeDelegateNSSizeABIAndLifetime(t *testing.T) {
 		defer send(original, "release")
 		delegate := original
 		willResizeSEL := objc.RegisterName("windowWillResize:toSize:")
-		var cachedWillResize bool
+		didEndSEL := objc.RegisterName("windowDidEndLiveResize:")
+		var cachedWillResize, cachedDidEnd bool
 		windowClass, err := objc.RegisterClass(fmt.Sprintf("SnipResizeTestWindow_%d", serial), objc.GetClass("NSObject"), nil, nil, []objc.MethodDef{
 			{Cmd: objc.RegisterName("delegate"), Fn: func(id, objc.SEL) id { return delegate }},
 			{Cmd: objc.RegisterName("setDelegate:"), Fn: func(_ id, _ objc.SEL, d id) {
 				delegate = d
 				cachedWillResize = send(d, "respondsToSelector:", uintptr(willResizeSEL)) != 0
+				cachedDidEnd = send(d, "respondsToSelector:", uintptr(didEndSEL)) != 0
 			}},
 		})
 		if err != nil {
@@ -60,7 +62,7 @@ func TestResizeDelegateNSSizeABIAndLifetime(t *testing.T) {
 		}
 		cleanup := ConstrainWindowResize(uintptr(window), makeSizer())
 		defer cleanup()
-		if delegate != original || !cachedWillResize {
+		if delegate != original || !cachedWillResize || !cachedDidEnd {
 			t.Fatal("delegate identity or NSWindow optional-method cache was not preserved")
 		}
 		if send(original, "retainCount") != 2 {
@@ -81,6 +83,8 @@ func TestResizeDelegateNSSizeABIAndLifetime(t *testing.T) {
 		if inheritedCalls != 1 {
 			t.Fatal("MyGo-style delegate notifications must still reach inherited methods")
 		}
+		// A missing notification must not read a frame or refit.
+		send(original, "windowDidEndLiveResize:", 0)
 		cleanup()
 		cleanup() // Safe even if an owner also explicitly tears down.
 		if len(resizeSizes) != before || original.Class() != base || send(original, "retainCount") != 1 {

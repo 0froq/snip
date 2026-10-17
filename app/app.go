@@ -301,6 +301,15 @@ func (a *App) slipLines(host *cardUI, width int) int {
 // resizing. Height is never user-controlled: measure the exact (possibly
 // ellipsized) text at the clamped width, using the configured line/height caps.
 func (a *App) fitCardWidth(host *cardUI, w int) config.CardLayout {
+	layout := a.layoutAt(host, w, host.userLines)
+	host.rendered = layout.Text
+	host.userW, host.userH = layout.Width, layout.Height
+	return layout
+}
+
+// layoutAt measures a card without publishing host.userLines or host.rendered.
+// A zero line count means the configured max.
+func (a *App) layoutAt(host *cardUI, w, lines int) config.CardLayout {
 	cardCfg := a.config().Card
 	floor := cardCfg.WidthFloor(host.display)
 	maxW := cardCfg.EffectiveMaxWidth()
@@ -310,34 +319,37 @@ func (a *App) fitCardWidth(host *cardUI, w int) config.CardLayout {
 	if w > maxW {
 		w = maxW
 	}
-	layout := cardCfg.Layout(host.display, w, host.userLines)
-	host.rendered = layout.Text
-	host.userW, host.userH = layout.Width, layout.Height
-	return layout
+	return cardCfg.Layout(host.display, w, lines)
 }
 
-// fitCardSize handles a native drag: width as fitCardWidth, and the dragged
-// height picks how many lines show, from one line up to max_lines, so the
-// bottom edge stops there and never exposes blank space.
+// fitCardSize handles a drag: width as fitCardWidth, and the dragged height
+// picks how many lines show, from one line up to max_lines, so the bottom
+// edge stops there and never exposes blank space. The chosen count is
+// published once, at the end. Zero userLines means "up to max_lines"; writing
+// that zero before the snap would make a nested sync lay the card back out
+// at full height.
 func (a *App) fitCardSize(host *cardUI, w, h int) config.CardLayout {
 	cardCfg := a.config().Card
-	// A drag picks 1..max_lines lines; it can never go past max_lines.
-	host.userLines = 0
-	base := a.fitCardWidth(host, w)
+	base := a.layoutAt(host, w, 0)
 	maxN := min(base.FullLines, cardCfg.EffectiveMaxLines())
 	lines := 1
+	snapped := a.layoutAt(host, base.Width, 1)
 	for n := 1; n <= maxN; n++ {
-		l := cardCfg.Layout(host.display, base.Width, n)
+		l := a.layoutAt(host, base.Width, n)
 		if l.VisibleLines < n || l.Height > h {
 			break
 		}
 		lines = n
+		snapped = l
 	}
 	if lines == cardCfg.EffectiveMaxLines() && base.VisibleLines == lines {
 		lines = 0
+		snapped = a.layoutAt(host, base.Width, 0)
 	}
 	host.userLines = lines
-	return a.fitCardWidth(host, w)
+	host.rendered = snapped.Text
+	host.userW, host.userH = snapped.Width, snapped.Height
+	return snapped
 }
 
 func (a *App) syncCardHeight(host *cardUI) {

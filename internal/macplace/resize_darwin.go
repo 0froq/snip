@@ -21,6 +21,7 @@ type NSSize struct {
 var (
 	resizeLoadOnce sync.Once
 	setObjectClass func(id, objc.Class) objc.Class
+	setWindowFrame func(id, objc.SEL, nsRect, bool)
 	resizeClasses  = map[objc.Class]objc.Class{}
 	resizeSizes    = map[id]func(int, int) (int, int){}
 )
@@ -41,7 +42,8 @@ func ConstrainWindowResize(handle uintptr, size func(int, int) (int, int)) func(
 	}
 	cleanup := constrainDelegate(delegate, size)
 	// NSWindow caches which optional delegate methods exist. Refresh that
-	// cache now that this very same delegate responds to windowWillResize.
+	// cache now that this very same delegate responds to windowWillResize
+	// and windowDidEndLiveResize.
 	send(w, "setDelegate:", 0)
 	send(w, "setDelegate:", uintptr(delegate))
 	return cleanup
@@ -50,6 +52,9 @@ func ConstrainWindowResize(handle uintptr, size func(int, int) (int, int)) func(
 func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {
 	resizeLoadOnce.Do(func() {
 		purego.RegisterLibFunc(&setObjectClass, libObjC, "object_setClass")
+		// NSRect is a 4-double HFA on arm64. RegisterFunc places it in d0–d3;
+		// a raw SyscallN would pass it as integer registers or a pointer.
+		purego.RegisterFunc(&setWindowFrame, msgSendAddr)
 	})
 	if _, exists := resizeSizes[delegate]; exists {
 		panic("macplace: resize delegate already installed")
@@ -61,10 +66,16 @@ func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {
 		// No ivars: changing isa is safe without changing the allocation size.
 		// Inherit MyGo's methods and preserve self's identity: MyGo indexes its
 		// windows by delegate ID, including for move/focus/resize/close and KVO.
-		cls, err = objc.RegisterClass(fmt.Sprintf("SnipContentResizeDelegate_%x", uintptr(base)), base, nil, nil, []objc.MethodDef{{
-			Cmd: objc.RegisterName("windowWillResize:toSize:"),
-			Fn:  windowWillResize,
-		}})
+		cls, err = objc.RegisterClass(fmt.Sprintf("SnipContentResizeDelegate_%x", uintptr(base)), base, nil, nil, []objc.MethodDef{
+			{
+				Cmd: objc.RegisterName("windowWillResize:toSize:"),
+				Fn:  windowWillResize,
+			},
+			{
+				Cmd: objc.RegisterName("windowDidEndLiveResize:"),
+				Fn:  windowDidEndLiveResize,
+			},
+		})
 		if err != nil {
 			panic("macplace: " + err.Error())
 		}
@@ -98,6 +109,34 @@ func windowWillResize(self id, _ objc.SEL, window id, proposed NSSize) NSSize {
 		return NSSize{Width: float64(w), Height: float64(h)}
 	}
 	return proposed
+}
+
+// windowDidEndLiveResize runs once the user lets go. A fast drag can commit
+// an in-between frame while inLiveResize is still false, so windowWillResize
+// leaves that size alone and OnResize skips the fit for the whole gesture.
+// Fit the frame that actually stuck, then correct it. inLiveResize is false
+// here, so the correction's windowWillResize does not fit again.
+func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
+	if note == 0 {
+		return
+	}
+	window := send(note, "object")
+	size := resizeSizes[self]
+	if window == 0 || size == nil {
+		return
+	}
+	frame := msgRect(window, sel("frame"))
+	curW := int(math.Round(frame.size.width))
+	curH := int(math.Round(frame.size.height))
+	w, h := size(curW, curH)
+	if w == curW && h == curH && frame.size.width == float64(w) && frame.size.height == float64(h) {
+		return
+	}
+	x, y, fw, fh := snapResizeFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, w, h)
+	setWindowFrame(window, sel("setFrame:display:"), nsRect{
+		origin: nsPoint{x: x, y: y},
+		size:   nsSize{width: fw, height: fh},
+	}, true)
 }
 
 // InLiveResize reports whether the user is dragging the window's edge.

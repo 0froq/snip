@@ -58,6 +58,64 @@ func TestFitCardWidthMeasuresRenderedTextWithoutBlankHeight(t *testing.T) {
 	}
 }
 
+func TestFastBottomDragSnapsToWholeLinesAndPersists(t *testing.T) {
+	cfg := config.Default()
+	cfg.Card.MaxLines = 4
+	a := New(cfg, "")
+	host := &cardUI{display: strings.Repeat("long text 你好 ", 80)}
+	full := a.fitCardWidth(host, 360)
+	if full.VisibleLines != 4 || host.userLines != 0 || !strings.Contains(full.Text, "\n…\n") {
+		t.Fatalf("start layout: %+v userLines=%d", full, host.userLines)
+	}
+	one := a.layoutAt(host, full.Width, 1)
+	two := a.layoutAt(host, full.Width, 2)
+	if one.Height >= two.Height || one.VisibleLines != 1 || !one.Truncated {
+		t.Fatalf("line heights: one %+v two %+v", one, two)
+	}
+	// A fast drag lands between 1 and 2 lines. The release must snap to the
+	// largest whole count that still fits, with the middle-truncated text.
+	targetH := one.Height + (two.Height-one.Height)/2
+	w, h := resizeDragSize(full.Width, full.Height, edgeBottom, 0, targetH-full.Height)
+	if h != targetH || w != full.Width {
+		t.Fatalf("drag size = %d×%d, want %d×%d", w, h, full.Width, targetH)
+	}
+	got := a.fitCardSize(host, w, h)
+	if got.VisibleLines != 1 || got.Height != one.Height || got.Text != one.Text || got.Width != one.Width {
+		t.Fatalf("release snap: got %+v, want %+v", got, one)
+	}
+	if host.userLines != 1 || host.rendered != one.Text || host.userH != one.Height {
+		t.Fatalf("published state: lines=%d rendered=%q h=%d", host.userLines, host.rendered, host.userH)
+	}
+	// Moving the card syncs through fitCardWidth. That must keep N, not grow
+	// back to max_lines because userLines was left at 0.
+	moved := a.fitCardWidth(host, got.Width)
+	if moved.VisibleLines != 1 || moved.Height != one.Height || moved.Text != one.Text || host.userLines != 1 {
+		t.Fatalf("move reset the line count: %+v userLines=%d", moved, host.userLines)
+	}
+
+	// Native live-resize end passes the stuck window size with no pointer delta.
+	host.userLines = 0
+	host.rendered = full.Text
+	native := a.fitCardSize(host, full.Width, targetH)
+	if native.VisibleLines != 1 || native.Height != one.Height || native.Text != one.Text || host.userLines != 1 {
+		t.Fatalf("native end snap: %+v userLines=%d", native, host.userLines)
+	}
+	if kept := a.fitCardWidth(host, native.Width); kept.Height != one.Height || host.userLines != 1 {
+		t.Fatalf("native snap did not persist: %+v userLines=%d", kept, host.userLines)
+	}
+}
+
+func TestResizeDragSizeEdges(t *testing.T) {
+	w, h := resizeDragSize(200, 100, edgeRight|edgeBottom, 15, -40)
+	if w != 215 || h != 60 {
+		t.Fatalf("right+bottom = %d×%d", w, h)
+	}
+	w, h = resizeDragSize(200, 100, edgeLeft, 15, 40)
+	if w != 185 || h != 100 {
+		t.Fatalf("left = %d×%d", w, h)
+	}
+}
+
 func TestFitCardWidthReflowsAndHonorsConfigChanges(t *testing.T) {
 	cfg := config.Default()
 	cfg.Card.MaxLines = 10

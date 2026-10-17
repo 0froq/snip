@@ -57,12 +57,37 @@ func cardMoveInterior(x, y, width, height int) bool {
 // press tracking, so Clicked and release handlers never run.
 // Position follows mygo.Screen.CursorScreenPoint so moves stay 1:1 with the
 // pointer (window-local coordinates shift as the window moves).
+
+// resizeDragSize is the window size implied by a drag from startW/startH
+// by a screen-pixel delta. Bottom and side edges share one formula so a
+// release can refit even when the moves in between never arrived.
+func resizeDragSize(startW, startH, edge, dx, dy int) (int, int) {
+	w, h := startW, startH
+	if edge&edgeRight != 0 {
+		w += dx
+	}
+	if edge&edgeLeft != 0 {
+		w -= dx
+	}
+	if edge&edgeBottom != 0 {
+		h += dy
+	}
+	return w, h
+}
+
 func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui.Element {
 	return col.HandleInput(func(ev ui.InputEvent) bool {
 		switch ev.Kind {
 		case ui.InputPointerDown:
 			if ev.Button != 0 {
 				return false
+			}
+			// A release outside the window never arrives (a non-activating
+			// panel does not get the mouse-up). Snap that drag to whole
+			// lines before this press starts a new one, or the later move
+			// sync lays the card out at max lines and it grows back.
+			if host.resizeEdge != 0 {
+				a.snapWindowToLineCount(host, win)
 			}
 			sp := mygo.Screen.CursorScreenPoint()
 			wx, wy := win.Position()
@@ -97,23 +122,8 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			}
 			dx := sp.X - host.pressScreenX
 			dy := sp.Y - host.pressScreenY
-			if e := host.resizeEdge; e != 0 {
-				w, h := host.startW, host.startH
-				if e&edgeRight != 0 {
-					w += dx
-				}
-				if e&edgeLeft != 0 {
-					w -= dx
-				}
-				if e&edgeBottom != 0 {
-					h += dy
-				}
-				l := a.fitCardSize(host, w, h)
-				win.SetSize(l.Width, l.Height)
-				if e&edgeLeft != 0 {
-					win.SetPosition(host.startX+host.startW-l.Width, host.startY)
-				}
-				win.Invalidate()
+			if host.resizeEdge != 0 {
+				a.applyResizeDrag(host, win, dx, dy)
 				return true
 			}
 			if !host.pointerDragged {
@@ -132,10 +142,12 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			if ev.Button != 0 || !host.pointerActive {
 				return false
 			}
+			// Clear the flag before fitting so the resize this causes is
+			// allowed to sync. The release cursor is the whole drag: the
+			// pointer can leave the shrinking card and drop the last moves.
 			host.pointerActive = false
 			if host.resizeEdge != 0 {
-				host.resizeEdge = 0
-				a.syncCardHeight(host)
+				a.finishPointerResize(host, win)
 				return true
 			}
 			if !host.pointerDragged {
@@ -151,4 +163,44 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			return false
 		}
 	})
+}
+
+// applyResizeDrag refits from the original press and the latest pointer delta.
+func (a *App) applyResizeDrag(host *cardUI, win *mygo.Window, dx, dy int) {
+	w, h := resizeDragSize(host.startW, host.startH, host.resizeEdge, dx, dy)
+	l := a.fitCardSize(host, w, h)
+	win.SetSize(l.Width, l.Height)
+	if host.resizeEdge&edgeLeft != 0 {
+		win.SetPosition(host.startX+host.startW-l.Width, host.startY)
+	}
+	win.Invalidate()
+}
+
+// finishPointerResize snaps a band drag to the release position.
+func (a *App) finishPointerResize(host *cardUI, win *mygo.Window) {
+	if host == nil || win == nil || host.resizeEdge == 0 {
+		return
+	}
+	sp := mygo.Screen.CursorScreenPoint()
+	dx := sp.X - host.pressScreenX
+	dy := sp.Y - host.pressScreenY
+	a.applyResizeDrag(host, win, dx, dy)
+	host.resizeEdge = 0
+}
+
+// snapWindowToLineCount commits whatever size the window was left at, as whole
+// lines. Used when a drag's release was lost, and by native resize end via
+// the same fitCardSize path.
+func (a *App) snapWindowToLineCount(host *cardUI, win *mygo.Window) {
+	if host == nil || win == nil {
+		return
+	}
+	w, h := win.Size()
+	l := a.fitCardSize(host, w, h)
+	host.resizeEdge = 0
+	host.pointerActive = false
+	if w != l.Width || h != l.Height {
+		win.SetSize(l.Width, l.Height)
+	}
+	win.Invalidate()
 }

@@ -157,6 +157,13 @@ func (a *App) settingsView(c *ui.Context) {
 							labeledInput(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
 							labeledInput(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
 							labeledInput(c, tr(lang, "double_ms"), &f.DoublePressMs)
+							ui.Text(c, tr(lang, "which_key_corner")).FontSize(12)
+							ui.Select(c, &f.WhichKeyCorner, []string{
+								config.WhichKeyTopLeft,
+								config.WhichKeyTopRight,
+								config.WhichKeyBottomLeft,
+								config.WhichKeyBottomRight,
+							})
 							for _, item := range f.Bindings.NamedBindings() {
 								settingsBinding(c, tr(lang, item.Name), item.Binding, lang)
 							}

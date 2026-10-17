@@ -87,6 +87,9 @@ type Leader struct {
 	TimeoutMs     int    `toml:"timeout_ms"`
 	DoublePressMs int    `toml:"double_press_ms"`
 	PinMs         int    `toml:"pin_ms"`
+	// WhichKeyCorner is the screen corner for the leader which-key window:
+	// top-left, top-right, bottom-left, or bottom-right.
+	WhichKeyCorner string `toml:"which_key_corner"`
 }
 
 // Motion controls appear and disappear animation.
@@ -157,10 +160,11 @@ func Default() Config {
 			Settings: ActionBinding{Direct: "CmdOrCtrl+,", Leader: ","},
 		},
 		Leader: Leader{
-			Shortcut:      "CmdOrCtrl+Shift+Space",
-			TimeoutMs:     1500,
-			DoublePressMs: 400,
-			PinMs:         900,
+			Shortcut:       "CmdOrCtrl+Shift+Space",
+			TimeoutMs:      1500,
+			DoublePressMs:  400,
+			PinMs:          900,
+			WhichKeyCorner: WhichKeyBottomRight,
 		},
 		Motion:   Motion{Enabled: true, DurationMs: 160},
 		Language: "en",

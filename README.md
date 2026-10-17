@@ -94,7 +94,7 @@ The file Settings writes is the one snip loaded (`config.toml` in the working di
 
 Each action has a direct global shortcut and a leader key. Either field may be empty. Each one can require a double press. A leader binding can stay active after it runs, which is useful for next, previous, and flash.
 
-The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Cards show a small hint sticker in their top corner. Escape cancels the mode. The mode also closes after `timeout_ms`.
+The leader shortcut is Cmd Shift Space by default. It opens a short chord mode. Each card shows a jump badge centered on its top-right corner (digits 1–9, then 0, then keys that are not already leader actions). The other leader actions are listed in one which-key window, in the corner set by `[leader].which_key_corner` (default `bottom-right`). Escape cancels the mode. The mode also closes after `timeout_ms`. A sticky leader binding keeps that window up.
 
 Flash brings every card forward, colors it once, and gives it a quick scale pulse.
 

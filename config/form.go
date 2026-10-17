@@ -43,6 +43,7 @@ type Form struct {
 	LeaderShortcut         string
 	LeaderTimeout          string
 	DoublePressMs          string
+	WhichKeyCorner         string
 	MotionEnabled          bool
 	MotionMs               string
 	Language               string
@@ -83,6 +84,7 @@ func FormFrom(c Config) Form {
 		LeaderShortcut:         c.Leader.Shortcut,
 		LeaderTimeout:          strconv.Itoa(c.Leader.TimeoutMs),
 		DoublePressMs:          strconv.Itoa(c.Leader.DoublePressMs),
+		WhichKeyCorner:         c.Leader.EffectiveWhichKeyCorner(),
 		MotionEnabled:          c.Motion.Enabled,
 		MotionMs:               strconv.Itoa(c.Motion.DurationMs),
 		Language:               c.Language,
@@ -180,6 +182,11 @@ func (f Form) Parse(prev Config) (Config, error) {
 	cfg.Leader.Shortcut = strings.TrimSpace(f.LeaderShortcut)
 	cfg.Leader.TimeoutMs = timeout
 	cfg.Leader.DoublePressMs = gap
+	corner := strings.ToLower(strings.TrimSpace(f.WhichKeyCorner))
+	if !ValidWhichKeyCorner(corner) {
+		return Config{}, fmt.Errorf("which-key corner must be top-left, top-right, bottom-left, or bottom-right")
+	}
+	cfg.Leader.WhichKeyCorner = corner
 	cfg.Motion.Enabled = f.MotionEnabled
 	cfg.Motion.DurationMs = motionMs
 	lang := strings.TrimSpace(f.Language)

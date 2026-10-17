@@ -9,6 +9,10 @@ func (a *App) showCard(h *cardUI) {
 		return
 	}
 	h.showWindow(h.win)
+	a.syncBadge(h)
+	// Showing a card orders it front. Lift every badge back above the cards,
+	// then the which-key window above the badges.
+	a.raiseLeaderChrome()
 }
 
 type noteWindow interface {

@@ -10,16 +10,6 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func (a *App) registerShortcuts() {
-	mygo.GlobalShortcut.UnregisterAll()
-	a.leaderKeys = nil
-	cfg := a.config()
-	for _, item := range cfg.Bindings.NamedBindings() {
-		a.bind(item.Binding.Direct, item.Name, item.Binding.DirectDouble)
-	}
-	a.bind(cfg.Leader.Shortcut, "leader", false)
-}
-
 func (a *App) bind(acc, action string, double bool) {
 	acc = strings.TrimSpace(acc)
 	if acc == "" {
@@ -63,9 +53,9 @@ func (a *App) armLeader() {
 	a.leaderGen++
 	gen := a.leaderGen
 	a.leaderOn = true
+	a.jumpPrefix = ""
 	a.mu.Unlock()
 	a.registerLeaderKeys()
-	a.invalidateCards()
 	time.AfterFunc(cfg.Leader.Timeout(), func() {
 		mygo.RunOnMain(func() { a.expireLeader(gen) })
 	})
@@ -80,54 +70,49 @@ func (a *App) expireLeader(gen int) {
 	a.leaderOn = false
 	a.mu.Unlock()
 	a.clearLeaderKeys()
-	a.invalidateCards()
+	a.closeLeaderChrome()
 }
 
 func (a *App) registerLeaderKeys() {
 	a.clearLeaderKeys()
+	a.discardWhichKey()
 	cfg := a.config()
-	type leaderKey struct {
-		key, action string
-		double      bool
-		sticky      bool
-	}
-	keys := make([]leaderKey, 0, 17)
 	for _, item := range cfg.Bindings.NamedBindings() {
-		keys = append(keys, leaderKey{
-			key: item.Binding.Leader, action: item.Name,
-			double: item.Binding.LeaderDouble, sticky: item.Binding.Sticky,
-		})
+		a.bindLeader(item.Binding.Leader, item.Name, item.Binding.LeaderDouble, item.Binding.Sticky)
 	}
-	keys = append(keys, leaderKey{key: "escape", action: "cancel"})
-	for i := 1; i <= 9; i++ {
-		keys = append(keys, leaderKey{key: strconv.Itoa(i), action: strconv.Itoa(i)})
-	}
-	for _, k := range keys {
-		key := strings.TrimSpace(k.key)
-		if key == "" {
+	a.bindLeader("escape", "cancel", false, false)
+
+	ids := a.jumpCardOrder()
+	assigned := assignJumpLabels(ids, boundLeaderKeys(cfg.Bindings), jumpKeyPool)
+	labels := make(map[string]string, len(ids))
+	two := false
+	for i, id := range ids {
+		if i >= len(assigned) || assigned[i] == "" {
 			continue
 		}
-		action := k.action
-		double := k.double
-		sticky := k.sticky
-		if err := mygo.GlobalShortcut.Register(key, func() {
-			if action == "cancel" {
-				a.endLeader()
-				return
+		labels[assigned[i]] = id
+		if len([]rune(assigned[i])) > 1 {
+			two = true
+		}
+	}
+	seen := map[string]struct{}{}
+	for _, label := range assigned {
+		for _, r := range label {
+			k := string(r)
+			if _, ok := seen[k]; ok {
+				continue
 			}
-			a.taps.pressOnly("leader:"+key, action, double, a.config().Leader.DoubleGap(), func(act string) {
-				a.perform(act)
-				a.invalidateCards()
-				if !sticky {
-					a.endLeader()
-				}
-			})
-		}); err != nil {
-			log.Printf("snip: leader key %q: %v", key, err)
-			continue
+			seen[k] = struct{}{}
+			a.bindJump(k)
 		}
-		a.leaderKeys = append(a.leaderKeys, key)
 	}
+	a.mu.Lock()
+	a.jumpLabels = labels
+	a.jumpPrefix = ""
+	a.twoKeyJumps = two
+	a.mu.Unlock()
+	a.whichItems = whichKeyItems(cfg)
+	a.syncLeaderChrome()
 }
 
 func (a *App) clearLeaderKeys() {
@@ -143,7 +128,7 @@ func (a *App) endLeader() {
 	a.leaderGen++
 	a.mu.Unlock()
 	a.clearLeaderKeys()
-	a.invalidateCards()
+	a.closeLeaderChrome()
 }
 
 func (a *App) leaderActive() bool {

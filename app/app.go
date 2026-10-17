@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +41,11 @@ type App struct {
 	leaderOn      bool
 	leaderGen     int
 	leaderKeys    []string
+	jumpLabels    map[string]string
+	jumpPrefix    string
+	twoKeyJumps   bool
+	whichItems    []whichKeyItem
+	whichWin      *mygo.Window
 	taps          tapGate
 	flashing      bool
 	tray          *mygo.Tray
@@ -78,6 +82,8 @@ type cardUI struct {
 	pressScreenY   int
 	pressClicks    int
 	syncing        bool
+	jumpLabel      string
+	badge          *mygo.Window
 }
 
 // New creates the application state.
@@ -234,6 +240,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	win.SetMovable(true)
 	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
 	win.OnResize(func() {
+		a.followLeaderBadge(host)
 		if macplace.InLiveResize(win.NativeHandle()) {
 			return
 		}
@@ -249,11 +256,15 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		win.Invalidate()
 		return layout.Width, layout.Height
 	})
-	win.OnClosed(cleanupResize)
+	win.OnClosed(func() {
+		cleanupResize()
+		a.closeBadge(host)
+	})
 	a.visible = true
 	a.syncCardHeight(host)
 	a.showCard(host)
 	a.refreshSelection()
+	a.relayoutLeader()
 }
 
 func (a *App) applyWindowFlags(win *mygo.Window) {
@@ -347,7 +358,9 @@ func (a *App) rememberCardPosition(id string, win *mygo.Window) {
 	x, y := win.Position()
 	a.mu.Lock()
 	a.cardPositions[id] = cardPosition{x: x, y: y}
+	h := a.cards[id]
 	a.mu.Unlock()
+	a.followLeaderBadge(h)
 }
 
 func (a *App) cardView(c *ui.Context, host *cardUI) {
@@ -392,36 +405,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 			FontSize(float32(cardCfg.EffectiveFontSize())).
 			TextColor(paperInk(dark)).
 			MaxLines(max(a.slipLines(host, host.userW), 1))
-		if a.leaderActive() {
-			a.leaderHint(c, host)
-		}
 	})
-}
-
-func (a *App) leaderHint(c *ui.Context, host *cardUI) {
-	t := c.Theme()
-	lang := a.config().Language
-	n := a.cardNumber(host.card.ID)
-	cfg := a.config()
-	paste := strings.TrimSpace(cfg.Bindings.Paste.Leader)
-	deleteKey := strings.TrimSpace(cfg.Bindings.Delete.Leader)
-	pin := strings.TrimSpace(cfg.Bindings.Pin.Leader)
-	ui.Row(c).Absolute().Right(4).Top(4).Gap(5).Padding(3, 6).
-		Background(t.SurfaceHover).Border(1, t.Border).PassThrough().
-		Children(func() {
-			if n != "" {
-				ui.Text(c, n).FontSize(10).TextColor(t.Accent)
-			}
-			if paste != "" {
-				ui.Text(c, paste+" "+tr(lang, "hint_paste")).FontSize(10).TextColor(t.TextMuted)
-			}
-			if deleteKey != "" {
-				ui.Text(c, deleteKey+" "+tr(lang, "hint_delete")).FontSize(10).TextColor(t.TextMuted)
-			}
-			if pin != "" {
-				ui.Text(c, pin+" "+tr(lang, "hint_pin")).FontSize(10).TextColor(t.TextMuted)
-			}
-		})
 }
 
 func (a *App) toggleVisible() {
@@ -463,6 +447,7 @@ func (a *App) hideCard(h *cardUI) {
 	if !cfg.Motion.Enabled || mygo.Theme.Preferences().ReduceMotion {
 		h.hiding = false
 		h.win.Hide()
+		a.hideBadge(h)
 		return
 	}
 	h.hiding = true
@@ -478,6 +463,7 @@ func (a *App) hideCard(h *cardUI) {
 				h.win.Hide()
 			}
 			h.hiding = false
+			a.hideBadge(h)
 		})
 	})
 }
@@ -523,21 +509,6 @@ func (a *App) selectNumber(n int) {
 	id := a.order[len(a.order)-n]
 	a.mu.Unlock()
 	a.selectID(id)
-}
-
-func (a *App) cardNumber(id string) string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for i, oid := range a.order {
-		if oid == id {
-			n := len(a.order) - i
-			if n > 9 {
-				return ""
-			}
-			return strconv.Itoa(n)
-		}
-	}
-	return ""
 }
 
 func (a *App) flashAll() {
@@ -626,6 +597,9 @@ func (a *App) refreshSelection() {
 			h.selected = i == sel
 			h.win.Invalidate()
 		}
+		if a.leaderActive() {
+			a.positionWhichKey()
+		}
 	})
 }
 
@@ -702,9 +676,11 @@ func (a *App) detachCard(id string) {
 	a.store.Delete(id)
 	delete(a.cardPositions, id)
 	if h != nil && h.win != nil {
+		a.closeBadge(h)
 		h.win.Close()
 	}
 	a.refreshSelection()
+	a.relayoutLeader()
 }
 
 func (a *App) secrets() secrets.Config {

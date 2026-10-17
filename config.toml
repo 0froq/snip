@@ -36,6 +36,8 @@ shortcut = "CmdOrCtrl+Shift+Space"
 timeout_ms = 1500
 double_press_ms = 400
 pin_ms = 900
+# which_key_corner: top-left, top-right, bottom-left, or bottom-right
+which_key_corner = "bottom-right"
 
 [bindings.toggle]
 direct = "CmdOrCtrl+Shift+S"

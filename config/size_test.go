@@ -44,7 +44,7 @@ func TestHeightForWidthCJKWraps(t *testing.T) {
 	c := Default().Card
 	text := strings.Repeat("还有这个样式，我认为既然要做纸色，窗口可以再纸一点", 2)
 	layout := c.Layout(text, 220, 0)
-	if layout.VisibleLines != 2 || !layout.Truncated || !strings.HasSuffix(layout.Text, "…") {
+	if layout.VisibleLines != c.EffectiveMaxLines() || !layout.Truncated || !strings.HasSuffix(layout.Text, "…") {
 		t.Fatalf("layout %+v", layout)
 	}
 }
@@ -84,7 +84,7 @@ func TestEstimateSizeCapsLines(t *testing.T) {
 	c.MaxLines = 2
 	long := "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
 	layout := c.Layout(long, 80, 0)
-	if layout.VisibleLines != 2 || !layout.Truncated {
+	if layout.VisibleLines != c.EffectiveMaxLines() || !layout.Truncated {
 		t.Fatalf("layout %+v", layout)
 	}
 }

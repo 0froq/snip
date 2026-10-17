@@ -59,24 +59,20 @@ type cardUI struct {
 	selected bool
 	pulse    bool
 	hiding   bool
+	hideGen  uint64
 	scale    float32
 	userW    int
 	userH    int
 	rendered string
 
-	pointerActive    bool
-	pointerDragged   bool
-	dragOffX         int
-	dragOffY         int
-	pressScreenX     int
-	pressScreenY     int
-	resizeEdge       int
-	resizeStartW     int
-	resizeStartX     int
-	resizeStartLines int
-	lines            int
-	pressClicks      int
-	syncing          bool
+	pointerActive  bool
+	pointerDragged bool
+	dragOffX       int
+	dragOffY       int
+	pressScreenX   int
+	pressScreenY   int
+	pressClicks    int
+	syncing        bool
 }
 
 // New creates the application state.
@@ -208,20 +204,24 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	minH := cardCfg.Layout(host.display, width, 1).Height
 
 	win := mygo.NewWindow(mygo.WindowOptions{
-		Title:           "snip",
-		Width:           width,
-		Height:          height,
-		X:               x,
-		Y:               y,
-		MinWidth:        cardCfg.WidthFloor(host.display),
-		MinHeight:       minH,
-		MaxWidth:        cardCfg.EffectiveMaxWidth(),
-		MaxHeight:       cardCfg.EffectiveMaxHeight(),
-		Frameless:       cfg.Window.EffectiveFrameless(),
-		Panel:           cfg.Window.EffectivePanel(),
+		Title:     "snip",
+		Width:     width,
+		Height:    height,
+		X:         x,
+		Y:         y,
+		MinWidth:  cardCfg.WidthFloor(host.display),
+		MinHeight: minH,
+		MaxWidth:  cardCfg.EffectiveMaxWidth(),
+		MaxHeight: cardCfg.EffectiveMaxHeight(),
+		// NewWindow otherwise calls Show(), making the note key before we
+		// can configure it. Notes must only be shown via ShowInactive.
+		Hidden:    true,
+		Frameless: cfg.Window.EffectiveFrameless(),
+		// AppKit needs the nonactivating panel style at creation time, even
+		// when the legacy panel setting is disabled. Settings is unaffected.
+		Panel:           macplace.Supported || cfg.Window.EffectivePanel(),
 		AlwaysOnTop:     cfg.Window.AlwaysOnTop,
 		DisableShadow:   true,
-		DisableResize:   true,
 		BackgroundColor: "light-dark(#F3EADF, #312924)",
 		StateKey:        "card-" + card.ID,
 		Content:         ui.View(func(c *ui.Context) { a.cardView(c, host) }),
@@ -230,17 +230,19 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	win.SetMovable(true)
 	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
 	win.OnResize(func() { a.syncCardHeight(host) })
-	win.OnFocus(func() { win.ShowInactive() })
+	macplace.PreventWindowFocus(win.NativeHandle())
 	a.applyWindowFlags(win)
-	if a.visible {
-		win.ShowInactive()
-	} else {
-		a.visible = true
-		win.ShowInactive()
-	}
 	macplace.SquareWindow(win.NativeHandle())
-	win.SetResizable(false)
+	win.SetResizable(true)
+	cleanupResize := macplace.ConstrainWindowResize(win.NativeHandle(), func(width int) (int, int) {
+		layout := a.fitCardWidth(host, width)
+		win.Invalidate()
+		return layout.Width, layout.Height
+	})
+	win.OnClosed(cleanupResize)
+	a.visible = true
 	a.syncCardHeight(host)
+	a.showCard(host)
 	a.refreshSelection()
 }
 
@@ -271,17 +273,14 @@ func (a *App) slipLines(host *cardUI, width int) int {
 	if width <= 0 {
 		width = cardCfg.EstimateWidth(host.display)
 	}
-	return cardCfg.Layout(host.display, width, host.lines).VisibleLines
+	return cardCfg.Layout(host.display, width, 0).VisibleLines
 }
 
-func (a *App) syncCardHeight(host *cardUI) {
-	if host == nil || host.win == nil || host.pointerActive || host.syncing {
-		return
-	}
-	host.syncing = true
-	defer func() { host.syncing = false }()
+// fitCardWidth is shared by the native pre-resize delegate and programmatic
+// resizing. Height is never user-controlled: measure the exact (possibly
+// ellipsized) text at the clamped width, using the configured line/height caps.
+func (a *App) fitCardWidth(host *cardUI, w int) config.CardLayout {
 	cardCfg := a.config().Card
-	w, _ := host.win.Size()
 	floor := cardCfg.WidthFloor(host.display)
 	maxW := cardCfg.EffectiveMaxWidth()
 	if w < floor {
@@ -290,14 +289,24 @@ func (a *App) syncCardHeight(host *cardUI) {
 	if w > maxW {
 		w = maxW
 	}
-	layout := cardCfg.Layout(host.display, w, host.lines)
-	wantH := layout.Height
+	layout := cardCfg.Layout(host.display, w, 0)
 	host.rendered = layout.Text
-	curW, curH := host.win.Size()
-	if curW != w || curH != wantH {
-		host.win.SetSize(w, wantH)
+	host.userW, host.userH = layout.Width, layout.Height
+	return layout
+}
+
+func (a *App) syncCardHeight(host *cardUI) {
+	if host == nil || host.win == nil || host.pointerActive || host.syncing {
+		return
 	}
-	host.userW, host.userH = w, wantH
+	host.syncing = true
+	defer func() { host.syncing = false }()
+	w, h := host.win.Size()
+	layout := a.fitCardWidth(host, w)
+	if w != layout.Width || h != layout.Height {
+		host.win.SetSize(layout.Width, layout.Height)
+	}
+	host.win.Invalidate()
 }
 
 func (a *App) rememberCardPosition(id string, win *mygo.Window) {
@@ -352,7 +361,6 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		if a.leaderActive() {
 			a.leaderHint(c, host)
 		}
-		a.cardResizeEdges(c, host, host.win)
 	})
 }
 
@@ -403,8 +411,7 @@ func (a *App) setAllVisible(show bool) {
 				continue
 			}
 			if show {
-				h.hiding = false
-				h.win.ShowInactive()
+				a.showCard(h)
 			} else {
 				a.hideCard(h)
 			}
@@ -416,8 +423,11 @@ func (a *App) hideCard(h *cardUI) {
 	if h == nil || h.win == nil {
 		return
 	}
+	h.hideGen++
+	gen := h.hideGen
 	cfg := a.config()
 	if !cfg.Motion.Enabled || mygo.Theme.Preferences().ReduceMotion {
+		h.hiding = false
 		h.win.Hide()
 		return
 	}
@@ -425,6 +435,11 @@ func (a *App) hideCard(h *cardUI) {
 	h.win.Invalidate()
 	time.AfterFunc(cfg.Motion.Duration(), func() {
 		mygo.RunOnMain(func() {
+			// A show (or a newer hide) supersedes this animation. In
+			// particular, an old timer must not hide a freshly shown note.
+			if h.hideGen != gen {
+				return
+			}
 			if h.win != nil {
 				h.win.Hide()
 			}
@@ -442,8 +457,7 @@ func (a *App) surfaceCard(id string) {
 		return
 	}
 	h.pulse = true
-	h.win.ShowInactive()
-	h.win.Invalidate()
+	a.showCard(h)
 	time.AfterFunc(280*time.Millisecond, func() {
 		mygo.RunOnMain(func() {
 			h.pulse = false
@@ -706,10 +720,14 @@ func (a *App) applyConfig(next config.Config) {
 		}
 		h.display = a.cardDisplay(h.card)
 		a.applyWindowFlags(h.win)
+		minH := next.Card.Layout(h.display, next.Card.WidthFloor(h.display), 1).Height
+		h.win.SetMinimumSize(next.Card.WidthFloor(h.display), minH)
+		h.win.SetMaximumSize(next.Card.EffectiveMaxWidth(), next.Card.EffectiveMaxHeight())
 		if h.userW == 0 {
 			width, height := next.Card.EstimateSize(h.display)
 			h.win.SetSize(width, height)
 		}
+		a.syncCardHeight(h)
 		h.win.Invalidate()
 	}
 }

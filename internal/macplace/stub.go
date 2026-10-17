@@ -14,3 +14,12 @@ func Origin(_ config.Placement, _ int, _ int) (x, y int, ok bool) {
 
 // SquareWindow is a no-op off macOS.
 func SquareWindow(uintptr) {}
+
+// PreventWindowFocus is a no-op off macOS.
+func PreventWindowFocus(uintptr) {}
+
+// DisplayWindow is a no-op off macOS.
+func DisplayWindow(uintptr) {}
+
+// ConstrainWindowResize is a no-op off macOS.
+func ConstrainWindowResize(_ uintptr, _ func(int) (int, int)) func() { return func() {} }

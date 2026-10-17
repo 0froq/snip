@@ -117,9 +117,21 @@ func (c Card) Layout(display string, width, visibleLines int) CardLayout {
 	if visibleLines < 1 {
 		visibleLines = 1
 	}
-	text, truncated := c.truncate(display, width, visibleLines)
-	_, textH := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width)).Size()
-	height := int(math.Ceil(float64(textH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
+	var text string
+	var truncated bool
+	var height int
+	for {
+		text, truncated = c.truncate(display, width, visibleLines)
+		_, textH := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width)).Size()
+		height = int(math.Ceil(float64(textH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
+		if height <= c.EffectiveMaxHeight() || visibleLines == 1 {
+			break
+		}
+		// Font metrics give only an initial line budget. The shaped line
+		// boxes may be taller; truncate again instead of clipping the last
+		// line (or its ellipsis) to an arbitrary window-height cap.
+		visibleLines--
+	}
 	if height > c.EffectiveMaxHeight() {
 		height = c.EffectiveMaxHeight()
 	}

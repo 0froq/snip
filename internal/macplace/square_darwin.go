@@ -18,9 +18,9 @@ func SquareWindow(handle uintptr) {
 	)
 	mask := uintptr(send(w, "styleMask"))
 	mask &^= styleTitled | styleClosable | styleMini
-	if mask&^styleResizable == 0 {
-		mask |= styleResizable
-	}
+	// Borderless windows still need the resizable bit for AppKit's native
+	// edge/corner tracking and resize cursors.
+	mask |= styleResizable
 	send(w, "setStyleMask:", mask)
 	send(w, "setHasShadow:", 0)
 	send(w, "setOpaque:", 1)

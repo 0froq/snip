@@ -44,7 +44,7 @@ func TestHeightForWidthCJKWraps(t *testing.T) {
 	c := Default().Card
 	text := strings.Repeat("还有这个样式，我认为既然要做纸色，窗口可以再纸一点", 2)
 	layout := c.Layout(text, 220, 0)
-	if layout.VisibleLines != c.EffectiveMaxLines() || !layout.Truncated || !strings.HasSuffix(layout.Text, "…") {
+	if layout.VisibleLines != c.EffectiveMaxLines() || !layout.Truncated || !strings.Contains(layout.Text, "\n…\n") {
 		t.Fatalf("layout %+v", layout)
 	}
 }
@@ -95,5 +95,27 @@ func TestLayoutKeepsChosenLines(t *testing.T) {
 	layout := c.Layout(text, 200, 4)
 	if layout.VisibleLines != 4 || !layout.Truncated {
 		t.Fatalf("chosen layout %+v", layout)
+	}
+}
+
+func TestMiddleTruncationShapes(t *testing.T) {
+	c := Default().Card
+	text := strings.Repeat("还有这个样式，我认为既然要做纸色，窗口可以再纸一点", 4) + "END"
+	for n, want := range map[int]int{1: 1, 2: 2, 3: 3, 4: 4} {
+		l := c.Layout(text, 220, n)
+		_ = want
+		if !l.Truncated || l.VisibleLines != n {
+			t.Fatalf("n=%d: %+v", n, l)
+		}
+		if n == 2 && !strings.HasSuffix(l.Text, "\n…") {
+			t.Fatalf("n=2: %q", l.Text)
+		}
+		if n >= 3 && !strings.HasSuffix(l.Text, "END") {
+			t.Fatalf("n=%d lost last line: %q", n, l.Text)
+		}
+	}
+	short := c.Layout("短短", 0, 4)
+	if short.Truncated || short.VisibleLines != 1 {
+		t.Fatalf("short: %+v", short)
 	}
 }

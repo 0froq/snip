@@ -213,7 +213,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		MinWidth:  cardCfg.WidthFloor(host.display),
 		MinHeight: minH,
 		MaxWidth:  cardCfg.EffectiveMaxWidth(),
-		MaxHeight: cardCfg.EffectiveMaxHeight(),
+		MaxHeight: 10000,
 		// NewWindow otherwise calls Show(), making the note key before we
 		// can configure it. Notes must only be shown via ShowInactive.
 		Hidden:    true,
@@ -752,7 +752,7 @@ func (a *App) applyConfig(next config.Config) {
 		a.applyWindowFlags(h.win)
 		minH := next.Card.Layout(h.display, next.Card.WidthFloor(h.display), 1).Height
 		h.win.SetMinimumSize(next.Card.WidthFloor(h.display), minH)
-		h.win.SetMaximumSize(next.Card.EffectiveMaxWidth(), next.Card.EffectiveMaxHeight())
+		h.win.SetMaximumSize(next.Card.EffectiveMaxWidth(), 10000)
 		if h.userW == 0 {
 			width, height := next.Card.EstimateSize(h.display)
 			h.win.SetSize(width, height)

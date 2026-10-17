@@ -34,20 +34,19 @@ func TestFitCardWidthBoundsAndStoredSize(t *testing.T) {
 
 func TestFitCardWidthMeasuresRenderedTextWithoutBlankHeight(t *testing.T) {
 	cfg := config.Default()
-	cfg.Card.MaxLines = 1000 // Let the height cap, not max_lines, truncate.
-	cfg.Card.MaxHeight = 100
+	cfg.Card.MaxLines = 4
 	a := New(cfg, "")
 	host := &cardUI{display: strings.Repeat("long text 你好 ", 100)}
 	for _, w := range []int{120, 240, 480} {
 		got := a.fitCardWidth(host, w)
-		if !got.Truncated || !strings.HasSuffix(got.Text, "…") {
+		if !got.Truncated || !strings.Contains(got.Text, "\n…\n") || got.VisibleLines != 4 {
 			t.Fatalf("width %d: expected ellipsis: %+v", w, got)
 		}
 		font := ui.Font{Family: "Georgia", Size: float32(cfg.Card.EffectiveFontSize())}
 		inner := float32(got.Width - 2*cfg.Card.EffectivePaddingX() - 2*config.CardBorderPx())
 		_, textH := ui.ShapeText(got.Text, font, inner).Size()
 		wantH := int(math.Ceil(float64(textH))) + 2*cfg.Card.EffectivePaddingY() + 2*config.CardBorderPx()
-		if got.Height != wantH || got.Height > cfg.Card.EffectiveMaxHeight() {
+		if got.Height != wantH {
 			t.Fatalf("width %d: height %d, exact content height %d", w, got.Height, wantH)
 		}
 	}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"math"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
@@ -56,16 +57,6 @@ func (c Card) linesForText(text string, width int) int {
 	return n
 }
 
-func (c Card) maxFittingLines() int {
-	line := float64(c.lineBox())
-	inside := float64(c.EffectiveMaxHeight() - 2*c.EffectivePaddingY() - 2*cardBorderPx)
-	n := int(math.Floor(inside / line))
-	if n < 1 {
-		return 1
-	}
-	return n
-}
-
 func (c Card) truncate(display string, width, lines int) (string, bool) {
 	if c.linesForText(display, width) <= lines {
 		return display, false
@@ -85,6 +76,57 @@ func (c Card) truncate(display string, width, lines int) (string, bool) {
 		return "…", true
 	}
 	return string(runes[:lo]) + "…", true
+}
+
+// head is the longest prefix that fits in n lines.
+func (c Card) head(runes []rune, width, n int) string {
+	lo, hi := 0, len(runes)
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if c.linesForText(string(runes[:mid]), width) <= n {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return strings.TrimRight(string(runes[:lo]), "\n")
+}
+
+// tail is the longest suffix that fits on one line.
+func (c Card) tail(runes []rune, width int) string {
+	end := len(runes)
+	for end > 0 && runes[end-1] == '\n' {
+		end--
+	}
+	runes = runes[:end]
+	lo, hi := 0, len(runes)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		cand := string(runes[mid:])
+		if !strings.Contains(cand, "\n") && c.linesForText(cand, width) <= 1 {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	return string(runes[lo:])
+}
+
+// truncateMiddle shows all text when it fits in n lines. Otherwise it keeps
+// the first n-2 lines, one line holding only an ellipsis, and the last line
+// (n=2: first line plus the ellipsis line; n=1: one line ending in "…").
+func (c Card) truncateMiddle(display string, width, n int) (string, bool) {
+	if c.linesForText(display, width) <= n {
+		return display, false
+	}
+	if n <= 1 {
+		return c.truncate(display, width, 1)
+	}
+	runes := []rune(display)
+	if n == 2 {
+		return c.head(runes, width, 1) + "\n…", true
+	}
+	return c.head(runes, width, n-2) + "\n…\n" + c.tail(runes, width), true
 }
 
 // Layout truncates first, then measures the exact text that the card draws.
@@ -111,30 +153,12 @@ func (c Card) Layout(display string, width, visibleLines int) CardLayout {
 	if visibleLines > full {
 		visibleLines = full
 	}
-	if fit := c.maxFittingLines(); visibleLines > fit {
-		visibleLines = fit
-	}
 	if visibleLines < 1 {
 		visibleLines = 1
 	}
-	var text string
-	var truncated bool
-	var height int
-	for {
-		text, truncated = c.truncate(display, width, visibleLines)
-		_, textH := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width)).Size()
-		height = int(math.Ceil(float64(textH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
-		if height <= c.EffectiveMaxHeight() || visibleLines == 1 {
-			break
-		}
-		// Font metrics give only an initial line budget. The shaped line
-		// boxes may be taller; truncate again instead of clipping the last
-		// line (or its ellipsis) to an arbitrary window-height cap.
-		visibleLines--
-	}
-	if height > c.EffectiveMaxHeight() {
-		height = c.EffectiveMaxHeight()
-	}
+	text, truncated := c.truncateMiddle(display, width, visibleLines)
+	_, textH := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width)).Size()
+	height := int(math.Ceil(float64(textH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
 	return CardLayout{
 		Text:         text,
 		Width:        width,

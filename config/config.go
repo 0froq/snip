@@ -135,7 +135,7 @@ func Default() Config {
 			Height:           44,
 			MaxHeight:        220,
 			LineHeight:       18,
-			MaxLines:         2,
+			MaxLines:         4,
 			ActiveColor:      "#C4784A",
 			PaddingX:         10,
 			PaddingY:         6,
@@ -257,7 +257,7 @@ func (c Card) HeightForWidth(display string, width int) int {
 
 func (c Card) EffectiveMaxLines() int {
 	if c.MaxLines <= 0 {
-		return 2
+		return 4
 	}
 	return c.MaxLines
 }

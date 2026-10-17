@@ -26,3 +26,6 @@ func ConstrainWindowResize(_ uintptr, _ func(int, int) (int, int)) func() { retu
 
 func InLiveResize(handle uintptr) bool { return false }
 func UseFrameResizeCursors()           {}
+
+// SetContentMinSize is a no-op off macOS.
+func SetContentMinSize(uintptr, int, int) {}

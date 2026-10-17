@@ -105,6 +105,27 @@ func TestFastBottomDragSnapsToWholeLinesAndPersists(t *testing.T) {
 	}
 }
 
+func TestFitCardSizeNeverShrinksBelowOneLine(t *testing.T) {
+	cfg := config.Default()
+	a := New(cfg, "")
+	host := &cardUI{display: strings.Repeat("long text 你好 ", 40)}
+	one := a.layoutAt(host, 360, 1)
+	if one.Height < 1 || one.VisibleLines != 1 {
+		t.Fatalf("one-line box: %+v", one)
+	}
+	for _, h := range []int{0, -40, 1, one.Height - 1} {
+		got := a.fitCardSize(host, 360, h)
+		if got.VisibleLines != 1 || got.Height != one.Height || got.Width != one.Width || host.userLines != 1 {
+			t.Fatalf("h=%d: got %+v userLines=%d, want %+v", h, got, host.userLines, one)
+		}
+	}
+	floor := cfg.Card.WidthFloor(host.display)
+	narrow := a.fitCardSize(host, -100, 0)
+	if narrow.Width != floor || narrow.Width < 1 || narrow.VisibleLines != 1 || narrow.Height < 1 || host.userLines != 1 {
+		t.Fatalf("width floor: %+v floor=%d userLines=%d", narrow, floor, host.userLines)
+	}
+}
+
 func TestResizeDragSizeEdges(t *testing.T) {
 	w, h := resizeDragSize(200, 100, edgeRight|edgeBottom, 15, -40)
 	if w != 215 || h != 60 {

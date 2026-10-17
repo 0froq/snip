@@ -22,6 +22,8 @@ var (
 	resizeLoadOnce sync.Once
 	setObjectClass func(id, objc.Class) objc.Class
 	setWindowFrame func(id, objc.SEL, nsRect, bool)
+	setContentMin  func(id, objc.SEL, NSSize)
+	contentMinSize func(id, objc.SEL) NSSize
 	resizeClasses  = map[objc.Class]objc.Class{}
 	resizeSizes    = map[id]func(int, int) (int, int){}
 )
@@ -50,12 +52,7 @@ func ConstrainWindowResize(handle uintptr, size func(int, int) (int, int)) func(
 }
 
 func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {
-	resizeLoadOnce.Do(func() {
-		purego.RegisterLibFunc(&setObjectClass, libObjC, "object_setClass")
-		// NSRect is a 4-double HFA on arm64. RegisterFunc places it in d0–d3;
-		// a raw SyscallN would pass it as integer registers or a pointer.
-		purego.RegisterFunc(&setWindowFrame, msgSendAddr)
-	})
+	ensureResizeFuncs()
 	if _, exists := resizeSizes[delegate]; exists {
 		panic("macplace: resize delegate already installed")
 	}
@@ -101,21 +98,39 @@ func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {
 func windowWillResize(self id, _ objc.SEL, window id, proposed NSSize) NSSize {
 	// Only a live user drag picks the size. Programmatic frame changes (MyGo
 	// constraints, SetSize) also pass through here and must not reset it.
-	if !liveResize(window) && window != 0 && send(window, "respondsToSelector:", uintptr(sel("inLiveResize"))) != 0 {
+	// A non-positive proposal is never returned as-is: a fast drag can commit
+	// a zero height while inLiveResize is already false, which hides the card.
+	live := liveResize(window)
+	nonPositive := proposed.Width <= 0 || proposed.Height <= 0
+	if !live && !nonPositive && window != 0 && send(window, "respondsToSelector:", uintptr(sel("inLiveResize"))) != 0 {
 		return proposed
 	}
+	minW, minH := windowMinContent(window)
 	if size := resizeSizes[self]; size != nil {
 		w, h := size(int(math.Round(proposed.Width)), int(math.Round(proposed.Height)))
+		if w < minW {
+			w = minW
+		}
+		if h < minH {
+			h = minH
+		}
 		return NSSize{Width: float64(w), Height: float64(h)}
+	}
+	if proposed.Width < float64(minW) {
+		proposed.Width = float64(minW)
+	}
+	if proposed.Height < float64(minH) {
+		proposed.Height = float64(minH)
 	}
 	return proposed
 }
 
 // windowDidEndLiveResize runs once the user lets go. A fast drag can commit
-// an in-between frame while inLiveResize is still false, so windowWillResize
-// leaves that size alone and OnResize skips the fit for the whole gesture.
-// Fit the frame that actually stuck, then correct it. inLiveResize is false
-// here, so the correction's windowWillResize does not fit again.
+// an in-between frame while inLiveResize is already false, so the positive
+// path in windowWillResize leaves that size alone. Fit the frame that stuck,
+// then clamp it to the content minimum and back onto a visibleFrame.
+// inLiveResize is false here, so the correction's windowWillResize does not
+// fit again.
 func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
 	if note == 0 {
 		return
@@ -129,14 +144,92 @@ func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
 	curW := int(math.Round(frame.size.width))
 	curH := int(math.Round(frame.size.height))
 	w, h := size(curW, curH)
-	if w == curW && h == curH && frame.size.width == float64(w) && frame.size.height == float64(h) {
+	minW, minH := windowMinContent(window)
+	if w < minW {
+		w = minW
+	}
+	if h < minH {
+		h = minH
+	}
+	visible := nearestVisible(screenVisibleFrames(), frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
+	x, y, fw, fh := snapResizeFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, w, h, minW, minH, visible)
+	if x == frame.origin.x && y == frame.origin.y && fw == frame.size.width && fh == frame.size.height {
 		return
 	}
-	x, y, fw, fh := snapResizeFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, w, h)
 	setWindowFrame(window, sel("setFrame:display:"), nsRect{
 		origin: nsPoint{x: x, y: y},
 		size:   nsSize{width: fw, height: fh},
 	}, true)
+}
+
+// SetContentMinSize sets the content view's minimum size. Borderless windows
+// ignore the frame minSize after the style mask is cleared, so AppKit will
+// otherwise collapse the content height to zero during a live resize.
+func SetContentMinSize(handle uintptr, w, h int) {
+	if handle == 0 {
+		return
+	}
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	ensureResizeFuncs()
+	setContentMin(id(handle), sel("setContentMinSize:"), NSSize{Width: float64(w), Height: float64(h)})
+}
+
+func ensureResizeFuncs() {
+	load()
+	resizeLoadOnce.Do(func() {
+		purego.RegisterLibFunc(&setObjectClass, libObjC, "object_setClass")
+		// NSRect is a 4-double HFA on arm64. RegisterFunc places it in d0–d3;
+		// a raw SyscallN would pass it as integer registers or a pointer.
+		// NSSize is the same ABI in d0/d1.
+		purego.RegisterFunc(&setWindowFrame, msgSendAddr)
+		purego.RegisterFunc(&setContentMin, msgSendAddr)
+		purego.RegisterFunc(&contentMinSize, msgSendAddr)
+	})
+}
+
+func windowMinContent(window id) (int, int) {
+	if window == 0 || send(window, "respondsToSelector:", uintptr(sel("contentMinSize"))) == 0 {
+		return 1, 1
+	}
+	ensureResizeFuncs()
+	s := contentMinSize(window, sel("contentMinSize"))
+	w := int(math.Round(s.Width))
+	h := int(math.Round(s.Height))
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return w, h
+}
+
+// screenVisibleFrames reads each NSScreen.visibleFrame in AppKit's bottom-left
+// space. Do not flip these through rectFromMac: snapResizeFrame compares them
+// with the window frame, which uses the same origin.
+func screenVisibleFrames() []box {
+	screens := send(class("NSScreen"), "screens")
+	if screens == 0 {
+		return nil
+	}
+	n := sendInt(screens, "count")
+	out := make([]box, 0, n)
+	for i := 0; i < n; i++ {
+		r := msgRect(send(screens, "objectAtIndex:", uintptr(i)), sel("visibleFrame"))
+		if r.size.width <= 0 || r.size.height <= 0 {
+			continue
+		}
+		out = append(out, box{
+			X: r.origin.x, Y: r.origin.y,
+			W: r.size.width, H: r.size.height,
+		})
+	}
+	return out
 }
 
 // InLiveResize reports whether the user is dragging the window's edge.

@@ -240,6 +240,9 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	win.OnResize(func() {
 		a.followLeaderBadge(host)
 		if macplace.InLiveResize(win.NativeHandle()) {
+			// Skip the line-count sync while AppKit is tracking the edge, but
+			// pull a frame that has left every work area back onto one.
+			a.keepCardOnScreen(host)
 			return
 		}
 		a.syncCardHeight(host)
@@ -248,6 +251,11 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	macplace.PreventWindowFocus(win.NativeHandle())
 	a.applyWindowFlags(win)
 	macplace.SquareWindow(win.NativeHandle())
+	minW, minH := a.cardMinSize(host.display)
+	win.SetMinimumSize(minW, minH)
+	// Style-mask changes drop the frame min. The content min is what stops a
+	// borderless live resize from collapsing the card to zero height.
+	macplace.SetContentMinSize(win.NativeHandle(), minW, minH)
 	win.SetResizable(true)
 	cleanupResize := macplace.ConstrainWindowResize(win.NativeHandle(), func(width, height int) (int, int) {
 		layout := a.fitCardSize(host, width, height)
@@ -330,24 +338,105 @@ func (a *App) fitCardSize(host *cardUI, w, h int) config.CardLayout {
 	cardCfg := a.config().Card
 	base := a.layoutAt(host, w, 0)
 	maxN := min(base.FullLines, cardCfg.EffectiveMaxLines())
-	lines := 1
-	snapped := a.layoutAt(host, base.Width, 1)
-	for n := 1; n <= maxN; n++ {
-		l := a.layoutAt(host, base.Width, n)
-		if l.VisibleLines < n || l.Height > h {
-			break
-		}
-		lines = n
-		snapped = l
+	if maxN < 1 {
+		maxN = 1
 	}
-	if lines == cardCfg.EffectiveMaxLines() && base.VisibleLines == lines {
-		lines = 0
-		snapped = a.layoutAt(host, base.Width, 0)
+	one := a.layoutAt(host, base.Width, 1)
+	if one.Height < 1 {
+		one.Height = 1
+	}
+	if one.Width < 1 {
+		one.Width = 1
+	}
+	lines := 1
+	snapped := one
+	// Anything shorter than one line box stays at that box. A fast drag can
+	// propose 0 or a negative height; growing past it would hide the card.
+	if h >= one.Height {
+		for n := 1; n <= maxN; n++ {
+			l := a.layoutAt(host, base.Width, n)
+			if l.Height < 1 {
+				l.Height = 1
+			}
+			if l.VisibleLines < n || l.Height > h {
+				break
+			}
+			lines = n
+			snapped = l
+		}
+		if lines == cardCfg.EffectiveMaxLines() && base.VisibleLines == lines {
+			lines = 0
+			snapped = a.layoutAt(host, base.Width, 0)
+			if snapped.Height < one.Height {
+				snapped.Height = one.Height
+			}
+		}
+	}
+	if snapped.Width < one.Width {
+		snapped.Width = one.Width
+	}
+	if snapped.Height < one.Height {
+		snapped.Height = one.Height
 	}
 	host.userLines = lines
 	host.rendered = snapped.Text
 	host.userW, host.userH = snapped.Width, snapped.Height
 	return snapped
+}
+
+// cardMinSize is the smallest content box: the width floor, and the height of
+// one line at that width. Both are at least 1 point.
+func (a *App) cardMinSize(display string) (int, int) {
+	cardCfg := a.config().Card
+	minW := cardCfg.WidthFloor(display)
+	if minW < 1 {
+		minW = 1
+	}
+	minH := cardCfg.Layout(display, minW, 1).Height
+	if minH < 1 {
+		minH = 1
+	}
+	return minW, minH
+}
+
+// keepCardOnScreen clamps a live-resize frame that has collapsed below one
+// line or left every display. A frame that still meets a work area is not
+// moved, so dragging an edge against the screen does not fight the pointer.
+func (a *App) keepCardOnScreen(host *cardUI) {
+	if host == nil || host.win == nil || host.syncing {
+		return
+	}
+	host.syncing = true
+	defer func() { host.syncing = false }()
+	w, h := host.win.Size()
+	minW, minH := a.cardMinSize(host.display)
+	if w < minW || h < minH {
+		layout := a.fitCardSize(host, w, h)
+		host.win.SetSize(layout.Width, layout.Height)
+		w, h = layout.Width, layout.Height
+	}
+	areas := screenWorkAreas()
+	if len(areas) == 0 {
+		return
+	}
+	x, y := host.win.Position()
+	nx, ny := macplace.SlideIntoVisible(x, y, w, h, areas)
+	if nx != x || ny != y {
+		host.win.SetPosition(nx, ny)
+	}
+}
+
+func screenWorkAreas() []macplace.Rect {
+	displays := mygo.Screen.Displays()
+	areas := make([]macplace.Rect, 0, len(displays))
+	for _, d := range displays {
+		wa := d.WorkArea
+		if wa.Width <= 0 || wa.Height <= 0 {
+			continue
+		}
+		areas = append(areas, macplace.Rect{X: wa.X, Y: wa.Y, Width: wa.Width, Height: wa.Height})
+	}
+	return areas
 }
 
 func (a *App) syncCardHeight(host *cardUI) {
@@ -686,8 +775,9 @@ func (a *App) applyConfig(next config.Config) {
 		}
 		h.display = a.cardDisplay(h.card)
 		a.applyWindowFlags(h.win)
-		minH := next.Card.Layout(h.display, next.Card.WidthFloor(h.display), 1).Height
-		h.win.SetMinimumSize(next.Card.WidthFloor(h.display), minH)
+		minW, minH := a.cardMinSize(h.display)
+		h.win.SetMinimumSize(minW, minH)
+		macplace.SetContentMinSize(h.win.NativeHandle(), minW, minH)
 		h.win.SetMaximumSize(next.Card.EffectiveMaxWidth(), 10000)
 		if h.userW == 0 {
 			width, height := next.Card.EstimateSize(h.display)

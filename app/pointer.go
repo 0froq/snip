@@ -173,6 +173,7 @@ func (a *App) applyResizeDrag(host *cardUI, win *mygo.Window, dx, dy int) {
 	if host.resizeEdge&edgeLeft != 0 {
 		win.SetPosition(host.startX+host.startW-l.Width, host.startY)
 	}
+	a.keepCardOnScreen(host)
 	win.Invalidate()
 }
 
@@ -202,5 +203,6 @@ func (a *App) snapWindowToLineCount(host *cardUI, win *mygo.Window) {
 	if w != l.Width || h != l.Height {
 		win.SetSize(l.Width, l.Height)
 	}
+	a.keepCardOnScreen(host)
 	win.Invalidate()
 }

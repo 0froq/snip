@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/0froq/snip/internal/macplace"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -165,44 +166,78 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 	})
 }
 
-// applyResizeDrag refits from the original press and the latest pointer delta.
+// applyResizeDrag refits a band drag from the original press and the latest
+// pointer delta. The release path does not use this: the window frame wins.
 func (a *App) applyResizeDrag(host *cardUI, win *mygo.Window, dx, dy int) {
+	host.beginResize()
+	defer host.endResize()
 	w, h := resizeDragSize(host.startW, host.startH, host.resizeEdge, dx, dy)
-	l := a.fitCardSize(host, w, h)
+	l := a.commitCardFrame(host, w, h)
+	host.syncing = true
 	win.SetSize(l.Width, l.Height)
 	if host.resizeEdge&edgeLeft != 0 {
 		win.SetPosition(host.startX+host.startW-l.Width, host.startY)
 	}
-	a.keepCardOnScreen(host)
+	host.syncing = false
+	// If the set did not stick, the text has to follow the frame that did.
+	aw, ah := win.Size()
+	if aw != l.Width || ah != l.Height {
+		a.commitCardFrame(host, aw, ah)
+	}
+	if !macplace.InLiveResize(win.NativeHandle()) {
+		a.keepCardOnScreen(host)
+	}
 	win.Invalidate()
 }
 
-// finishPointerResize snaps a band drag to the release position.
+// releaseFrame is the size a pointer-up snap uses. The window frame wins;
+// a stale press-to-cursor delta must not republish a different line count
+// after the window has already settled.
+func releaseFrame(frameW, frameH, _, _ int) (int, int) {
+	if frameW < 1 {
+		frameW = 1
+	}
+	if frameH < 1 {
+		frameH = 1
+	}
+	return frameW, frameH
+}
+
+// finishPointerResize snaps a band drag to the window's frame, not the cursor delta.
 func (a *App) finishPointerResize(host *cardUI, win *mygo.Window) {
 	if host == nil || win == nil || host.resizeEdge == 0 {
 		return
 	}
-	sp := mygo.Screen.CursorScreenPoint()
-	dx := sp.X - host.pressScreenX
-	dy := sp.Y - host.pressScreenY
-	a.applyResizeDrag(host, win, dx, dy)
 	host.resizeEdge = 0
+	host.pointerActive = false
+	a.snapWindowToLineCount(host, win)
 }
 
 // snapWindowToLineCount commits whatever size the window was left at, as whole
-// lines. Used when a drag's release was lost, and by native resize end via
-// the same fitCardSize path.
+// lines. Used when a drag's release was lost, on pointer-up, and by the same
+// fit the native resize end runs against the NSWindow frame.
 func (a *App) snapWindowToLineCount(host *cardUI, win *mygo.Window) {
 	if host == nil || win == nil {
 		return
 	}
-	w, h := win.Size()
-	l := a.fitCardSize(host, w, h)
 	host.resizeEdge = 0
 	host.pointerActive = false
+	host.beginResize()
+	defer host.endResize()
+	fw, fh := win.Size()
+	w, h := releaseFrame(fw, fh, 0, 0)
+	l := a.commitCardFrame(host, w, h)
 	if w != l.Width || h != l.Height {
+		host.syncing = true
 		win.SetSize(l.Width, l.Height)
+		host.syncing = false
+		aw, ah := win.Size()
+		if aw != l.Width || ah != l.Height {
+			a.commitCardFrame(host, aw, ah)
+		}
 	}
-	a.keepCardOnScreen(host)
+	if !macplace.InLiveResize(win.NativeHandle()) {
+		a.keepCardOnScreen(host)
+	}
 	win.Invalidate()
 }

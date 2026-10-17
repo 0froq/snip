@@ -4,6 +4,7 @@ package macplace
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"sync"
 
@@ -24,6 +25,8 @@ var (
 	setWindowFrame func(id, objc.SEL, nsRect, bool)
 	setContentMin  func(id, objc.SEL, NSSize)
 	contentMinSize func(id, objc.SEL) NSSize
+	setWindowAlpha func(id, objc.SEL, float64)
+	windowAlpha    func(id, objc.SEL) float64
 	resizeClasses  = map[objc.Class]objc.Class{}
 	resizeSizes    = map[id]func(int, int) (int, int){}
 )
@@ -153,13 +156,23 @@ func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
 	}
 	visible := nearestVisible(screenVisibleFrames(), frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
 	x, y, fw, fh := snapResizeFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, w, h, minW, minH, visible)
-	if x == frame.origin.x && y == frame.origin.y && fw == frame.size.width && fh == frame.size.height {
+	log.Printf("snip: setFrame path=windowDidEndLiveResize from=(%.1f,%.1f,%.1f,%.1f) snap=(%.1f,%.1f,%.1f,%.1f) onScreen=%v alpha=%v orderedIn=%v",
+		frame.origin.x, frame.origin.y, frame.size.width, frame.size.height,
+		x, y, fw, fh,
+		visible.W > 0 && intersects(x, y, fw, fh, visible),
+		readWindowAlpha(window), windowOrderedIn(window))
+	if !finite(x) || !finite(y) || !finite(fw) || !finite(fh) || fw < 1 || fh < 1 {
+		log.Printf("snip: reject setFrame path=windowDidEndLiveResize rect=(%g,%g,%g,%g)", x, y, fw, fh)
+		restoreResizeVisibility(window)
 		return
 	}
-	setWindowFrame(window, sel("setFrame:display:"), nsRect{
-		origin: nsPoint{x: x, y: y},
-		size:   nsSize{width: fw, height: fh},
-	}, true)
+	if x != frame.origin.x || y != frame.origin.y || fw != frame.size.width || fh != frame.size.height {
+		setWindowFrame(window, sel("setFrame:display:"), nsRect{
+			origin: nsPoint{x: x, y: y},
+			size:   nsSize{width: fw, height: fh},
+		}, true)
+	}
+	restoreResizeVisibility(window)
 }
 
 // SetContentMinSize sets the content view's minimum size. Borderless windows
@@ -189,7 +202,41 @@ func ensureResizeFuncs() {
 		purego.RegisterFunc(&setWindowFrame, msgSendAddr)
 		purego.RegisterFunc(&setContentMin, msgSendAddr)
 		purego.RegisterFunc(&contentMinSize, msgSendAddr)
+		purego.RegisterFunc(&setWindowAlpha, msgSendAddr)
+		purego.RegisterFunc(&windowAlpha, msgSendAddr)
 	})
+}
+
+func readWindowAlpha(window id) float64 {
+	if window == 0 || send(window, "respondsToSelector:", uintptr(sel("alphaValue"))) == 0 {
+		return 1
+	}
+	ensureResizeFuncs()
+	return windowAlpha(window, sel("alphaValue"))
+}
+
+func windowOrderedIn(window id) bool {
+	if window == 0 || send(window, "respondsToSelector:", uintptr(sel("isVisible"))) == 0 {
+		return true
+	}
+	return sendInt(window, "isVisible")&0xff != 0
+}
+
+// restoreResizeVisibility undoes an orderOut or alpha 0 that a resize
+// callback managed to apply. A live resize must not leave the card hidden.
+func restoreResizeVisibility(window id) {
+	if window == 0 {
+		return
+	}
+	if readWindowAlpha(window) == 0 && send(window, "respondsToSelector:", uintptr(sel("setAlphaValue:"))) != 0 {
+		log.Printf("snip: resize path=windowDidEndLiveResize found alpha 0; restoring")
+		ensureResizeFuncs()
+		setWindowAlpha(window, sel("setAlphaValue:"), 1)
+	}
+	if !windowOrderedIn(window) {
+		log.Printf("snip: resize path=windowDidEndLiveResize found orderOut; orderFrontRegardless")
+		send(window, "orderFrontRegardless")
+	}
 }
 
 func windowMinContent(window id) (int, int) {

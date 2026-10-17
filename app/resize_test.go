@@ -126,6 +126,73 @@ func TestFitCardSizeNeverShrinksBelowOneLine(t *testing.T) {
 	}
 }
 
+func TestFastResizeFrameBeatsStaleLineCount(t *testing.T) {
+	cfg := config.Default()
+	cfg.Card.MaxLines = 4
+	a := New(cfg, "")
+	host := &cardUI{display: strings.Repeat("long text 你好 ", 80)}
+	full := a.fitCardWidth(host, 360)
+	one := a.layoutAt(host, full.Width, 1)
+	// The fast-drag failure: the frame is already one line, but the last
+	// publish left userLines at 0 and the rendered string at max lines.
+	host.userLines = 0
+	host.rendered = full.Text
+	got := a.commitCardFrame(host, full.Width, one.Height)
+	if got.VisibleLines != 1 || got.Height != one.Height || got.Text != one.Text || host.rendered != one.Text || host.userLines != 1 {
+		t.Fatalf("frame commit left the multi-line string: %+v rendered=%q userLines=%d", got, host.rendered, host.userLines)
+	}
+	kept := a.fitCardWidth(host, got.Width)
+	if kept.VisibleLines != 1 || kept.Text != one.Text || host.rendered != one.Text {
+		t.Fatalf("later width sync restored multi-line text: %+v rendered=%q", kept, host.rendered)
+	}
+}
+
+func TestRapidResizeSequenceSnapsToFinalFrame(t *testing.T) {
+	cfg := config.Default()
+	cfg.Card.MaxLines = 4
+	a := New(cfg, "")
+	host := &cardUI{display: strings.Repeat("long text 你好 ", 80)}
+	full := a.fitCardWidth(host, 360)
+	one := a.layoutAt(host, full.Width, 1)
+	two := a.layoutAt(host, full.Width, 2)
+	floor := cfg.Card.WidthFloor(host.display)
+	host.beginResize()
+	if cardOrderOutAllowed(host) {
+		t.Fatal("a resize callback must not be allowed to order the card out")
+	}
+	frames := [][2]int{
+		{full.Width, full.Height},
+		{full.Width, full.Height - 3},
+		{full.Width, two.Height + 1},
+		{full.Width, 0},
+		{full.Width, -80},
+		{full.Width, one.Height},
+	}
+	var got config.CardLayout
+	for _, f := range frames {
+		got = a.commitCardFrame(host, f[0], f[1])
+		if got.Height < one.Height || got.VisibleLines < 1 || got.Width < floor || host.rendered != got.Text {
+			t.Fatalf("frame %v produced %+v rendered=%q", f, got, host.rendered)
+		}
+	}
+	host.endResize()
+	if !cardOrderOutAllowed(host) {
+		t.Fatal("resize depth leaked")
+	}
+	if got.VisibleLines != 1 || got.Height != one.Height || got.Text != one.Text || host.userLines != 1 {
+		t.Fatalf("final frame: %+v userLines=%d", got, host.userLines)
+	}
+	// A stale delta still describes the original card. The release uses the frame.
+	dw, dh := resizeDragSize(full.Width, full.Height, edgeBottom, 0, -2)
+	rw, rh := releaseFrame(full.Width, one.Height, dw, dh)
+	if dh < two.Height {
+		t.Fatalf("setup delta = %dx%d, want it still multi-line", dw, dh)
+	}
+	if rw != full.Width || rh != one.Height {
+		t.Fatalf("release = %dx%d, want frame %dx%d", rw, rh, full.Width, one.Height)
+	}
+}
+
 func TestResizeDragSizeEdges(t *testing.T) {
 	w, h := resizeDragSize(200, 100, edgeRight|edgeBottom, 15, -40)
 	if w != 215 || h != 60 {

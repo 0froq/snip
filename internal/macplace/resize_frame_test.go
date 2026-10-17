@@ -1,6 +1,9 @@
 package macplace
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestSnapResizeFrameKeepsTopAndLeft(t *testing.T) {
 	visible := box{X: 0, Y: 0, W: 10000, H: 10000}
@@ -44,6 +47,17 @@ func TestSnapResizeFrameFastShrinkAndDragPastTop(t *testing.T) {
 	x, y, w, h = snapResizeFrame(40, 860, 240, 40, 240, -5, 120, 36, box{})
 	if x != 40 || y != 900-36 || w != 240 || h != 36 {
 		t.Fatalf("no screen = (%v,%v,%v,%v)", x, y, w, h)
+	}
+}
+
+func TestSnapResizeFrameNonFiniteStaysOnScreen(t *testing.T) {
+	visible := box{X: 0, Y: 0, W: 1440, H: 800}
+	x, y, w, h := snapResizeFrame(math.NaN(), math.Inf(1), 240, 160, 80, -5, 120, 36, visible)
+	if x != 0 || y != 0 || w != 120 || h != 36 || !finite(x) || !finite(y) {
+		t.Fatalf("non-finite frame = (%v,%v,%v,%v)", x, y, w, h)
+	}
+	if !intersects(x, y, w, h, visible) {
+		t.Fatal("non-finite replacement misses the visible frame")
 	}
 }
 

@@ -15,7 +15,7 @@ type box struct {
 // intersects visible. A fast shrink below minW/minH is clamped up. A zero
 // visible rect skips the slide, so callers without a screen still get a
 // positive size.
-func snapResizeFrame(originX, originY, _, height float64, newW, newH, minW, minH int, visible box) (x, y, w, h float64) {
+func snapResizeFrame(originX, originY, width, height float64, newW, newH, minW, minH int, visible box) (x, y, w, h float64) {
 	if minW < 1 {
 		minW = 1
 	}
@@ -30,13 +30,29 @@ func snapResizeFrame(originX, originY, _, height float64, newW, newH, minW, minH
 	}
 	w = float64(newW)
 	h = float64(newH)
+	// A non-finite frame from a bad read must not be written back. Park the
+	// card at the visible origin (or 0,0) at the minimum size instead.
+	if !finite(originX) || !finite(originY) || !finite(width) || !finite(height) {
+		x, y = 0, 0
+		if visible.W > 0 && visible.H > 0 && finite(visible.X) && finite(visible.Y) {
+			x, y = visible.X, visible.Y
+		}
+		return x, y, w, h
+	}
 	top := originY + height
 	x = originX
 	y = top - h
+	if !finite(x) || !finite(y) {
+		x, y = originX, originY
+	}
 	if visible.W <= 0 || visible.H <= 0 {
 		return x, y, w, h
 	}
 	return slideToIntersect(x, y, w, h, visible)
+}
+
+func finite(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
 }
 
 // slideToIntersect moves a frame onto visible only when the two do not meet.

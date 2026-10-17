@@ -80,8 +80,11 @@ type cardUI struct {
 	pressScreenY   int
 	pressClicks    int
 	syncing        bool
-	jumpLabel      string
-	badge          *mygo.Window
+	// resizeDepth is non-zero while a resize callback is on the stack.
+	// hide/orderOut must not run from that stack.
+	resizeDepth int
+	jumpLabel   string
+	badge       *mygo.Window
 }
 
 // New creates the application state.
@@ -239,13 +242,11 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
 	win.OnResize(func() {
 		a.followLeaderBadge(host)
-		if macplace.InLiveResize(win.NativeHandle()) {
-			// Skip the line-count sync while AppKit is tracking the edge, but
-			// pull a frame that has left every work area back onto one.
-			a.keepCardOnScreen(host)
-			return
-		}
-		a.syncCardHeight(host)
+		// The frame that AppKit just committed is the line count. Skipping
+		// this for the whole live resize left the previous multi-line string
+		// painted into a one-line window when the last willResize ran after
+		// inLiveResize had already gone false.
+		a.relayoutFromWindow(host, macplace.InLiveResize(win.NativeHandle()))
 	})
 	macplace.UseFrameResizeCursors()
 	macplace.PreventWindowFocus(win.NativeHandle())
@@ -258,7 +259,11 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	macplace.SetContentMinSize(win.NativeHandle(), minW, minH)
 	win.SetResizable(true)
 	cleanupResize := macplace.ConstrainWindowResize(win.NativeHandle(), func(width, height int) (int, int) {
-		layout := a.fitCardSize(host, width, height)
+		host.beginResize()
+		defer host.endResize()
+		// width/height are the window frame (proposed, or the frame that
+		// stuck when the live resize ends). Not a pointer delta.
+		layout := a.commitCardFrame(host, width, height)
 		win.Invalidate()
 		return layout.Width, layout.Height
 	})
@@ -384,6 +389,56 @@ func (a *App) fitCardSize(host *cardUI, w, h int) config.CardLayout {
 	return snapped
 }
 
+// commitCardFrame publishes the line layout for a window frame. Callers pass
+// the size the window actually has (or the size windowWillResize is about to
+// apply), never a press-to-cursor delta. A non-positive frame snaps up to one
+// line; it does not clear the text or hide the card.
+func (a *App) commitCardFrame(host *cardUI, w, h int) config.CardLayout {
+	if w < 1 || h < 1 {
+		log.Printf("snip: resize frame %dx%d is below one line; snapping up", w, h)
+	}
+	return a.fitCardSize(host, w, h)
+}
+
+// relayoutFromWindow makes the drawn text match win's frame and, once the
+// gesture has ended, snaps that frame to the whole-line size. During a live
+// resize AppKit owns the origin; a mid-drag setFrame/setPosition was moving
+// the card off the visible frame.
+func (a *App) relayoutFromWindow(host *cardUI, live bool) {
+	if host == nil || host.win == nil || host.syncing {
+		return
+	}
+	host.beginResize()
+	defer host.endResize()
+	w, h := host.win.Size()
+	layout := a.commitCardFrame(host, w, h)
+	minW, minH := a.cardMinSize(host.display)
+	below := w < minW || h < minH || w < 1 || h < 1
+	if live && !below {
+		host.win.Invalidate()
+		return
+	}
+	if w != layout.Width || h != layout.Height {
+		if below || w < 1 || h < 1 {
+			log.Printf("snip: setSize path=resize-sync %dx%d -> %dx%d live=%v", w, h, layout.Width, layout.Height, live)
+		}
+		host.syncing = true
+		host.win.SetSize(layout.Width, layout.Height)
+		host.syncing = false
+		// SetSize can be ignored while AppKit is tearing the live resize
+		// down. Republish from the frame that remains so a rejected grow
+		// cannot leave the old multi-line string in the short window.
+		aw, ah := host.win.Size()
+		if aw != layout.Width || ah != layout.Height {
+			layout = a.commitCardFrame(host, aw, ah)
+		}
+	}
+	if !live {
+		a.keepCardOnScreen(host)
+	}
+	host.win.Invalidate()
+}
+
 // cardMinSize is the smallest content box: the width floor, and the height of
 // one line at that width. Both are at least 1 point.
 func (a *App) cardMinSize(display string) (int, int) {
@@ -411,7 +466,8 @@ func (a *App) keepCardOnScreen(host *cardUI) {
 	w, h := host.win.Size()
 	minW, minH := a.cardMinSize(host.display)
 	if w < minW || h < minH {
-		layout := a.fitCardSize(host, w, h)
+		layout := a.commitCardFrame(host, w, h)
+		log.Printf("snip: setSize path=resize-clamp %dx%d -> %dx%d", w, h, layout.Width, layout.Height)
 		host.win.SetSize(layout.Width, layout.Height)
 		w, h = layout.Width, layout.Height
 	}
@@ -422,6 +478,7 @@ func (a *App) keepCardOnScreen(host *cardUI) {
 	x, y := host.win.Position()
 	nx, ny := macplace.SlideIntoVisible(x, y, w, h, areas)
 	if nx != x || ny != y {
+		log.Printf("snip: setPosition path=resize-clamp (%d,%d) -> (%d,%d) size=%dx%d", x, y, nx, ny, w, h)
 		host.win.SetPosition(nx, ny)
 	}
 }
@@ -440,17 +497,10 @@ func screenWorkAreas() []macplace.Rect {
 }
 
 func (a *App) syncCardHeight(host *cardUI) {
-	if host == nil || host.win == nil || host.pointerActive || host.syncing {
-		return
-	}
-	host.syncing = true
-	defer func() { host.syncing = false }()
-	w, h := host.win.Size()
-	layout := a.fitCardWidth(host, w)
-	if w != layout.Width || h != layout.Height {
-		host.win.SetSize(layout.Width, layout.Height)
-	}
-	host.win.Invalidate()
+	// Same commit as a resize end: the current frame picks the line count.
+	// fitCardWidth(userLines) republished the max-line string when a fast
+	// drag had left userLines at 0 and AppKit then ignored the grow.
+	a.relayoutFromWindow(host, false)
 }
 
 func (a *App) rememberCardPosition(id string, win *mygo.Window) {
@@ -493,11 +543,22 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	}
 	col = cardPointerInput(a, host, host.win, col).Cursor(edgeCursor(host.hoverEdge))
 	col.Children(func() {
-		ui.Text(c, host.rendered).
+		// Draw from the frame, not a previously published string. A fast
+		// resize can paint between the frame change and the snap.
+		text, lines := host.rendered, max(a.slipLines(host, host.userW), 1)
+		if host.win != nil {
+			w, h := host.win.Size()
+			if w > 0 && h > 0 {
+				layout := a.commitCardFrame(host, w, h)
+				text = layout.Text
+				lines = max(layout.VisibleLines, 1)
+			}
+		}
+		ui.Text(c, text).
 			Font(font.Family).
 			FontSize(font.Size).
 			TextColor(paperInk(dark)).
-			MaxLines(max(a.slipLines(host, host.userW), 1))
+			MaxLines(lines)
 	})
 }
 
@@ -530,8 +591,30 @@ func (a *App) setAllVisible(show bool) {
 	})
 }
 
+func (h *cardUI) beginResize() {
+	if h != nil {
+		h.resizeDepth++
+	}
+}
+
+func (h *cardUI) endResize() {
+	if h != nil && h.resizeDepth > 0 {
+		h.resizeDepth--
+	}
+}
+
+// cardOrderOutAllowed is false while a resize callback is running. Those
+// callbacks must not order the window out or drop its alpha.
+func cardOrderOutAllowed(h *cardUI) bool {
+	return h != nil && h.resizeDepth == 0
+}
+
 func (a *App) hideCard(h *cardUI) {
 	if h == nil || h.win == nil {
+		return
+	}
+	if !cardOrderOutAllowed(h) {
+		log.Printf("snip: resize blocked orderOut/alpha0 card=%s", h.card.ID)
 		return
 	}
 	h.hideGen++

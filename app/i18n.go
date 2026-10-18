@@ -17,6 +17,11 @@ func tr(lang, key string) string {
 
 var en = map[string]string{
 	"settings":               "Settings",
+	"tab_general":            "General",
+	"tab_cards":              "Cards",
+	"tab_capture":            "Capture",
+	"tab_shortcuts":          "Shortcuts",
+	"tab_privacy":            "Privacy",
 	"settings_hint":          "Most options apply as soon as you save. The non activating panel needs a restart.",
 	"clipboard":              "Clipboard",
 	"capture_filter":         "Capture by app",
@@ -111,6 +116,11 @@ var en = map[string]string{
 
 var zh = map[string]string{
 	"settings":               "设置",
+	"tab_general":            "通用",
+	"tab_cards":              "卡片",
+	"tab_capture":            "捕获",
+	"tab_shortcuts":          "快捷键",
+	"tab_privacy":            "隐私",
 	"settings_hint":          "多数选项在保存后立即生效。非激活面板需要重新启动。",
 	"clipboard":              "剪贴板",
 	"capture_filter":         "按应用捕获",

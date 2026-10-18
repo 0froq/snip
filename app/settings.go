@@ -81,16 +81,17 @@ func (a *App) openSettings() {
 	a.settingsForm = &form
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:           "Settings",
-		Width:           460,
-		Height:          640,
-		MinWidth:        380,
-		MinHeight:       420,
+		Width:           560,
+		Height:          700,
+		MinWidth:        500,
+		MinHeight:       480,
 		Frameless:       true,
 		DisableShadow:   true,
 		AlwaysOnTop:     false,
 		BackgroundColor: "light-dark(#E6D9C8, #1A1613)",
-		StateKey:        "settings",
-		Content:         ui.View(func(c *ui.Context) { a.settingsView(c) }),
+		// settings-tabs drops the saved one-page size, which is too narrow for the tab bar.
+		StateKey: "settings-tabs",
+		Content:  ui.View(func(c *ui.Context) { a.settingsView(c) }),
 	})
 	macplace.SquareWindow(win.NativeHandle())
 	a.settingsWin = win
@@ -121,90 +122,29 @@ func (a *App) settingsView(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyW) || c.Shortcut(0, ui.KeyEscape) {
 		a.closeSettings()
 	}
+	if f.SettingsTab < 0 || f.SettingsTab > int(settingsPrivacy) {
+		f.SettingsTab = int(settingsGeneral)
+	}
 	// The sheet is the window. A padded outer background left a dark gap
 	// inside AppKit's hairline, so the stroke is the only edge.
 	ui.Column(c).Fill().Radius(t.Radius).Border(1, paperStroke(dark)).FocusRing(false).Children(func() {
 		ui.Column(c).Fill().Background(t.Surface).Radius(t.Radius - 1).Children(func() {
-			ui.Row(c).Shrink(0).Padding(14, 14, 10, 14).Gap(10).AlignItems(ui.Center).
+			ui.Row(c).Shrink(0).Padding(14, 14, 8, 14).Gap(10).AlignItems(ui.Center).
 				DragWindow().
 				Children(func() {
 					ui.Column(c).Grow(1).Gap(4).Children(func() {
 						ui.Text(c, tr(lang, "settings")).FontSize(22).TextColor(paperInk(dark))
-						ui.Text(c, tr(lang, "settings_hint")).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
+						ui.Text(c, tr(lang, "settings_hint")).FontSize(12).TextColor(t.TextMuted).MaxLines(2)
 					})
 					a.settingsCloseButton(c, lang, dark)
 				})
+			ui.Row(c).Shrink(0).Padding(0, 14, 10, 14).Children(func() {
+				ui.Segmented(c, &f.SettingsTab, settingsTabLabels(lang)...).Grow(1)
+			})
 			ui.Box(c).Height(1).Shrink(0).Background(paperEdge(dark).Alpha(0.45))
 			ui.Scroll(c).Grow(1).Clip().Padding(12, 14, 4, 14).Children(func() {
 				ui.Column(c).Gap(12).Children(func() {
-					a.settingsSection(c, tr(lang, "language"), func() {
-						ui.Select(c, &f.Language, []string{"en", "zh"})
-					})
-					a.settingsSection(c, tr(lang, "clipboard"), func() {
-						labeledInput(c, tr(lang, "poll"), &f.ClipboardPollMs)
-						labeledInput(c, tr(lang, "max_cards"), &f.MaxCards)
-						ui.Text(c, tr(lang, "placement")).FontSize(12)
-						ui.Select(c, &f.Placement, []string{"near-selection", "near-cursor", "fixed"})
-					})
-					a.settingsSection(c, tr(lang, "capture_filter"), func() {
-						ui.Text(c, tr(lang, "capture_mode")).FontSize(12)
-						a.captureModeSelect(c, lang, &f.CaptureMode)
-						a.captureList(c, f, lang)
-					})
-					a.settingsSection(c, tr(lang, "windows"), func() {
-						ui.Checkbox(c, &f.AlwaysOnTop, tr(lang, "always_on_top"))
-						ui.Checkbox(c, &f.VisibleOnAllWorkspaces, tr(lang, "all_spaces"))
-						ui.Checkbox(c, &f.ContentProtection, tr(lang, "capture"))
-						ui.Checkbox(c, &f.Panel, tr(lang, "panel"))
-						ui.Text(c, tr(lang, "restart")).FontSize(11).TextColor(t.TextMuted)
-					})
-					a.settingsSection(c, tr(lang, "size"), func() {
-						labeledInput(c, tr(lang, "min_w"), &f.MinWidth)
-						labeledInput(c, tr(lang, "max_w"), &f.MaxWidth)
-						labeledInput(c, tr(lang, "max_height"), &f.MaxHeight)
-						labeledInput(c, tr(lang, "pad_x"), &f.PaddingX)
-						labeledInput(c, tr(lang, "pad_y"), &f.PaddingY)
-						labeledInput(c, tr(lang, "font_family"), &f.FontFamily)
-						labeledInput(c, tr(lang, "font"), &f.FontSize)
-						labeledInput(c, tr(lang, "active_color"), &f.ActiveColor)
-						ui.Checkbox(c, &f.DoubleClickPaste, tr(lang, "double_click_paste"))
-						labeledInput(c, "Cascade origin x", &f.CascadeOriginX)
-						labeledInput(c, "Cascade origin y", &f.CascadeOriginY)
-						labeledInput(c, "Cascade step x", &f.CascadeStepX)
-						labeledInput(c, "Cascade step y", &f.CascadeStepY)
-					})
-					a.settingsSection(c, tr(lang, "motion"), func() {
-						ui.Checkbox(c, &f.MotionEnabled, tr(lang, "motion_on"))
-						labeledInput(c, tr(lang, "motion_ms"), &f.MotionMs)
-					})
-					a.settingsSection(c, tr(lang, "hotkeys"), func() {
-						labeledInput(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
-						labeledInput(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
-						labeledInput(c, tr(lang, "double_ms"), &f.DoublePressMs)
-						labeledInput(c, tr(lang, "which_key_x"), &f.WhichKeyX)
-						labeledInput(c, tr(lang, "which_key_y"), &f.WhichKeyY)
-						ui.Text(c, tr(lang, "which_key_align_x")).FontSize(12)
-						ui.Select(c, &f.WhichKeyAlignX, []string{config.AlignStart, config.AlignCenter, config.AlignEnd})
-						ui.Text(c, tr(lang, "which_key_align_y")).FontSize(12)
-						ui.Select(c, &f.WhichKeyAlignY, []string{config.AlignStart, config.AlignCenter, config.AlignEnd})
-						for _, item := range f.Bindings.NamedBindings() {
-							settingsBinding(c, tr(lang, item.Name), item.Binding, lang)
-						}
-					})
-					a.settingsSection(c, tr(lang, "secrets"), func() {
-						ui.Checkbox(c, &f.MaskEnabled, tr(lang, "mask"))
-						labeledInput(c, tr(lang, "entropy"), &f.MinEntropyBits)
-						labeledInput(c, tr(lang, "secret_len"), &f.MinSecretLength)
-						ui.Text(c, tr(lang, "patterns")).FontSize(12)
-						ui.TextArea(c, &f.ExtraPatterns).Height(64)
-						ui.Text(c, tr(lang, "markers")).FontSize(12).TextColor(t.TextMuted)
-						ui.Checkbox(c, &f.HonorConcealed, tr(lang, "concealed"))
-						ui.Checkbox(c, &f.SkipTransient, tr(lang, "transient"))
-						ui.Checkbox(c, &f.SkipAutoGenerated, tr(lang, "auto"))
-					})
-					a.settingsSection(c, tr(lang, "config_path"), func() {
-						ui.Text(c, a.configPath).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
-					})
+					a.settingsPage(c, f, lang)
 				})
 			})
 			ui.Column(c).Shrink(0).Gap(8).Padding(12, 14, 14, 14).Background(t.Surface).
@@ -221,6 +161,129 @@ func (a *App) settingsView(c *ui.Context) {
 					}
 				})
 		})
+	})
+}
+
+type settingsPage int
+
+const (
+	settingsGeneral settingsPage = iota
+	settingsCards
+	settingsCapture
+	settingsShortcuts
+	settingsPrivacy
+)
+
+func settingsTabLabels(lang string) []string {
+	return []string{
+		tr(lang, "tab_general"),
+		tr(lang, "tab_cards"),
+		tr(lang, "tab_capture"),
+		tr(lang, "tab_shortcuts"),
+		tr(lang, "tab_privacy"),
+	}
+}
+
+func (a *App) settingsPage(c *ui.Context, f *config.Form, lang string) {
+	switch settingsPage(f.SettingsTab) {
+	case settingsGeneral:
+		a.settingsGeneral(c, f, lang)
+	case settingsCards:
+		a.settingsCards(c, f, lang)
+	case settingsCapture:
+		a.settingsCapture(c, f, lang)
+	case settingsShortcuts:
+		a.settingsShortcuts(c, f, lang)
+	case settingsPrivacy:
+		a.settingsPrivacy(c, f, lang)
+	default:
+		panic("snip: unhandled settings tab")
+	}
+}
+
+func (a *App) settingsGeneral(c *ui.Context, f *config.Form, lang string) {
+	t := c.Theme()
+	a.settingsSection(c, tr(lang, "language"), func() {
+		ui.Select(c, &f.Language, []string{"en", "zh"})
+	})
+	a.settingsSection(c, tr(lang, "clipboard"), func() {
+		labeledInput(c, tr(lang, "poll"), &f.ClipboardPollMs)
+		labeledInput(c, tr(lang, "max_cards"), &f.MaxCards)
+		ui.Text(c, tr(lang, "placement")).FontSize(12)
+		ui.Select(c, &f.Placement, []string{"near-selection", "near-cursor", "fixed"})
+	})
+	a.settingsSection(c, tr(lang, "config_path"), func() {
+		ui.Text(c, a.configPath).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
+	})
+}
+
+func (a *App) settingsCards(c *ui.Context, f *config.Form, lang string) {
+	t := c.Theme()
+	a.settingsSection(c, tr(lang, "windows"), func() {
+		ui.Checkbox(c, &f.AlwaysOnTop, tr(lang, "always_on_top"))
+		ui.Checkbox(c, &f.VisibleOnAllWorkspaces, tr(lang, "all_spaces"))
+		ui.Checkbox(c, &f.ContentProtection, tr(lang, "capture"))
+		ui.Checkbox(c, &f.Panel, tr(lang, "panel"))
+		ui.Text(c, tr(lang, "restart")).FontSize(11).TextColor(t.TextMuted)
+	})
+	a.settingsSection(c, tr(lang, "size"), func() {
+		labeledInput(c, tr(lang, "min_w"), &f.MinWidth)
+		labeledInput(c, tr(lang, "max_w"), &f.MaxWidth)
+		labeledInput(c, tr(lang, "max_height"), &f.MaxHeight)
+		labeledInput(c, tr(lang, "pad_x"), &f.PaddingX)
+		labeledInput(c, tr(lang, "pad_y"), &f.PaddingY)
+		labeledInput(c, tr(lang, "font_family"), &f.FontFamily)
+		labeledInput(c, tr(lang, "font"), &f.FontSize)
+		labeledInput(c, tr(lang, "active_color"), &f.ActiveColor)
+		ui.Checkbox(c, &f.DoubleClickPaste, tr(lang, "double_click_paste"))
+		labeledInput(c, "Cascade origin x", &f.CascadeOriginX)
+		labeledInput(c, "Cascade origin y", &f.CascadeOriginY)
+		labeledInput(c, "Cascade step x", &f.CascadeStepX)
+		labeledInput(c, "Cascade step y", &f.CascadeStepY)
+	})
+	a.settingsSection(c, tr(lang, "motion"), func() {
+		ui.Checkbox(c, &f.MotionEnabled, tr(lang, "motion_on"))
+		labeledInput(c, tr(lang, "motion_ms"), &f.MotionMs)
+	})
+}
+
+func (a *App) settingsCapture(c *ui.Context, f *config.Form, lang string) {
+	a.settingsSection(c, tr(lang, "capture_filter"), func() {
+		ui.Text(c, tr(lang, "capture_mode")).FontSize(12)
+		a.captureModeSelect(c, lang, &f.CaptureMode)
+		a.captureList(c, f, lang)
+	})
+}
+
+func (a *App) settingsShortcuts(c *ui.Context, f *config.Form, lang string) {
+	a.settingsSection(c, tr(lang, "hotkeys"), func() {
+		labeledInput(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
+		labeledInput(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
+		labeledInput(c, tr(lang, "double_ms"), &f.DoublePressMs)
+		labeledInput(c, tr(lang, "which_key_x"), &f.WhichKeyX)
+		labeledInput(c, tr(lang, "which_key_y"), &f.WhichKeyY)
+		ui.Text(c, tr(lang, "which_key_align_x")).FontSize(12)
+		ui.Select(c, &f.WhichKeyAlignX, []string{config.AlignStart, config.AlignCenter, config.AlignEnd})
+		ui.Text(c, tr(lang, "which_key_align_y")).FontSize(12)
+		ui.Select(c, &f.WhichKeyAlignY, []string{config.AlignStart, config.AlignCenter, config.AlignEnd})
+		for _, item := range f.Bindings.NamedBindings() {
+			settingsBinding(c, tr(lang, item.Name), item.Binding, lang)
+		}
+	})
+}
+
+func (a *App) settingsPrivacy(c *ui.Context, f *config.Form, lang string) {
+	t := c.Theme()
+	a.settingsSection(c, tr(lang, "secrets"), func() {
+		ui.Checkbox(c, &f.MaskEnabled, tr(lang, "mask"))
+		labeledInput(c, tr(lang, "entropy"), &f.MinEntropyBits)
+		labeledInput(c, tr(lang, "secret_len"), &f.MinSecretLength)
+		ui.Text(c, tr(lang, "patterns")).FontSize(12)
+		ui.TextArea(c, &f.ExtraPatterns).Height(64)
+		ui.Text(c, tr(lang, "markers")).FontSize(12).TextColor(t.TextMuted)
+		ui.Checkbox(c, &f.HonorConcealed, tr(lang, "concealed"))
+		ui.Checkbox(c, &f.SkipTransient, tr(lang, "transient"))
+		ui.Checkbox(c, &f.SkipAutoGenerated, tr(lang, "auto"))
 	})
 }
 

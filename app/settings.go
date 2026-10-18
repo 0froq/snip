@@ -12,10 +12,11 @@ import (
 )
 
 func (a *App) installMenus() {
-	lang := a.config().Language
+	cfg := a.config()
+	lang := cfg.Language
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 		{Label: tr(lang, "app_menu"), Submenu: []*mygo.MenuItem{
-			{Label: tr(lang, "menu_settings"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {
+			{Label: tr(lang, "menu_settings"), Accelerator: strings.TrimSpace(cfg.Bindings.Settings.Direct), Click: func(*mygo.MenuItem, *mygo.Window) {
 				a.showSettings()
 			}},
 			{Label: tr(lang, "menu_toggle"), Click: func(*mygo.MenuItem, *mygo.Window) { a.toggleVisible() }},

@@ -19,6 +19,12 @@ func (a *App) registerShortcuts() {
 	a.closeLeaderChrome()
 	cfg := a.config()
 	for _, item := range cfg.Bindings.NamedBindings() {
+		// Settings is the application menu's key equivalent. Carbon's
+		// RegisterEventHotKey would consume it in every app, including
+		// when snip is not the key app.
+		if !registersGlobally(item.Name) {
+			continue
+		}
 		a.bind(item.Binding.Direct, item.Name, item.Binding.DirectDouble)
 	}
 	a.bind(cfg.Leader.Shortcut, "leader", false)

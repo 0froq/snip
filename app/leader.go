@@ -10,6 +10,22 @@ import (
 	"github.com/egoist/mygo"
 )
 
+// registersGlobally reports whether a direct binding is installed with
+// Carbon RegisterEventHotKey. That hotkey is delivered even when another
+// app is focused, and the system does not pass the key on. Settings stays
+// off that path: the app menu key equivalent runs only while a snip window
+// is key. The leader shortcut and the other direct bindings stay global.
+func registersGlobally(action string) bool {
+	switch action {
+	case "settings":
+		return false
+	case "toggle", "next", "prev", "paste", "delete", "pin", "leader":
+		return true
+	default:
+		panic("snip: unknown shortcut action " + action)
+	}
+}
+
 func (a *App) bind(acc, action string, double bool) {
 	acc = strings.TrimSpace(acc)
 	if acc == "" {

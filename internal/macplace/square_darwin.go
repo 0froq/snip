@@ -12,6 +12,9 @@ import (
 var (
 	roundOnce      sync.Once
 	setLayerRadius func(id, objc.SEL, float64)
+	setLayerScale  func(id, objc.SEL, float64)
+	frameOnce      sync.Once
+	setViewFrame   func(id, objc.SEL, nsRect)
 )
 
 // SquareWindow clears the titled style bits that make AppKit use its own
@@ -40,7 +43,50 @@ func SquareWindow(handle uintptr) {
 	send(w, "setBackgroundColor:", uintptr(send(class("NSColor"), "clearColor")))
 	send(w, "setTitlebarAppearsTransparent:", 1)
 	send(w, "setTitleVisibility:", 1)
-	roundContent(send(w, "contentView"), WindowCornerRadius)
+	content := send(w, "contentView")
+	roundContent(content, WindowCornerRadius)
+	// setStyleMask keeps the old content rect. The window frame and the
+	// view the border is drawn into then disagree by about a title bar.
+	// Read both rects as arm64 HFAs and make the content view fill the frame.
+	syncContentFrame(w, content)
+}
+
+func syncContentFrame(w, content id) {
+	if w == 0 || content == 0 {
+		return
+	}
+	frame := msgRect(w, sel("frame"))
+	view := msgRect(content, sel("frame"))
+	x, y, fw, fh, changed := contentFrameMatchingWindow(
+		frame.size.width, frame.size.height,
+		view.origin.x, view.origin.y, view.size.width, view.size.height,
+	)
+	if !usableFrame(0, 0, fw, fh) {
+		return
+	}
+	frameOnce.Do(func() {
+		// NSRect arguments travel in d0–d3 on arm64. A SyscallN pointer
+		// would not be the frame AppKit applies.
+		purego.RegisterFunc(&setViewFrame, msgSendAddr)
+		purego.RegisterFunc(&setLayerScale, msgSendAddr)
+	})
+	bounds := nsRect{size: nsSize{width: fw, height: fh}}
+	if changed {
+		setViewFrame(content, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: bounds.size})
+		subs := send(content, "subviews")
+		n := sendInt(subs, "count")
+		for i := 0; i < n; i++ {
+			setViewFrame(send(subs, "objectAtIndex:", uintptr(i)), sel("setFrame:"), bounds)
+		}
+	}
+	layer := send(content, "layer")
+	if layer == 0 {
+		return
+	}
+	setViewFrame(layer, sel("setBounds:"), bounds)
+	if scale := msgFloat(w, sel("backingScaleFactor")); scale > 0 {
+		setLayerScale(layer, sel("setContentsScale:"), scale)
+	}
 }
 
 func roundContent(view id, radius float64) {

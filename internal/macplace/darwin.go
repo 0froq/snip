@@ -307,6 +307,8 @@ var (
 	readRect  func(id, objc.SEL) nsRect
 	pointOnce sync.Once
 	readPoint func(id, objc.SEL) nsPoint
+	floatOnce sync.Once
+	readFloat func(id, objc.SEL) float64
 	stretOnce sync.Once
 	stretAddr uintptr
 )
@@ -376,6 +378,17 @@ func msgPoint(obj id, s objc.SEL) nsPoint {
 		purego.RegisterFunc(&readPoint, msgSendAddr)
 	})
 	return readPoint(obj, s)
+}
+
+// msgFloat reads a CGFloat-returning method. On arm64 that value is in d0.
+// SyscallN only returns the integer registers, so a scale or metric read
+// through it stays 0.
+func msgFloat(obj id, s objc.SEL) float64 {
+	load()
+	floatOnce.Do(func() {
+		purego.RegisterFunc(&readFloat, msgSendAddr)
+	})
+	return readFloat(obj, s)
 }
 
 func primaryScreenHeight() float64 {

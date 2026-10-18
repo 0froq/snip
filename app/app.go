@@ -25,7 +25,9 @@ type App struct {
 	cards    map[string]*cardUI
 	order    []string
 	selected int
-	visible  bool
+	// visible is the global hide/show state. Cards start shown. The flag is
+	// not persisted.
+	visible bool
 
 	mu               sync.Mutex
 	lastChange       int
@@ -96,6 +98,7 @@ func New(cfg config.Config, configPath string) *App {
 		configPath: configPath,
 		store:      store.New(),
 		cards:      make(map[string]*cardUI),
+		visible:    true,
 		sec: secrets.Config{
 			Enabled:                  cfg.Secrets.MaskEnabled,
 			ExtraPatterns:            cfg.Secrets.ExtraPatterns,
@@ -278,9 +281,10 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		}
 		a.closeBadge(host)
 	})
-	a.visible = true
 	a.attachCardText(host)
 	a.syncCardHeight(host)
+	// Hide-all stays in effect. The card is already stored and placed;
+	// showCard orders it in only while cards are shown.
 	a.showCard(host)
 	a.refreshSelection()
 	a.relayoutLeader()
@@ -640,6 +644,9 @@ func (a *App) hideCard(h *cardUI) {
 
 func (a *App) surfaceCard(id string) {
 	a.selectID(id)
+	if !a.cardsShown() {
+		return
+	}
 	a.mu.Lock()
 	h := a.cards[id]
 	a.mu.Unlock()

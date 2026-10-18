@@ -2,13 +2,30 @@ package app
 
 import "github.com/0froq/snip/internal/macplace"
 
+// cardsShown reports the global hide/show state.
+func (a *App) cardsShown() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.visible
+}
+
 // showCard is the only note-show path. Call on the main thread, after sizing
 // the window and updating any state (selection, pulse, etc.) its view needs.
+// While hide-all is on, the card stays ordered out.
 func (a *App) showCard(h *cardUI) {
 	if h == nil || h.win == nil {
 		return
 	}
-	h.showWindow(h.win)
+	a.orderCardFront(h, h.showWindow)
+}
+
+// orderCardFront shows one card when the global state is shown. show is
+// h.showWindow in production; tests pass a recorder.
+func (a *App) orderCardFront(h *cardUI, show func(noteWindow)) {
+	if h == nil || show == nil || !a.cardsShown() {
+		return
+	}
+	show(h.win)
 	a.syncBadge(h)
 	// Showing a card orders it front. Lift every badge back above the cards,
 	// then the which-key window above the badges.

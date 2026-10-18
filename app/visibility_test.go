@@ -3,6 +3,8 @@ package app
 import (
 	"reflect"
 	"testing"
+
+	"github.com/0froq/snip/config"
 )
 
 type recordingNoteWindow struct {
@@ -40,4 +42,42 @@ func TestShowCardIgnoresMissingWindow(t *testing.T) {
 	var a App
 	a.showCard(nil)
 	a.showCard(&cardUI{})
+}
+
+func TestCopyWhileHiddenStaysOrderedOut(t *testing.T) {
+	a := New(config.Config{}, "")
+	if !a.cardsShown() {
+		t.Fatal("cards start shown")
+	}
+	a.mu.Lock()
+	a.visible = false
+	a.cards["copied"] = &cardUI{}
+	a.order = []string{"copied"}
+	a.mu.Unlock()
+
+	called := false
+	a.orderCardFront(a.cards["copied"], func(noteWindow) { called = true })
+	if called {
+		t.Fatal("a copy while cards are hidden must stay ordered out")
+	}
+	if a.cardsShown() {
+		t.Fatal("a copy must not turn hide-all off")
+	}
+
+	a.mu.Lock()
+	a.visible = true
+	ids := append([]string(nil), a.order...)
+	a.mu.Unlock()
+	if !a.cardsShown() {
+		t.Fatal("show-all turns the global state on")
+	}
+	if len(ids) != 1 || ids[0] != "copied" {
+		t.Fatalf("show-all must include the card copied while hidden, ids=%v", ids)
+	}
+	w := &recordingNoteWindow{}
+	a.orderCardFront(a.cards["copied"], func(noteWindow) { a.cards["copied"].showWindow(w) })
+	want := []string{"invalidate", "native display", "show inactive", "opacity"}
+	if !reflect.DeepEqual(w.calls, want) {
+		t.Fatalf("show-all present calls = %v, want %v", w.calls, want)
+	}
 }

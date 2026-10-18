@@ -15,7 +15,8 @@ func TestEstimateSizeOneLine(t *testing.T) {
 		t.Fatalf("layout %+v", layout)
 	}
 	ink, _ := ui.ShapeText("hi", c.cardFont(), 0).Size()
-	want := int(math.Ceil(float64(ink))) + 2*c.EffectivePaddingX() + 2*CardBorderPx()
+	chrome := 2*float64(c.FrameInsetX()) + 2*TextContainerInsetX + 2*LineFragmentPadding
+	want := int(math.Ceil(float64(ink) + chrome))
 	if layout.Width != want {
 		t.Fatalf("width %d want ink+padding %d", layout.Width, want)
 	}
@@ -59,9 +60,15 @@ func TestHeightForWidthMixedScript(t *testing.T) {
 	w := 200
 	layout := c.Layout(text, w, 2)
 	_, measured := ui.ShapeText(layout.Text, c.cardFont(), c.textWidthForSlip(w)).Size()
-	want := int(math.Ceil(float64(measured))) + 2*c.EffectivePaddingY() + 2*CardBorderPx()
+	want := c.windowHeight(c.textBlockPx(layout.FullLines, measured))
+	if want > c.EffectiveMaxHeight() {
+		want = c.EffectiveMaxHeight()
+	}
 	if layout.Height != want {
 		t.Fatalf("height %d want measured %d", layout.Height, want)
+	}
+	if layout.Height-2*c.FrameInsetY() < layout.FullLines*c.LineBoxPx() {
+		t.Fatalf("viewport clips the line box: %+v", layout)
 	}
 }
 
@@ -76,6 +83,43 @@ func TestHeightForWidthShrinksWhenWider(t *testing.T) {
 	wide := c.Layout(long, 200, 4)
 	if wide.Height >= narrow.Height {
 		t.Fatalf("wide height %d should be less than narrow %d", wide.Height, narrow.Height)
+	}
+}
+
+func TestCardHeightFitsOneLineThreeLinesAndMax(t *testing.T) {
+	c := Default().Card
+	c.FontSize = 14
+	one := c.Layout("#00000", 240, 0)
+	line := c.LineBoxPx()
+	chrome := 2 * c.FrameInsetY()
+	if one.FullLines != 1 || one.Scrolls || one.Truncated || one.Text != "#00000" {
+		t.Fatalf("one line: %+v", one)
+	}
+	if one.Height != c.windowHeight(c.textBlockPx(1, c.lineBox())) {
+		t.Fatalf("one line height %d", one.Height)
+	}
+	if one.Height-chrome < line {
+		t.Fatalf("one line viewport %d clips line box %d", one.Height-chrome, line)
+	}
+
+	three := c.Layout("#00000\n#00000\n#00000", 240, 0)
+	if three.FullLines != 3 || three.Scrolls || three.Text != "#00000\n#00000\n#00000" {
+		t.Fatalf("three lines: %+v", three)
+	}
+	if three.Height-chrome < 3*line {
+		t.Fatalf("three line viewport %d clips %d", three.Height-chrome, 3*line)
+	}
+	if three.Height <= one.Height {
+		t.Fatalf("three lines not taller than one: %d vs %d", three.Height, one.Height)
+	}
+
+	c.MaxHeight = one.Height + line
+	over := c.Layout(strings.Repeat("#00000\n", 12)+"#00000", 240, 0)
+	if over.FullLines <= 3 || !over.Scrolls || over.Height != c.EffectiveMaxHeight() || over.Truncated {
+		t.Fatalf("over max: %+v max %d", over, c.EffectiveMaxHeight())
+	}
+	if over.Text != strings.Repeat("#00000\n", 12)+"#00000" {
+		t.Fatal("over max clipped the string")
 	}
 }
 

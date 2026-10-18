@@ -7,6 +7,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/0froq/snip/config"
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 )
@@ -68,6 +69,7 @@ var (
 	fontSystem   func(id, objc.SEL, float64) id
 	colorRGBA    func(id, objc.SEL, float64, float64, float64, float64) id
 	setNSSize    func(id, objc.SEL, nsSize)
+	setCGFloat   func(id, objc.SEL, float64)
 	convertPt    func(id, objc.SEL, nsPoint, id) nsPoint
 	popUpMenu    func(id, objc.SEL, id, nsPoint, id) bool
 )
@@ -127,9 +129,8 @@ func AttachCardText(handle uintptr, opt CardTextOptions) *CardText {
 	send(view, "setAutoresizingMask:", nsViewWidthSizable)
 	if container := send(view, "textContainer"); container != 0 {
 		send(container, "setWidthTracksTextView:", 1)
-		setNSSize(container, sel("setContainerSize:"), nsSize{width: w, height: math.MaxFloat64})
 	}
-	setNSSize(view, sel("setMinSize:"), nsSize{width: 0, height: ht})
+	applyTextContainer(view, send(view, "textContainer"), w, ht)
 	setNSSize(view, sel("setMaxSize:"), nsSize{width: math.MaxFloat64, height: math.MaxFloat64})
 
 	h.writeText(opt.Text)
@@ -159,10 +160,30 @@ func (h *CardText) Layout(winW, winH, padX, padY, border, resizeMargin int) {
 		purego.RegisterFunc(&setLayerScale, msgSendAddr)
 	})
 	setViewFrame(h.scroll, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}})
-	if container := send(h.view, "textContainer"); container != 0 {
-		setNSSize(container, sel("setContainerSize:"), nsSize{width: w, height: math.MaxFloat64})
+	applyTextContainer(h.view, send(h.view, "textContainer"), w, ht)
+}
+
+// applyTextContainer writes the same insets the card height was measured
+// with. textContainerInset is an NSSize (HFA). lineFragmentPadding is a
+// CGFloat in d0, so it cannot go through SyscallN.
+func applyTextContainer(view, container id, viewW, viewH float64) {
+	if view == 0 {
+		return
 	}
-	setNSSize(h.view, sel("setMinSize:"), nsSize{width: 0, height: ht})
+	setNSSize(view, sel("setTextContainerInset:"), nsSize{
+		width:  config.TextContainerInsetX,
+		height: config.TextContainerInsetY,
+	})
+	if container != 0 {
+		send(container, "setWidthTracksTextView:", 1)
+		setCGFloat(container, sel("setLineFragmentPadding:"), config.LineFragmentPadding)
+		inner := viewW - 2*config.TextContainerInsetX
+		if inner < 1 {
+			inner = 1
+		}
+		setNSSize(container, sel("setContainerSize:"), nsSize{width: inner, height: math.MaxFloat64})
+	}
+	setNSSize(view, sel("setMinSize:"), nsSize{width: 0, height: viewH})
 }
 
 // SetText replaces the shown string. A draft in progress is left alone,
@@ -451,6 +472,7 @@ func ensureCardText() {
 		purego.RegisterFunc(&fontSystem, msgSendAddr)
 		purego.RegisterFunc(&colorRGBA, msgSendAddr)
 		purego.RegisterFunc(&setNSSize, msgSendAddr)
+		purego.RegisterFunc(&setCGFloat, msgSendAddr)
 		purego.RegisterFunc(&convertPt, msgSendAddr)
 		purego.RegisterFunc(&popUpMenu, msgSendAddr)
 		frameOnce.Do(func() {

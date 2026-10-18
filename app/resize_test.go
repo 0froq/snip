@@ -1,12 +1,10 @@
 package app
 
 import (
-	"math"
 	"strings"
 	"testing"
 
 	"github.com/0froq/snip/config"
-	"github.com/egoist/mygo/ui"
 )
 
 func TestFitCardWidthBoundsAndStoredSize(t *testing.T) {
@@ -41,15 +39,12 @@ func TestFitCardWidthMeasuresRenderedTextWithoutBlankHeight(t *testing.T) {
 		if got.Truncated || strings.Contains(got.Text, "…") || got.Text != host.display {
 			t.Fatalf("width %d: text was clipped: %+v", w, got)
 		}
-		font := cfg.Card.UIFont(cfg.Card.EffectiveFontSize())
-		inner := float32(got.Width - 2*cfg.Card.EffectivePaddingX() - 2*config.CardBorderPx())
-		_, textH := ui.ShapeText(got.Text, font, inner).Size()
-		wantH := int(math.Ceil(float64(textH))) + 2*cfg.Card.EffectivePaddingY() + 2*config.CardBorderPx()
-		if wantH > cfg.Card.EffectiveMaxHeight() {
-			wantH = cfg.Card.EffectiveMaxHeight()
+		natural := cfg.Card.Layout(host.display, got.Width, 0)
+		if got.Height != natural.Height {
+			t.Fatalf("width %d: height %d, measured height %d", w, got.Height, natural.Height)
 		}
-		if got.Height != wantH {
-			t.Fatalf("width %d: height %d, measured height %d", w, got.Height, wantH)
+		if got.Height-2*cfg.Card.FrameInsetY() < got.FullLines*cfg.Card.LineBoxPx() && !got.Scrolls {
+			t.Fatalf("width %d: viewport clips the line box: %+v", w, got)
 		}
 	}
 	// A shorter note must immediately shrink, not retain the previous height.

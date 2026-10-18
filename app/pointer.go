@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/0froq/snip/config"
 	"github.com/0froq/snip/internal/macplace"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -10,7 +11,7 @@ const pointerSlop = 6.0
 
 // Leave all four native resize borders alone, including the top corners.
 // This is only a drag-to-move exclusion, not a resize grip or hit tracker.
-const nativeResizeMargin = 10
+const nativeResizeMargin = config.CardResizeMargin
 
 const (
 	edgeLeft = 1 << iota

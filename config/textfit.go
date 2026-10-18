@@ -11,8 +11,48 @@ import (
 
 const cardBorderPx = 1
 
+// CardResizeMargin is the drag band around a card. The native text view is
+// inset by at least this much so the band stays hittable, and the window
+// has to be tall enough for the text plus that inset.
+const CardResizeMargin = 10
+
+// TextContainerInsetX and TextContainerInsetY are NSTextView's
+// textContainerInset, in points. LineFragmentPadding is NSTextContainer's
+// lineFragmentPadding. The card sets these on the text view and adds them
+// to the measured size, so the glyphs are not clipped by the defaults
+// (inset 0, padding 5).
+const (
+	TextContainerInsetX = 0.0
+	TextContainerInsetY = 0.0
+	LineFragmentPadding = 5.0
+)
+
 // CardBorderPx is the slip border width in the card view.
 func CardBorderPx() int { return cardBorderPx }
+
+// FrameInsetX is how far the text view sits from the left and right edges.
+func (c Card) FrameInsetX() int { return frameInset(c.EffectivePaddingX()) }
+
+// FrameInsetY is how far the text view sits from the top and bottom edges.
+func (c Card) FrameInsetY() int { return frameInset(c.EffectivePaddingY()) }
+
+func frameInset(pad int) int {
+	inset := pad + cardBorderPx
+	if CardResizeMargin > inset {
+		return CardResizeMargin
+	}
+	return inset
+}
+
+// LineBoxPx is one line's height: ascent, descent, and leading, rounded up
+// the way a line fragment is.
+func (c Card) LineBoxPx() int {
+	h := int(math.Ceil(float64(c.lineBox())))
+	if h < 1 {
+		return 1
+	}
+	return h
+}
 
 func (c Card) cardFont() ui.Font {
 	return c.UIFont(c.EffectiveFontSize())
@@ -28,7 +68,9 @@ func (c Card) UIFont(size int) ui.Font {
 }
 
 func (c Card) textWidthForSlip(slipWidth int) float32 {
-	inner := slipWidth - 2*c.EffectivePaddingX() - 2*cardBorderPx
+	// The scroll view is inside the frame inset. NSTextView then eats
+	// textContainerInset and lineFragmentPadding before the glyphs wrap.
+	inner := float64(slipWidth) - 2*float64(c.FrameInsetX()) - 2*TextContainerInsetX - 2*LineFragmentPadding
 	if inner < 1 {
 		return 1
 	}
@@ -96,21 +138,41 @@ func (c Card) measureBox(display string, width int) (lines, height int) {
 	if lines < 1 {
 		lines = 1
 	}
-	_, textH := ui.ShapeText(display, c.cardFont(), c.textWidthForSlip(width)).Size()
-	height = int(math.Ceil(float64(textH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
-	if height < 1 {
-		height = 1
-	}
-	return lines, height
+	_, shaped := ui.ShapeText(display, c.cardFont(), c.textWidthForSlip(width)).Size()
+	return lines, c.windowHeight(c.textBlockPx(lines, shaped))
 }
 
-// OneLineHeight is the shortest window that still shows one line at width.
-func (c Card) OneLineHeight(width int) int {
-	h := int(math.Ceil(float64(c.lineBox()))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
+// textBlockPx is the text view's height for this many lines: the line box
+// (ascent, descent, leading) times the line count, or the shaped height when
+// a fallback face is taller, plus the text container's vertical inset.
+func (c Card) textBlockPx(lines int, shaped float32) int {
+	if lines < 1 {
+		lines = 1
+	}
+	used := lines * c.LineBoxPx()
+	if shapedPx := int(math.Ceil(float64(shaped))); shapedPx > used {
+		used = shapedPx
+	}
+	used += int(math.Ceil(2 * TextContainerInsetY))
+	if used < 1 {
+		return 1
+	}
+	return used
+}
+
+// windowHeight adds the scroll view's vertical inset on both edges.
+func (c Card) windowHeight(textBlock int) int {
+	h := textBlock + 2*c.FrameInsetY()
 	if h < 1 {
 		return 1
 	}
 	return h
+}
+
+// OneLineHeight is the shortest window that still shows one line at width,
+// including descent, leading, and the text view insets.
+func (c Card) OneLineHeight(int) int {
+	return c.windowHeight(c.textBlockPx(1, c.lineBox()))
 }
 
 func (c Card) clampWidth(display string, width int) int {
@@ -197,7 +259,8 @@ func (c Card) naturalSlipWidth(display string) int {
 	// use the ink width. A huge wrap width is not the same number, and
 	// min_width is a resize floor, not part of this measurement.
 	w, _ := ui.ShapeText(display, c.cardFont(), 0).Size()
-	est := int(math.Ceil(float64(w))) + 2*c.EffectivePaddingX() + 2*cardBorderPx
+	chrome := 2*float64(c.FrameInsetX()) + 2*TextContainerInsetX + 2*LineFragmentPadding
+	est := int(math.Ceil(float64(w) + chrome))
 	if est < 1 {
 		return 1
 	}

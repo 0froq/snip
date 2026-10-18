@@ -554,16 +554,20 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	cardCfg := cfg.Card
 	padX := float32(cardCfg.EffectivePaddingX())
 	padY := float32(cardCfg.EffectivePaddingY())
-	motion := ui.ElementTransition{Duration: cfg.Motion.Duration(), Colors: true}
+	// Enter still fades the card in. Color flags stay off: with every flag
+	// false the toolkit tweens colors anyway, and a selection swap has to
+	// land in the press frame. Position is named so Colors stays off; the
+	// shell does not move inside the window.
+	motion := ui.ElementTransition{Duration: cfg.Motion.Duration(), Position: true}
 	if cfg.Motion.Enabled {
 		motion.Enter = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 8}
 	}
 	radius := float32(macplace.WindowCornerRadius)
-	// The stroke is its own layer. The paper fill sits inside it, so the
-	// 25% edge is over the desktop, not over the opaque surface.
+	// Motion stays on a layer whose colors do not change. The stroke and
+	// the paper sit inside it, so a selection swap does not tween, and the
+	// 25% edge stays over the desktop.
 	shell := ui.Column(c).Fill().
 		Radius(radius).
-		Border(1, border).
 		FocusRing(false)
 	if cfg.Motion.Enabled {
 		shell = shell.Transition(motion)
@@ -575,21 +579,27 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	}
 	shell.Children(func() {
 		ui.Column(c).Fill().
-			Padding(padY, padX, padY, padX).
-			Background(surface).
-			Radius(radius - 1).
+			Radius(radius).
+			Border(1, border).
+			FocusRing(false).
 			Children(func() {
-				// macOS draws the string in the NSTextView. Other platforms scroll
-				// the full string in the toolkit; nothing is ellipsized.
-				if macplace.NativeCardText {
-					return
-				}
-				ui.Scroll(c).Fill().Children(func() {
-					ui.Text(c, host.display).
-						Font(font.Family).
-						FontSize(font.Size).
-						TextColor(paperInk(dark))
-				})
+				ui.Column(c).Fill().
+					Padding(padY, padX, padY, padX).
+					Background(surface).
+					Radius(radius - 1).
+					Children(func() {
+						// macOS draws the string in the NSTextView. Other platforms scroll
+						// the full string in the toolkit; nothing is ellipsized.
+						if macplace.NativeCardText {
+							return
+						}
+						ui.Scroll(c).Fill().Children(func() {
+							ui.Text(c, host.display).
+								Font(font.Family).
+								FontSize(font.Size).
+								TextColor(paperInk(dark))
+						})
+					})
 			})
 	})
 }

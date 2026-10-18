@@ -105,6 +105,9 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 				host.pointerActive = true
 				host.pressScreenX, host.pressScreenY = sp.X, sp.Y
 				host.startX, host.startY, host.startW, host.startH = wx, wy, ww, wh
+				// AppKit raises the window on this press. Select in the same
+				// event so the accent follows the raise, including on a drag.
+				a.selectID(host.card.ID)
 				return true
 			}
 			if !cardMoveInterior(sp.X-wx, sp.Y-wy, ww, wh) {
@@ -116,6 +119,7 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			host.pressScreenX, host.pressScreenY = sp.X, sp.Y
 			host.dragOffX = sp.X - wx
 			host.dragOffY = sp.Y - wy
+			a.selectID(host.card.ID)
 			return true
 		case ui.InputPointerMove:
 			sp := mygo.Screen.CursorScreenPoint()
@@ -158,11 +162,8 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 				a.finishPointerResize(host, win)
 				return true
 			}
-			if !host.pointerDragged {
-				a.selectID(host.card.ID)
-				if host.pressClicks >= 2 && a.config().Card.DoubleClickPaste {
-					a.pasteCard(host)
-				}
+			if !host.pointerDragged && host.pressClicks >= 2 && a.config().Card.DoubleClickPaste {
+				a.pasteCard(host)
 			}
 			host.pointerDragged = false
 			a.syncCardHeight(host)

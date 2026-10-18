@@ -7,7 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/input"
+	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/layout"
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
+	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/text"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -44,6 +47,34 @@ func TestWritePixelCardShots(t *testing.T) {
 	}
 	writeShot(t, dir, "card-active-day.png", renderCard(t, true, false, pixel.AutumnDay))
 	writeShot(t, dir, "card-idle-night.png", renderCard(t, false, true, pixel.AutumnNight))
+	writeShot(t, dir, "settings-day.png", renderSettings(t))
+}
+
+func renderSettings(t *testing.T) *image.RGBA {
+	t.Helper()
+	tab := 1
+	on := true
+	tt := ui.NewTester(func(c *ui.Context) {
+		k := usePixel(c, false, "en")
+		pad := k.D(cardFrameDots + 3)
+		ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+			g := k.Canvas(p, r)
+			if g.W >= 3 && g.H >= 3 {
+				g.Frame(0, 0, g.W, g.H, pixel.Window, pixel.Face)
+			}
+		}).Children(func() {
+			ui.Column(c).Fill().Padding(pad).Gap(k.D(4)).Children(func() {
+				text.Heading(c, "Settings", text.HeadingOptions{Level: 2, Slot: pixel.Ink})
+				input.Segmented(c, "Settings", []string{"General", "Cards", "Capture", "Shortcuts", "Privacy"}, &tab, input.SegmentedOptions{})
+				layout.Panel(c, layout.PanelOptions{Style: pixel.Raised, Padding: 4}, func() {
+					text.Heading(c, "Card windows", text.HeadingOptions{Level: 3, Slot: pixel.Ink})
+					input.Checkbox(c, "Always on top", &on, input.CheckboxOptions{})
+				})
+				input.Button(c, "Save", input.ButtonOptions{Variant: input.Primary})
+			})
+		})
+	}, 640, 300)
+	return tt.Image()
 }
 
 func renderCard(t *testing.T, active, editing bool, pal *pixel.Palette) *image.RGBA {

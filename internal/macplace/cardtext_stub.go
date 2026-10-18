@@ -13,7 +13,7 @@ type CardText struct{}
 func AttachCardText(uintptr, CardTextOptions) *CardText { return &CardText{} }
 
 // Layout is a no-op off macOS.
-func (t *CardText) Layout(int, int, int, int, int, int) {}
+func (t *CardText) Layout(int, int, int, int, int, int, int) {}
 
 // SetText is a no-op off macOS.
 func (t *CardText) SetText(string) {}

@@ -4,6 +4,7 @@ import (
 	"log"
 	"strings"
 
+	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
 	"github.com/0froq/snip/internal/macplace"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -305,7 +306,7 @@ func (a *App) syncWhichKey() {
 		a.discardWhichKey()
 		return
 	}
-	w, h := whichKeySize(a.whichItems, whichKeyFont(a.config().Card.EffectiveFontSize()))
+	w, h := whichKeySize(a.whichItems)
 	if a.whichWin == nil {
 		a.whichWin = a.newChromeWindow(40, 40, w, h, false, ui.View(func(c *ui.Context) {
 			a.whichKeyView(c)
@@ -410,7 +411,7 @@ func (a *App) positionWhichKey() {
 	}
 }
 
-func (a *App) newChromeWindow(x, y, w, h int, transparent bool, content mygo.Content) *mygo.Window {
+func (a *App) newChromeWindow(x, y, w, h int, _ bool, content mygo.Content) *mygo.Window {
 	placeX, placeY := x, y
 	nudge := false
 	if placeX == 0 && placeY == 0 {
@@ -440,14 +441,9 @@ func (a *App) newChromeWindow(x, y, w, h int, transparent bool, content mygo.Con
 		DisableMaximize:   true,
 		DisableClose:      true,
 		DisableFullScreen: true,
-		Transparent:       transparent,
+		Transparent:       true,
+		BackgroundColor:   "transparent",
 		Content:           content,
-	}
-	if !transparent {
-		// which-key: blur behind a translucent paper tint. The content
-		// stays partly open so the material shows through.
-		opts.Transparent = true
-		opts.Vibrancy = mygo.VibrancyPopover
 	}
 	win := mygo.NewWindow(opts)
 	if nudge {
@@ -473,77 +469,55 @@ func showChrome(win *mygo.Window) {
 
 func (a *App) badgeView(c *ui.Context, h *cardUI) {
 	dark := c.Theme().Dark
-	cfg := a.config()
-	accent := activeColor(cfg.Card.ActiveColor, dark)
+	k := usePixel(c, dark, a.config().Language)
 	label := h.jumpLabel
-	size := cfg.Card.EffectiveFontSize()
-	if len([]rune(label)) > 1 && size > 2 {
-		size -= 2
-	}
-	font := cfg.Card.UIFont(size)
-	th := paperTheme(dark, accent, font)
-	th.Background = ui.Transparent
-	c.SetTheme(th)
 	ui.Column(c).Fill().PassThrough().Draw(func(p *ui.Painter, r ui.Rect) {
-		inset := ui.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 2}
-		if inset.W < 2 || inset.H < 2 {
+		g := k.Canvas(p, r)
+		if g.W < 5 || g.H < 5 {
 			return
 		}
-		radius := inset.W / 2
-		if inset.H < inset.W {
-			radius = inset.H / 2
-		}
-		p.Fill(inset, th.Surface, radius)
-		p.Stroke(inset, accent, radius, 1)
-		if label == "" {
+		rads := min(g.W, g.H)/2 - 1
+		g.Disc(g.W/2, g.H/2, rads, pixel.Face)
+		g.Circle(g.W/2, g.H/2, rads, pixel.Accent)
+		if label == "" || !pixel.MicroOK(label) {
 			return
 		}
-		layout := ui.ShapeText(label, font, 0)
-		tw, thh := layout.Size()
-		nudge := badgeGlyphNudge(font.Metrics(), font.Size)
-		x := r.X + (r.W-tw)/2
-		y := r.Y + (r.H-thh)/2 + nudge
-		p.TextLayout(layout, x, y, paperInk(dark))
+		scale := 2
+		adv := pixel.MicroAdvance * scale
+		tw := len([]rune(label)) * adv
+		g.Micro((g.W-tw)/2, (g.H-pixel.MicroHeight*scale)/2, label, pixel.Ink, scale)
 	})
 }
 
 func (a *App) whichKeyView(c *ui.Context) {
 	dark := c.Theme().Dark
 	cfg := a.config()
-	accent := activeColor(cfg.Card.ActiveColor, dark)
-	font := whichKeyFont(cfg.Card.EffectiveFontSize())
-	c.SetTheme(paperTheme(dark, accent, font))
-	t := c.Theme()
+	k := usePixel(c, dark, cfg.Language)
 	items := append([]whichKeyItem(nil), a.whichItems...)
-	var keyW float32
+	keyW := 0
 	for _, item := range items {
-		w, _ := ui.ShapeText(item.Key, font, 0).Size()
-		if w > keyW {
-			keyW = w
+		keyW = max(keyW, pixel.Measure(item.Key))
+	}
+	pad := k.D(cardFrameDots + 3)
+	ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+		g := k.Canvas(p, r)
+		if g.W < 3 || g.H < 3 {
+			return
 		}
-	}
-	// A paper tint over the vibrancy material. Opaque text stays readable
-	// in both appearances; the window itself is not a solid fill.
-	fill := t.Surface.Alpha(0.82)
-	if dark {
-		fill = t.Surface.Alpha(0.78)
-	}
-	radius := float32(macplace.WindowCornerRadius)
-	ui.Column(c).Fill().
-		Radius(radius).
-		Border(1, paperStroke(dark)).
-		Children(func() {
-			ui.Column(c).Fill().Padding(10, 12).Gap(4).
-				Background(fill).
-				Radius(radius - 1).
-				Children(func() {
-					for _, item := range items {
-						key, name := item.Key, item.Name
-						ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, key).Width(keyW).Font(font.Family).FontSize(font.Size).TextColor(t.Accent)
-							ui.Text(c, name).Font(font.Family).FontSize(font.Size).TextColor(paperInk(dark))
-						})
-					}
+		g.Frame(0, 0, g.W, g.H, pixel.Window, pixel.Face)
+	}).Children(func() {
+		ui.Column(c).Fill().Padding(pad).Gap(k.D(2)).Children(func() {
+			for _, item := range items {
+				key, name := item.Key, item.Name
+				ui.Row(c).Gap(k.D(4)).Children(func() {
+					ui.Box(c).Size(k.D(keyW), k.D(pixel.LineHeight)).Draw(func(p *ui.Painter, r ui.Rect) {
+						k.Canvas(p, r).Text(0, 0, key, pixel.Accent, 1)
+					})
+					ui.Box(c).Size(k.D(max(pixel.Measure(name), 1)), k.D(pixel.LineHeight)).Draw(func(p *ui.Painter, r ui.Rect) {
+						k.Canvas(p, r).Text(0, 0, name, pixel.Ink, 1)
+					})
 				})
+			}
 		})
+	})
 }

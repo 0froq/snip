@@ -554,9 +554,6 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	font := cfg.Card.UIFont(0)
 	ink := k.C(pixel.Ink)
 	cardCfg := cfg.Card
-	padX := float32(cardCfg.EffectivePaddingX())
-	padY := float32(cardCfg.EffectivePaddingY())
-	frame := k.D(cardFrameDots)
 	// No color tween and no scale: a selection swap is a palette slot, and
 	// a scale would blur the dots. Enter motion stays off for the same reason.
 	shell := ui.Column(c).Fill().FocusRing(false)
@@ -572,7 +569,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 			drawCardChrome(k.Canvas(p, r), active, editing)
 		}).Children(func() {
 			ui.Column(c).Fill().
-				Padding(padY+frame, padX+frame, padY+frame, padX+frame).
+				Padding(float32(cardCfg.TopInset()), float32(cardCfg.FrameInsetX()), float32(cardCfg.FrameInsetY()), float32(cardCfg.FrameInsetX())).
 				Children(func() {
 					// macOS draws the string in the NSTextView, in the
 					// configured face so code and CJK stay sharp. Other
@@ -594,28 +591,27 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	})
 }
 
-// cardCloseButton is the traffic-light close control. The circle is always
-// the same red; the glyph shows only while the pointer is on the circle.
+// cardCloseButton is the pixel close control in the title strip. The x
+// shows only while the pointer is on the button.
 func cardCloseButton(c *ui.Context, hot bool) {
-	fade := ui.ElementTransition{Duration: 90 * time.Millisecond, Position: true}
-	fade.Enter = &ui.Motion{Opacity: 0}
-	fade.Exit = &ui.Motion{Opacity: 0}
+	k := pixel.K(c)
 	ui.Column(c.Key("card-close")).
 		Absolute().
 		Left(closeButtonX).
 		Top(closeButtonY).
 		Size(closeButtonSize, closeButtonSize).
-		Radius(closeButtonSize/2).
-		Background(ui.Hex("#FF5F57")).
-		Border(1, ui.Hex("#E0443E")).
 		FocusRing(false).
-		Center().
-		Transition(fade).
-		Children(func() {
+		Draw(func(p *ui.Painter, r ui.Rect) {
+			g := k.Canvas(p, r)
+			if g.W < 3 || g.H < 3 {
+				return
+			}
+			g.Frame(0, 0, g.W, g.H, pixel.Raised, pixel.Bad)
 			if !hot {
 				return
 			}
-			ui.Text(c, "×").FontSize(9).TextColor(ui.Hex("#4A0000"))
+			g.Line(2, 2, g.W-3, g.H-3, pixel.AccentInk)
+			g.Line(g.W-3, 2, 2, g.H-3, pixel.AccentInk)
 		})
 }
 
@@ -826,6 +822,7 @@ func (a *App) attachCardText(host *cardUI) {
 		PadY:         cfg.EffectivePaddingY(),
 		Border:       config.CardBorderPx(),
 		ResizeMargin: nativeResizeMargin,
+		TopExtra:     config.CardTitleStripPx,
 		OnAction: func(action macplace.CardMenuAction) {
 			a.cardMenuAction(host, action)
 		},
@@ -842,7 +839,7 @@ func (a *App) syncCardText(host *cardUI) {
 	host.textHost.SetTitles(a.cardMenuTitles())
 	host.textHost.SetCanEdit(a.canEditCard(host.card))
 	host.textHost.SetFont(cfg.EffectiveFontFamily(), float64(cfg.EffectiveFontSize()))
-	host.textHost.Layout(w, h, cfg.EffectivePaddingX(), cfg.EffectivePaddingY(), config.CardBorderPx(), nativeResizeMargin)
+	host.textHost.Layout(w, h, cfg.EffectivePaddingX(), cfg.EffectivePaddingY(), config.CardBorderPx(), nativeResizeMargin, config.CardTitleStripPx)
 	if !host.textHost.Editing() {
 		host.textHost.SetText(host.display)
 	}

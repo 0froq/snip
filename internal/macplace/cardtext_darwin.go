@@ -94,7 +94,7 @@ func AttachCardText(handle uintptr, opt CardTextOptions) *CardText {
 		blue:       opt.Blue,
 		colorSet:   true,
 	}
-	x, y, w, ht, ok := TextContentFrame(opt.Width, opt.Height, opt.PadX, opt.PadY, opt.Border, opt.ResizeMargin)
+	x, y, w, ht, ok := TextContentFrame(opt.Width, opt.Height, opt.PadX, opt.PadY, opt.Border, opt.ResizeMargin, opt.TopExtra)
 	if !ok {
 		x, y, w, ht = 0, 0, 1, 1
 	}
@@ -147,11 +147,11 @@ func AttachCardText(handle uintptr, opt CardTextOptions) *CardText {
 
 // Layout moves the scroll view to the inset content frame. A window that
 // is too small to inset is left where it was. Editing keeps the draft.
-func (h *CardText) Layout(winW, winH, padX, padY, border, resizeMargin int) {
+func (h *CardText) Layout(winW, winH, padX, padY, border, resizeMargin, topExtra int) {
 	if h == nil || h.closing || h.scroll == 0 {
 		return
 	}
-	x, y, w, ht, ok := TextContentFrame(winW, winH, padX, padY, border, resizeMargin)
+	x, y, w, ht, ok := TextContentFrame(winW, winH, padX, padY, border, resizeMargin, topExtra)
 	if !ok {
 		return
 	}

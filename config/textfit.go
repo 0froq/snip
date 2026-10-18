@@ -12,6 +12,10 @@ import (
 // cardBorderPx matches a 3-dot pixel window frame at 2 DIPs per dot.
 const cardBorderPx = 6
 
+// CardTitleStripPx is the top band kept clear for the close control.
+// Twelve dots at 2 DIPs: the frame, a gap, a 7-dot button, and a gap.
+const CardTitleStripPx = 24
+
 // CardResizeMargin is the drag band around a card. The native text view is
 // inset by at least this much so the band stays hittable, and the window
 // has to be tall enough for the text plus that inset.
@@ -161,9 +165,19 @@ func (c Card) textBlockPx(lines int, shaped float32) int {
 	return used
 }
 
-// windowHeight adds the scroll view's vertical inset on both edges.
+// TopInset is the text's top inset. The close strip wins when it is taller
+// than the padding, so a line never sits under the button.
+func (c Card) TopInset() int {
+	y := c.FrameInsetY()
+	if CardTitleStripPx > y {
+		return CardTitleStripPx
+	}
+	return y
+}
+
+// windowHeight adds the top strip and the bottom inset around the text.
 func (c Card) windowHeight(textBlock int) int {
-	h := textBlock + 2*c.FrameInsetY()
+	h := textBlock + c.TopInset() + c.FrameInsetY()
 	if h < 1 {
 		return 1
 	}

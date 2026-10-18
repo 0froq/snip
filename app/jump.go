@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 
+	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
 	"github.com/0froq/snip/config"
 	"github.com/egoist/mygo/ui"
 )
@@ -207,15 +208,6 @@ func whichKeyOrigin(anchor, size int, align string) int {
 	}
 }
 
-// whichKeyFont is a monospace face so keys and labels share column widths,
-// with a CJK sans for glyphs the mono face lacks.
-func whichKeyFont(size int) ui.Font {
-	if size <= 0 {
-		size = config.DefaultFontSize
-	}
-	return ui.Font{Family: "ui-monospace, SF Mono, Menlo, PingFang SC, monospace", Size: float32(size)}
-}
-
 func whichKeyItems(cfg config.Config) []whichKeyItem {
 	var items []whichKeyItem
 	for _, item := range cfg.Bindings.NamedBindings() {
@@ -236,24 +228,19 @@ func actionHint(lang, action string) string {
 	return tr(lang, key)
 }
 
-func whichKeySize(items []whichKeyItem, font ui.Font) (int, int) {
+func whichKeySize(items []whichKeyItem) (int, int) {
 	if len(items) == 0 {
 		return 0, 0
 	}
-	const padX, padY, gap, rowGap = 12, 10, 10, 4
-	var maxW, lineH float32
+	const gap, rowGap, pad = 4, 2, 3
+	keyW, nameW := 0, 0
 	for _, it := range items {
-		kw, kh := ui.ShapeText(it.Key, font, 0).Size()
-		nw, nh := ui.ShapeText(it.Name, font, 0).Size()
-		if row := kw + float32(gap) + nw; row > maxW {
-			maxW = row
-		}
-		if h := max(kh, nh); h > lineH {
-			lineH = h
-		}
+		keyW = max(keyW, pixel.Measure(it.Key))
+		nameW = max(nameW, pixel.Measure(it.Name))
 	}
-	w := int(math.Ceil(float64(maxW))) + padX*2 + 8
-	h := padY*2 + int(math.Ceil(float64(lineH)))*len(items) + rowGap*(len(items)-1) + 4
+	chrome := (cardFrameDots + pad) * 2
+	w := (keyW + gap + nameW + chrome) * pixelDot
+	h := (len(items)*pixel.LineHeight + (len(items)-1)*rowGap + chrome) * pixelDot
 	if w < 120 {
 		w = 120
 	}

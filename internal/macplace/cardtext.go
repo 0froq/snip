@@ -94,20 +94,25 @@ func ScrollHit(editing bool, eventType int, inScroller bool) bool {
 // TextContentFrame is the scroll view's frame inside the window, in the
 // content view's bottom-left coordinates. The inset is the card padding
 // plus its border, and at least the resize band, so the text does not
-// cover the edges that resize the card.
-func TextContentFrame(winW, winH, padX, padY, border, resizeMargin int) (x, y, w, h float64, ok bool) {
+// cover the edges that resize the card. topExtra raises the top inset
+// when a title strip is taller than that band.
+func TextContentFrame(winW, winH, padX, padY, border, resizeMargin, topExtra int) (x, y, w, h float64, ok bool) {
 	insetX := padX + border
-	insetY := padY + border
+	insetBottom := padY + border
 	if resizeMargin > insetX {
 		insetX = resizeMargin
 	}
-	if resizeMargin > insetY {
-		insetY = resizeMargin
+	if resizeMargin > insetBottom {
+		insetBottom = resizeMargin
 	}
-	if winW <= 2*insetX || winH <= 2*insetY || insetX < 0 || insetY < 0 {
+	insetTop := insetBottom
+	if topExtra > insetTop {
+		insetTop = topExtra
+	}
+	if winW <= 2*insetX || winH <= insetTop+insetBottom || insetX < 0 || insetTop < 0 || insetBottom < 0 {
 		return 0, 0, 0, 0, false
 	}
-	return float64(insetX), float64(insetY), float64(winW - 2*insetX), float64(winH - 2*insetY), true
+	return float64(insetX), float64(insetBottom), float64(winW - 2*insetX), float64(winH - insetTop - insetBottom), true
 }
 
 func pointInNSRect(px, py, x, y, w, h float64) bool {
@@ -179,6 +184,7 @@ type CardTextOptions struct {
 	Width, Height      int
 	PadX, PadY, Border int
 	ResizeMargin       int
+	TopExtra           int
 	OnAction           func(CardMenuAction)
 	OnCommit           func(string)
 }

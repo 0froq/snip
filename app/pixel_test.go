@@ -11,6 +11,7 @@ import (
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/layout"
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/text"
+	"github.com/0froq/snip/config"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -48,6 +49,53 @@ func TestWritePixelCardShots(t *testing.T) {
 	writeShot(t, dir, "card-active-day.png", renderCard(t, true, false, pixel.AutumnDay))
 	writeShot(t, dir, "card-idle-night.png", renderCard(t, false, true, pixel.AutumnNight))
 	writeShot(t, dir, "settings-day.png", renderSettings(t))
+	writeShot(t, dir, "which-key-day.png", renderWhichKey(t))
+	writeShot(t, dir, "close-button.png", renderClose(t))
+}
+
+func renderWhichKey(t *testing.T) *image.RGBA {
+	t.Helper()
+	tt := ui.NewTester(func(c *ui.Context) {
+		k := usePixel(c, false, "en")
+		pad := k.D(cardFrameDots + 3)
+		ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+			g := k.Canvas(p, r)
+			if g.W >= 3 && g.H >= 3 {
+				g.Frame(0, 0, g.W, g.H, pixel.Window, pixel.Face)
+			}
+		}).Children(func() {
+			ui.Column(c).Padding(pad).Gap(k.D(2)).Children(func() {
+				for _, row := range [][2]string{{"s", "show"}, {"n", "next"}, {"p", "paste"}} {
+					key, name := row[0], row[1]
+					ui.Row(c).Gap(k.D(4)).Children(func() {
+						ui.Box(c).Size(k.D(pixel.Measure(key)), k.D(pixel.LineHeight)).Draw(func(p *ui.Painter, r ui.Rect) {
+							k.Canvas(p, r).Text(0, 0, key, pixel.Accent, 1)
+						})
+						ui.Box(c).Size(k.D(pixel.Measure(name)), k.D(pixel.LineHeight)).Draw(func(p *ui.Painter, r ui.Rect) {
+							k.Canvas(p, r).Text(0, 0, name, pixel.Ink, 1)
+						})
+					})
+				}
+			})
+		})
+	}, 180, 120)
+	return tt.Image()
+}
+
+func renderClose(t *testing.T) *image.RGBA {
+	t.Helper()
+	tt := ui.NewTester(func(c *ui.Context) {
+		k := usePixel(c, false, "en")
+		ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+			drawCardChrome(k.Canvas(p, r), true, false)
+		}).Children(func() {
+			cardCloseButton(c, true)
+			ui.Column(c).Padding(float32(config.CardTitleStripPx), 16, 12, 16).Children(func() {
+				ui.Text(c, "hello 你好").FontSize(14)
+			})
+		})
+	}, 220, 72)
+	return tt.Image()
 }
 
 func renderSettings(t *testing.T) *image.RGBA {

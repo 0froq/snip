@@ -47,11 +47,11 @@ func TestScrollHitLeavesLeftClickToTheCard(t *testing.T) {
 }
 
 func TestTextContentFrameClearsTheResizeBand(t *testing.T) {
-	x, y, w, h, ok := TextContentFrame(200, 80, 10, 6, 1, 10)
+	x, y, w, h, ok := TextContentFrame(200, 80, 10, 6, 1, 10, 0)
 	if !ok || x != 11 || y != 10 || w != 200-22 || h != 80-20 {
 		t.Fatalf("frame %v %v %v %v ok=%v", x, y, w, h, ok)
 	}
-	if _, _, _, _, ok := TextContentFrame(20, 80, 10, 6, 1, 10); ok {
+	if _, _, _, _, ok := TextContentFrame(20, 80, 10, 6, 1, 10, 0); ok {
 		t.Fatal("a window narrower than the insets is not a text frame")
 	}
 }

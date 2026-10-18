@@ -9,13 +9,13 @@ import (
 
 const pointerSlop = 6.0
 
-// The close control matches a macOS traffic-light button: a 12pt circle
-// in the card's top-left. Its hit target wins over the resize band and
-// the drag interior so a click there does not move, select, or paste.
+// The close control is a 7-dot pixel button inside the title strip.
+// Its hit target wins over the resize band and the drag interior so a
+// click there does not move, select, or paste.
 const (
-	closeButtonSize = 12
+	closeButtonSize = 14
 	closeButtonX    = 8
-	closeButtonY    = 6
+	closeButtonY    = 8
 )
 
 // Leave all four native resize borders alone, including the top corners.
@@ -72,15 +72,13 @@ const (
 	cardHitMove
 )
 
-// closeButtonContains reports a window-local point on the close circle.
+// closeButtonContains reports a window-local point on the close button.
 func closeButtonContains(x, y int) bool {
-	r := closeButtonSize / 2
-	dx := x - (closeButtonX + r)
-	dy := y - (closeButtonY + r)
-	return dx*dx+dy*dy <= r*r
+	return x >= closeButtonX && x < closeButtonX+closeButtonSize &&
+		y >= closeButtonY && y < closeButtonY+closeButtonSize
 }
 
-// cardHitTest is what a press on the card does. The close circle is first,
+// cardHitTest is what a press on the card does. The close button is first,
 // then a resize edge, then a drag of the interior.
 func cardHitTest(x, y, width, height int) (cardHit, int) {
 	if closeButtonContains(x, y) {

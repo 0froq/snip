@@ -10,10 +10,11 @@ func paperInk(dark bool) ui.Color {
 }
 
 func paperEdge(dark bool) ui.Color {
+	// 60% of the previous edge and 40% of the card surface.
 	if dark {
-		return ui.Hex("#5C5046")
+		return ui.Hex("#4B4038")
 	}
-	return ui.Hex("#D2C3B0")
+	return ui.Hex("#DFD3C3")
 }
 
 func paperShadow(dark bool) ui.Color {

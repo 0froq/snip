@@ -12,17 +12,16 @@ func paperTheme(dark bool, active ui.Color, font ui.Font) *ui.Theme {
 		t.Background = ui.Hex("#1A1613")
 		t.Surface = ui.Hex("#312924")
 		t.SurfaceHover = ui.Hex("#3C332C")
-		t.Border = ui.Hex("#5C5046")
 		t.Text = paperInk(true)
 		t.TextMuted = ui.Hex("#B6A694")
 	} else {
 		t.Background = ui.Hex("#E6D9C8")
 		t.Surface = ui.Hex("#F3EADF")
 		t.SurfaceHover = ui.Hex("#E9DFD0")
-		t.Border = ui.Hex("#D2C3B0")
 		t.Text = paperInk(false)
 		t.TextMuted = ui.Hex("#8A7764")
 	}
+	t.Border = paperEdge(dark)
 	t.Accent = active
 	t.Radius = float32(macplace.WindowCornerRadius)
 	t.Font = font.Family

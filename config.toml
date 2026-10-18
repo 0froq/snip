@@ -29,6 +29,12 @@ cascade_step_y = 10
 
 language = "en"
 
+[capture]
+# mode: all (default), blocklist, or allowlist. Lists store bundle ids.
+mode = "all"
+blocklist = []
+allowlist = []
+
 [motion]
 enabled = true
 duration_ms = 160

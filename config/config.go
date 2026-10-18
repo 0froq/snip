@@ -126,6 +126,7 @@ type Config struct {
 	Window          Window         `toml:"window"`
 	Card            Card           `toml:"card"`
 	Bindings        ActionBindings `toml:"bindings"`
+	Capture         Capture        `toml:"capture"`
 	Secrets         Secrets        `toml:"secrets"`
 	Pasteboard      Pasteboard     `toml:"pasteboard"`
 	Leader          Leader         `toml:"leader"`
@@ -174,6 +175,7 @@ func Default() Config {
 			Pin:        ActionBinding{Direct: "CmdOrCtrl+Shift+F", Leader: "p", Sticky: true},
 			Settings:   ActionBinding{Direct: "CmdOrCtrl+,", Leader: ","},
 		},
+		Capture: Capture{Mode: CaptureAll},
 		Leader: Leader{
 			Shortcut:       "CmdOrCtrl+Shift+Space",
 			TimeoutMs:      1500,

@@ -48,6 +48,7 @@ type App struct {
 	pollReset     chan struct{}
 	settingsWin   *mygo.Window
 	settingsForm  *config.Form
+	settingsApps  []macpaste.RunningApp
 	leaderOn      bool
 	leaderGen     int
 	leaderKeys    []string
@@ -185,6 +186,11 @@ func (a *App) watchClipboard() {
 		}
 		a.lastChange = count
 		if text == "" || a.pasteboardHeld(count, text) {
+			continue
+		}
+		// The poll sees the change after it lands. The frontmost app then
+		// is the source. A filtered copy is not stored and is not replayed.
+		if !cfg.Capture.Accepts(macpaste.FrontBundleID()) {
 			continue
 		}
 		concealed := cfg.Pasteboard.ConcealedOnCard(markers)

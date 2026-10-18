@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/0froq/snip/config"
+	"github.com/0froq/snip/internal/macpaste"
 	"github.com/0froq/snip/internal/macplace"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -76,6 +77,7 @@ func (a *App) openSettings() {
 		return
 	}
 	form := config.FormFrom(a.config())
+	a.settingsApps = macpaste.RunningApps()
 	a.settingsForm = &form
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:           "Settings",
@@ -141,6 +143,11 @@ func (a *App) settingsView(c *ui.Context) {
 								labeledInput(c, tr(lang, "max_cards"), &f.MaxCards)
 								ui.Text(c, tr(lang, "placement")).FontSize(12)
 								ui.Select(c, &f.Placement, []string{"near-selection", "near-cursor", "fixed"})
+							})
+							a.settingsSection(c, tr(lang, "capture_filter"), func() {
+								ui.Text(c, tr(lang, "capture_mode")).FontSize(12)
+								a.captureModeSelect(c, lang, &f.CaptureMode)
+								a.captureList(c, f, lang)
 							})
 							a.settingsSection(c, tr(lang, "windows"), func() {
 								ui.Checkbox(c, &f.AlwaysOnTop, tr(lang, "always_on_top"))
@@ -240,6 +247,138 @@ func (a *App) settingsSection(c *ui.Context, title string, body func()) {
 			body()
 		})
 	})
+}
+
+func (a *App) captureModeSelect(c *ui.Context, lang string, mode *string) {
+	options := []string{config.CaptureAll, config.CaptureBlocklist, config.CaptureAllowlist}
+	dark := c.Theme().Dark
+	t := c.Theme()
+	sel := ui.SelectBase(c, mode)
+	sel.Trigger.Padding(6, 10).Radius(t.Radius).Border(1, paperStroke(dark)).Children(func() {
+		ui.Text(c, tr(lang, "capture_mode_"+*mode)).FontSize(13).TextColor(paperInk(dark))
+	})
+	sel.Popup(func(panel ui.Element) {
+		panel.Padding(4).Background(t.Surface).Radius(t.Radius).Border(1, paperStroke(dark))
+		for _, opt := range options {
+			item := sel.Item(opt).Padding(6, 10).Radius(t.Radius - 1)
+			if item.Highlighted() {
+				item.Background(t.SurfaceHover)
+			}
+			item.Children(func() {
+				ui.Text(c, tr(lang, "capture_mode_"+opt)).FontSize(13).TextColor(paperInk(dark))
+			})
+		}
+	})
+}
+
+func (a *App) captureList(c *ui.Context, f *config.Form, lang string) {
+	dark := c.Theme().Dark
+	t := c.Theme()
+	var ids *[]string
+	switch f.CaptureMode {
+	case config.CaptureBlocklist:
+		ids = &f.Blocklist
+	case config.CaptureAllowlist:
+		ids = &f.Allowlist
+	case config.CaptureAll:
+		ui.Text(c, tr(lang, "capture_all_hint")).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
+		return
+	default:
+		ui.Text(c, tr(lang, "capture_all_hint")).FontSize(12).TextColor(t.TextMuted).MaxLines(3)
+		return
+	}
+	if len(*ids) == 0 {
+		ui.Text(c, tr(lang, "capture_empty")).FontSize(12).TextColor(t.TextMuted)
+	}
+	removeAt := -1
+	for i, id := range *ids {
+		i, id := i, id
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Text(c, a.runningAppName(id)).FontSize(13).TextColor(paperInk(dark)).MaxLines(1)
+				ui.Text(c, id).FontSize(11).TextColor(t.TextMuted).MaxLines(1)
+			})
+			if ui.Button(c, tr(lang, "capture_remove")).Clicked() {
+				removeAt = i
+			}
+		})
+	}
+	if removeAt >= 0 && removeAt < len(*ids) {
+		*ids = append((*ids)[:removeAt], (*ids)[removeAt+1:]...)
+	}
+	choices := a.captureChoices(*ids)
+	if len(choices) == 0 {
+		ui.Text(c, tr(lang, "capture_no_apps")).FontSize(12).TextColor(t.TextMuted).MaxLines(2)
+		return
+	}
+	ui.Text(c, tr(lang, "capture_pick")).FontSize(12)
+	a.captureAppSelect(c, f, choices)
+	if ui.Button(c, tr(lang, "capture_add")).Clicked() && f.CapturePick != "" && !bundleIn(*ids, f.CapturePick) {
+		*ids = append(*ids, f.CapturePick)
+		f.CapturePick = ""
+	}
+}
+
+func (a *App) captureAppSelect(c *ui.Context, f *config.Form, choices []macpaste.RunningApp) {
+	dark := c.Theme().Dark
+	t := c.Theme()
+	if f.CapturePick == "" || !bundleInApps(choices, f.CapturePick) {
+		f.CapturePick = choices[0].BundleID
+	}
+	sel := ui.SelectBase(c, &f.CapturePick)
+	sel.Trigger.Padding(6, 10).Radius(t.Radius).Border(1, paperStroke(dark)).Children(func() {
+		ui.Text(c, a.runningAppName(f.CapturePick)).FontSize(13).TextColor(paperInk(dark)).MaxLines(1)
+	})
+	sel.Popup(func(panel ui.Element) {
+		panel.Padding(4).Background(t.Surface).Radius(t.Radius).Border(1, paperStroke(dark))
+		for _, app := range choices {
+			item := sel.Item(app.BundleID).Padding(6, 10).Radius(t.Radius - 1)
+			if item.Highlighted() {
+				item.Background(t.SurfaceHover)
+			}
+			item.Children(func() {
+				ui.Text(c, app.Name).FontSize(13).TextColor(paperInk(dark))
+			})
+		}
+	})
+}
+
+func (a *App) runningAppName(id string) string {
+	for _, app := range a.settingsApps {
+		if strings.EqualFold(app.BundleID, id) && app.Name != "" {
+			return app.Name
+		}
+	}
+	return id
+}
+
+func (a *App) captureChoices(already []string) []macpaste.RunningApp {
+	var out []macpaste.RunningApp
+	for _, app := range a.settingsApps {
+		if app.BundleID == "" || bundleIn(already, app.BundleID) {
+			continue
+		}
+		out = append(out, app)
+	}
+	return out
+}
+
+func bundleIn(ids []string, id string) bool {
+	for _, item := range ids {
+		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(id)) {
+			return true
+		}
+	}
+	return false
+}
+
+func bundleInApps(apps []macpaste.RunningApp, id string) bool {
+	for _, app := range apps {
+		if strings.EqualFold(app.BundleID, id) {
+			return true
+		}
+	}
+	return false
 }
 
 func labeledInput(c *ui.Context, label string, value *string) {

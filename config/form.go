@@ -33,6 +33,10 @@ type Form struct {
 	CascadeStepX           string
 	CascadeStepY           string
 	DoubleClickPaste       bool
+	CaptureMode            string
+	Blocklist              []string
+	Allowlist              []string
+	CapturePick            string
 	Bindings               ActionBindings
 	MaskEnabled            bool
 	ExtraPatterns          string
@@ -78,6 +82,9 @@ func FormFrom(c Config) Form {
 		CascadeStepX:           strconv.Itoa(c.Card.CascadeStepX),
 		CascadeStepY:           strconv.Itoa(c.Card.CascadeStepY),
 		DoubleClickPaste:       c.Card.DoubleClickPaste,
+		CaptureMode:            c.Capture.EffectiveMode(),
+		Blocklist:              append([]string(nil), c.Capture.Blocklist...),
+		Allowlist:              append([]string(nil), c.Capture.Allowlist...),
 		Bindings:               c.Bindings,
 		MaskEnabled:            c.Secrets.MaskEnabled,
 		ExtraPatterns:          strings.Join(c.Secrets.ExtraPatterns, "\n"),
@@ -150,6 +157,13 @@ func (f Form) Parse(prev Config) (Config, error) {
 	cfg.Card.FontFamily = strings.TrimSpace(f.FontFamily)
 	cfg.Card.ActiveColor = strings.TrimSpace(f.ActiveColor)
 	cfg.Card.DoubleClickPaste = f.DoubleClickPaste
+	mode, err := NormalizeCaptureMode(f.CaptureMode)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Capture.Mode = mode
+	cfg.Capture.Blocklist = CleanBundleIDs(f.Blocklist)
+	cfg.Capture.Allowlist = CleanBundleIDs(f.Allowlist)
 	cfg.Bindings = f.Bindings
 	for _, item := range cfg.Bindings.NamedBindings() {
 		item.Binding.Direct = strings.TrimSpace(item.Binding.Direct)

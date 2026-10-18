@@ -144,6 +144,13 @@ func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
 		return
 	}
 	frame := msgRect(window, sel("frame"))
+	// A zero frame is a failed read, not a window at the screen origin.
+	// Rebuilding from it setFrame's the card to the bottom-left.
+	if !usableFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height) {
+		log.Printf("snip: setFrame path=windowDidEndLiveResize skip invalid fromOrigin=(%g,%g) fromSize=(%g,%g)",
+			frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
+		return
+	}
 	curW := int(math.Round(frame.size.width))
 	curH := int(math.Round(frame.size.height))
 	w, h := size(curW, curH)
@@ -154,16 +161,19 @@ func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
 	if h < minH {
 		h = minH
 	}
-	visible := nearestVisible(screenVisibleFrames(), frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
-	x, y, fw, fh := snapResizeFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, w, h, minW, minH, visible)
-	log.Printf("snip: setFrame path=windowDidEndLiveResize from=(%.1f,%.1f,%.1f,%.1f) snap=(%.1f,%.1f,%.1f,%.1f) onScreen=%v alpha=%v orderedIn=%v",
+	screens := screenVisibleFrames()
+	visible := nearestVisible(screens, frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
+	x, y, fw, fh, apply := snapResizeFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, w, h, minW, minH, visible)
+	log.Printf("snip: setFrame path=windowDidEndLiveResize from=(%.1f,%.1f,%.1f,%.1f) snap=(%.1f,%.1f,%.1f,%.1f) fromOrigin=(%.1f,%.1f) newOrigin=(%.1f,%.1f) apply=%v onScreen=%v alpha=%v orderedIn=%v",
 		frame.origin.x, frame.origin.y, frame.size.width, frame.size.height,
 		x, y, fw, fh,
-		visible.W > 0 && intersects(x, y, fw, fh, visible),
+		frame.origin.x, frame.origin.y, x, y,
+		apply,
+		usableFrame(visible.X, visible.Y, visible.W, visible.H) && intersects(x, y, fw, fh, visible),
 		readWindowAlpha(window), windowOrderedIn(window))
-	if !finite(x) || !finite(y) || !finite(fw) || !finite(fh) || fw < 1 || fh < 1 {
-		log.Printf("snip: reject setFrame path=windowDidEndLiveResize rect=(%g,%g,%g,%g)", x, y, fw, fh)
-		restoreResizeVisibility(window)
+	if !apply || !usableFrame(x, y, fw, fh) {
+		log.Printf("snip: reject setFrame path=windowDidEndLiveResize fromOrigin=(%g,%g) newOrigin=(%g,%g) rect=(%g,%g,%g,%g)",
+			frame.origin.x, frame.origin.y, x, y, x, y, fw, fh)
 		return
 	}
 	if x != frame.origin.x || y != frame.origin.y || fw != frame.size.width || fh != frame.size.height {
@@ -172,7 +182,6 @@ func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
 			size:   nsSize{width: fw, height: fh},
 		}, true)
 	}
-	restoreResizeVisibility(window)
 }
 
 // SetContentMinSize sets the content view's minimum size. Borderless windows

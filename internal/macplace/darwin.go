@@ -301,10 +301,21 @@ type nsRect struct {
 	size   nsSize
 }
 
+var (
+	rectOnce sync.Once
+	readRect func(id, objc.SEL) nsRect
+)
+
+// msgRect reads an NSRect-returning method. On arm64 that struct is four
+// float64s, an HFA returned in d0–d3. Passing an out-pointer through
+// SyscallN leaves the Go value zero, and windowDidEndLiveResize then
+// setFrame's the card to the bottom-left of the screen.
 func msgRect(obj id, s objc.SEL) nsRect {
-	var r nsRect
-	_, _, _ = purego.SyscallN(msgSendAddr, uintptr(obj), uintptr(s), uintptr(unsafe.Pointer(&r)))
-	return r
+	load()
+	rectOnce.Do(func() {
+		purego.RegisterFunc(&readRect, msgSendAddr)
+	})
+	return readRect(obj, s)
 }
 
 func msgPoint(obj id, s objc.SEL) nsPoint {

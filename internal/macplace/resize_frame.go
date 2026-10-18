@@ -9,13 +9,16 @@ type box struct {
 	X, Y, W, H float64
 }
 
-// snapResizeFrame replaces a window's size without letting it vanish.
-// The top and left edges stay put (AppKit's bottom-left origin means the top
-// is originY+height), then the frame is slid the minimum amount so it
-// intersects visible. A fast shrink below minW/minH is clamped up. A zero
-// visible rect skips the slide, so callers without a screen still get a
-// positive size.
-func snapResizeFrame(originX, originY, width, height float64, newW, newH, minW, minH int, visible box) (x, y, w, h float64) {
+// snapResizeFrame replaces a window's size and keeps its top-left corner.
+// AppKit's origin is the bottom-left, so the top edge is originY+height and
+// only origin.y moves when the height changes. origin.x stays. A zero,
+// negative, or non-finite source frame is not a place to rebuild from: ok
+// is false and the caller must not setFrame. A zero visible rect is not a
+// destination either; the anchored origin is left alone.
+func snapResizeFrame(originX, originY, width, height float64, newW, newH, minW, minH int, visible box) (x, y, w, h float64, ok bool) {
+	if !usableFrame(originX, originY, width, height) {
+		return originX, originY, width, height, false
+	}
 	if minW < 1 {
 		minW = 1
 	}
@@ -30,25 +33,24 @@ func snapResizeFrame(originX, originY, width, height float64, newW, newH, minW, 
 	}
 	w = float64(newW)
 	h = float64(newH)
-	// A non-finite frame from a bad read must not be written back. Park the
-	// card at the visible origin (or 0,0) at the minimum size instead.
-	if !finite(originX) || !finite(originY) || !finite(width) || !finite(height) {
-		x, y = 0, 0
-		if visible.W > 0 && visible.H > 0 && finite(visible.X) && finite(visible.Y) {
-			x, y = visible.X, visible.Y
-		}
-		return x, y, w, h
-	}
-	top := originY + height
+	// Top-left anchor: left edge stays, top edge stays.
 	x = originX
-	y = top - h
+	y = originY + height - h
 	if !finite(x) || !finite(y) {
-		x, y = originX, originY
+		return originX, originY, width, height, false
 	}
-	if visible.W <= 0 || visible.H <= 0 {
-		return x, y, w, h
+	if !usableFrame(visible.X, visible.Y, visible.W, visible.H) {
+		return x, y, w, h, true
 	}
-	return slideToIntersect(x, y, w, h, visible)
+	x, y, w, h = slideToIntersect(x, y, w, h, visible)
+	if !finite(x) || !finite(y) {
+		return originX, originY, width, height, false
+	}
+	return x, y, w, h, true
+}
+
+func usableFrame(x, y, w, h float64) bool {
+	return finite(x) && finite(y) && finite(w) && finite(h) && w > 0 && h > 0
 }
 
 func finite(v float64) bool {

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/0froq/snip/config"
 	"github.com/egoist/mygo"
 )
 
@@ -23,6 +24,13 @@ func registersGlobally(action string) bool {
 		return true
 	default:
 		panic("snip: unknown shortcut action " + action)
+	}
+}
+
+// finishLeaderAction leaves leader mode open when stay is set.
+func finishLeaderAction(stay bool, end func()) {
+	if !stay {
+		end()
 	}
 }
 
@@ -95,8 +103,12 @@ func (a *App) registerLeaderKeys() {
 	a.clearLeaderKeys()
 	a.discardWhichKey()
 	cfg := a.config()
-	for _, item := range cfg.Bindings.NamedBindings() {
-		a.bindLeader(item.Binding.Leader, item.Name, item.Binding.LeaderDouble, item.Binding.Sticky)
+	for _, row := range cfg.Bindings {
+		parsed, err := config.ParseBinding(row.Keys)
+		if err != nil || !parsed.Leader || row.Action == "leader" {
+			continue
+		}
+		a.bindLeader(parsed.Chord, row.Action, false, row.Stay)
 	}
 	a.bindLeader("escape", "cancel", false, false)
 

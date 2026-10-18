@@ -46,11 +46,33 @@ func TestAppearancePaletteFollowsNight(t *testing.T) {
 	}
 }
 
+func TestShortcutIssuesAreInline(t *testing.T) {
+	a := New(config.Default(), "")
+	form := config.FormFrom(a.config())
+	form.SettingsTab = int(settingsShortcuts)
+	form.Bindings = append(form.Bindings,
+		config.Binding{Action: "paste", Keys: ""},
+		config.Binding{Action: "delete", Keys: "cmd+shift+v"},
+	)
+	a.settingsForm = &form
+	tt := ui.NewTester(func(c *ui.Context) { a.settingsView(c) }, 640, 720)
+	for _, s := range []string{"Enter a shortcut.", "Already used."} {
+		if !tt.HasText(s) {
+			t.Fatalf("missing %q in %v", s, tt.Texts())
+		}
+	}
+}
+
 func TestShortcutGroupsCoverActions(t *testing.T) {
 	cfg := config.Default()
 	seen := map[string]int{}
-	for _, item := range cfg.Bindings.NamedBindings() {
-		seen[bindingGroup(item.Name)]++
+	seenAction := map[string]bool{}
+	for _, row := range cfg.Bindings {
+		if row.Action == "leader" || seenAction[row.Action] {
+			continue
+		}
+		seenAction[row.Action] = true
+		seen[bindingGroup(row.Action)]++
 	}
 	if seen["cards"] != 6 || seen["visibility"] != 1 || seen["app"] != 1 || len(seen) != 3 {
 		t.Fatalf("groups %v", seen)
@@ -63,10 +85,23 @@ func TestShortcutPageGroups(t *testing.T) {
 	form.SettingsTab = int(settingsShortcuts)
 	a.settingsForm = &form
 	tt := ui.NewTester(func(c *ui.Context) { a.settingsView(c) }, 640, 720)
-	for _, s := range []string{"Cards", "Leader mode", "Visibility", "App", "Next card", "Show or hide cards"} {
+	texts := tt.Texts()
+	for _, s := range []string{"Leader key", "Starts leader mode.", "Cards", "Visibility", "App", "Next card", "Stay in leader mode"} {
 		if !tt.HasText(s) {
-			t.Fatalf("missing %q in %v", s, tt.Texts())
+			t.Fatalf("missing %q in %v", s, texts)
 		}
+	}
+	hintAt, nextAt := -1, -1
+	for i, s := range texts {
+		if s == "Starts leader mode." && hintAt < 0 {
+			hintAt = i
+		}
+		if s == "Next card" && nextAt < 0 {
+			nextAt = i
+		}
+	}
+	if hintAt < 0 || nextAt < 0 || hintAt > nextAt {
+		t.Fatalf("leader hint %d next card %d", hintAt, nextAt)
 	}
 }
 

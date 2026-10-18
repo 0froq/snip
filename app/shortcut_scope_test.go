@@ -8,16 +8,19 @@ import (
 
 func TestSettingsShortcutIsMenuLocal(t *testing.T) {
 	cfg := config.Default()
-	if cfg.Bindings.Settings.Direct != "CmdOrCtrl+," {
-		t.Fatalf("settings shortcut %q", cfg.Bindings.Settings.Direct)
+	if settingsAccelerator(cfg) != "CmdOrCtrl+," {
+		t.Fatalf("settings shortcut %q", settingsAccelerator(cfg))
 	}
-	if cfg.Bindings.ClearCards.Direct != "CmdOrCtrl+Shift+Option+Backspace" || cfg.Bindings.ClearCards.Leader != "Shift+D" {
-		t.Fatalf("clear cards binding %+v", cfg.Bindings.ClearCards)
+	if keys := firstKeys(cfg, "clear_cards", false); keys != "CmdOrCtrl+Shift+Option+Backspace" {
+		t.Fatalf("clear cards direct %q", keys)
 	}
-	if cfg.Bindings.Toggle.Direct != "CmdOrCtrl+Shift+S" {
-		t.Fatalf("toggle shortcut %q", cfg.Bindings.Toggle.Direct)
+	if keys := firstKeys(cfg, "clear_cards", true); keys != "leader Shift+D" {
+		t.Fatalf("clear cards leader %q", keys)
 	}
-	if cfg.Leader.Shortcut == "" {
+	if keys := firstKeys(cfg, "toggle", false); keys != "CmdOrCtrl+Shift+S" {
+		t.Fatalf("toggle shortcut %q", keys)
+	}
+	if keys := firstKeys(cfg, "leader", false); keys == "" {
 		t.Fatal("leader shortcut is empty")
 	}
 	if registersGlobally("settings") {
@@ -29,16 +32,33 @@ func TestSettingsShortcutIsMenuLocal(t *testing.T) {
 		}
 	}
 	var global []string
-	for _, item := range cfg.Bindings.NamedBindings() {
-		if !registersGlobally(item.Name) {
+	for _, row := range cfg.Bindings {
+		if !registersGlobally(row.Action) {
 			continue
 		}
-		global = append(global, item.Binding.Direct)
+		parsed, err := config.ParseBinding(row.Keys)
+		if err != nil || parsed.Leader {
+			continue
+		}
+		global = append(global, parsed.Chord)
 	}
-	global = append(global, cfg.Leader.Shortcut)
 	for _, acc := range global {
-		if acc == cfg.Bindings.Settings.Direct {
+		if acc == settingsAccelerator(cfg) {
 			t.Fatalf("global set includes %s", acc)
 		}
 	}
+}
+
+func firstKeys(cfg config.Config, action string, leader bool) string {
+	for _, row := range cfg.Bindings {
+		if row.Action != action {
+			continue
+		}
+		parsed, err := config.ParseBinding(row.Keys)
+		if err != nil || parsed.Leader != leader {
+			continue
+		}
+		return row.Keys
+	}
+	return ""
 }

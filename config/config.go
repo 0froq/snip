@@ -49,50 +49,13 @@ type Card struct {
 	DoubleClickPaste bool `toml:"double_click_paste"`
 }
 
-// ActionBinding gives one action independent direct and leader bindings.
-type ActionBinding struct {
-	Direct       string `toml:"direct"`
-	DirectDouble bool   `toml:"direct_double"`
-	Leader       string `toml:"leader"`
-	LeaderDouble bool   `toml:"leader_double"`
-	Sticky       bool   `toml:"sticky"`
-}
+// Leader controls timing and the which-key panel. The leader key itself
+// is a binding whose action is "leader".
 
-// ActionBindings contains every command that can be bound.
-type ActionBindings struct {
-	Toggle     ActionBinding `toml:"toggle"`
-	Next       ActionBinding `toml:"next"`
-	Prev       ActionBinding `toml:"prev"`
-	Paste      ActionBinding `toml:"paste"`
-	Delete     ActionBinding `toml:"delete"`
-	ClearCards ActionBinding `toml:"clear_cards"`
-	Pin        ActionBinding `toml:"pin"`
-	Settings   ActionBinding `toml:"settings"`
-}
-
-// NamedBindings returns bindings in stable UI order.
-func (b *ActionBindings) NamedBindings() []struct {
-	Name    string
-	Binding *ActionBinding
-} {
-	return []struct {
-		Name    string
-		Binding *ActionBinding
-	}{
-		{"toggle", &b.Toggle},
-		{"next", &b.Next},
-		{"prev", &b.Prev},
-		{"paste", &b.Paste},
-		{"delete", &b.Delete},
-		{"clear_cards", &b.ClearCards},
-		{"pin", &b.Pin},
-		{"settings", &b.Settings},
-	}
-}
-
-// Leader controls the prefix and timing shared by leader bindings.
 type Leader struct {
-	Shortcut      string `toml:"shortcut"`
+	// Shortcut is the pre-list leader combo. Load copies it into the leader
+	// binding. Saves omit it.
+	Shortcut      string `toml:"shortcut,omitempty"`
 	TimeoutMs     int    `toml:"timeout_ms"`
 	DoublePressMs int    `toml:"double_press_ms"`
 	// WhichKeyX and WhichKeyY are where the panel anchor sits, as a percent
@@ -121,18 +84,18 @@ type Secrets struct {
 
 // Config is the full snip configuration.
 type Config struct {
-	ClipboardPollMs int            `toml:"clipboard_poll_ms"`
-	MaxCards        int            `toml:"max_cards"`
-	Window          Window         `toml:"window"`
-	Card            Card           `toml:"card"`
-	Bindings        ActionBindings `toml:"bindings"`
-	Capture         Capture        `toml:"capture"`
-	Secrets         Secrets        `toml:"secrets"`
-	Pasteboard      Pasteboard     `toml:"pasteboard"`
-	Leader          Leader         `toml:"leader"`
-	Motion          Motion         `toml:"motion"`
-	Theme           Theme          `toml:"theme"`
-	Language        string         `toml:"language"`
+	ClipboardPollMs int         `toml:"clipboard_poll_ms"`
+	MaxCards        int         `toml:"max_cards"`
+	Window          Window      `toml:"window"`
+	Card            Card        `toml:"card"`
+	Bindings        BindingList `toml:"bindings"`
+	Capture         Capture     `toml:"capture"`
+	Secrets         Secrets     `toml:"secrets"`
+	Pasteboard      Pasteboard  `toml:"pasteboard"`
+	Leader          Leader      `toml:"leader"`
+	Motion          Motion      `toml:"motion"`
+	Theme           Theme       `toml:"theme"`
+	Language        string      `toml:"language"`
 }
 
 // Default returns built-in defaults aligned with the prototype goals.
@@ -166,19 +129,9 @@ func Default() Config {
 			CascadeOriginY:   24,
 			DoubleClickPaste: true,
 		},
-		Bindings: ActionBindings{
-			Toggle:     ActionBinding{Direct: "CmdOrCtrl+Shift+S", Leader: "s"},
-			Next:       ActionBinding{Direct: "CmdOrCtrl+Shift+]", Leader: "j", Sticky: true},
-			Prev:       ActionBinding{Direct: "CmdOrCtrl+Shift+[", Leader: "k", Sticky: true},
-			Paste:      ActionBinding{Direct: "CmdOrCtrl+Shift+V", Leader: "v"},
-			Delete:     ActionBinding{Direct: "CmdOrCtrl+Shift+Backspace", Leader: "d"},
-			ClearCards: ActionBinding{Direct: "CmdOrCtrl+Shift+Option+Backspace", Leader: "Shift+D"},
-			Pin:        ActionBinding{Direct: "CmdOrCtrl+Shift+F", Leader: "p", Sticky: true},
-			Settings:   ActionBinding{Direct: "CmdOrCtrl+,", Leader: ","},
-		},
-		Capture: Capture{Mode: CaptureAll},
+		Bindings: DefaultBindings(),
+		Capture:  Capture{Mode: CaptureAll},
 		Leader: Leader{
-			Shortcut:       "CmdOrCtrl+Shift+Space",
 			TimeoutMs:      1500,
 			DoublePressMs:  400,
 			WhichKeyX:      100,
@@ -372,6 +325,7 @@ func Load(path string) (Config, error) {
 		return cfg, err
 	}
 	cfg.Leader.applyLegacyWhichKeyFile(data)
+	cfg.finishLegacyLeader(data)
 	return cfg, nil
 }
 

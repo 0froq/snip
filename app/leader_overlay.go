@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
+	"github.com/0froq/snip/config"
 	"github.com/0froq/snip/internal/macplace"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -19,16 +20,19 @@ func (a *App) registerShortcuts() {
 	a.mu.Unlock()
 	a.closeLeaderChrome()
 	cfg := a.config()
-	for _, item := range cfg.Bindings.NamedBindings() {
+	for _, row := range cfg.Bindings {
 		// Settings is the application menu's key equivalent. Carbon's
 		// RegisterEventHotKey would consume it in every app, including
 		// when snip is not the key app.
-		if !registersGlobally(item.Name) {
+		if !registersGlobally(row.Action) {
 			continue
 		}
-		a.bind(item.Binding.Direct, item.Name, item.Binding.DirectDouble)
+		parsed, err := config.ParseBinding(row.Keys)
+		if err != nil || parsed.Leader {
+			continue
+		}
+		a.bind(parsed.Chord, row.Action, false)
 	}
-	a.bind(cfg.Leader.Shortcut, "leader", false)
 }
 
 func (a *App) relayoutLeader() {
@@ -63,9 +67,7 @@ func (a *App) bindLeader(key, action string, double, sticky bool) {
 		a.taps.pressOnly("leader:"+key, action, double, a.config().Leader.DoubleGap(), func(act string) {
 			a.perform(act)
 			a.invalidateCards()
-			if !sticky {
-				a.endLeader()
-			}
+			finishLeaderAction(sticky, a.endLeader)
 		})
 	}); err != nil {
 		log.Printf("snip: leader key %q: %v", key, err)

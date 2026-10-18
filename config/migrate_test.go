@@ -3,67 +3,97 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestLoadKeepsDeprecatedMaxLines(t *testing.T) {
+func TestMigrateLegacyShortcuts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	body := "[card]\nmax_lines = 7\n"
+	body := `
+[leader]
+shortcut = "Cmd+Space"
+timeout_ms = 900
+
+[bindings.toggle]
+direct = "CmdOrCtrl+Shift+S"
+leader = "s"
+
+[bindings.next]
+direct = "CmdOrCtrl+Shift+]"
+leader = "j"
+sticky = true
+leader_double = true
+
+[bindings.paste]
+direct = "cmd+shift+v"
+`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := Load(path)
+	got, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Card.MaxLines != 7 {
-		t.Fatalf("max_lines %d", cfg.Card.MaxLines)
+	if got.Leader.Shortcut != "" {
+		t.Fatalf("shortcut field still set %q", got.Leader.Shortcut)
 	}
-	if cfg.Card.MaxHeight != Default().Card.MaxHeight {
-		t.Fatalf("max_height %d", cfg.Card.MaxHeight)
+	if got.Leader.TimeoutMs != 900 {
+		t.Fatalf("timeout %d", got.Leader.TimeoutMs)
 	}
-	text := strings.Repeat("word ", 80)
-	layout := cfg.Card.Layout(text, 200, cfg.Card.MaxLines)
-	if layout.Truncated || strings.Contains(layout.Text, "…") || layout.Text != text {
-		t.Fatalf("old max_lines still clips: %+v", layout)
+	want := BindingList{
+		{Action: "leader", Keys: "Cmd+Space"},
+		{Action: "toggle", Keys: "CmdOrCtrl+Shift+S"},
+		{Action: "toggle", Keys: "leader s"},
+		{Action: "next", Keys: "CmdOrCtrl+Shift+]"},
+		{Action: "next", Keys: "leader j", Stay: true},
+		{Action: "paste", Keys: "cmd+shift+v"},
 	}
-	if layout.Height > cfg.Card.EffectiveMaxHeight() {
-		t.Fatalf("height %d over max %d", layout.Height, cfg.Card.EffectiveMaxHeight())
+	if len(got.Bindings) != len(want) {
+		t.Fatalf("bindings %#v", got.Bindings)
+	}
+	for i := range want {
+		if got.Bindings[i] != want[i] {
+			t.Fatalf("row %d got %#v want %#v", i, got.Bindings[i], want[i])
+		}
 	}
 }
 
-func TestLoadMaxHeightCapsTheCard(t *testing.T) {
+func TestSaveCanonicalShortcutList(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, []byte("[card]\nmax_height = 80\nmax_lines = 2\n"), 0o644); err != nil {
-		t.Fatal(err)
+	src := Default()
+	src.Bindings = BindingList{
+		{Action: "leader", Keys: "cmd+shift+space"},
+		{Action: "paste", Keys: "leader v", Stay: true},
+		{Action: "paste", Keys: "cmd+shift+v", Stay: true},
 	}
-	cfg, err := Load(path)
+	form := FormFrom(src)
+	saved, err := form.Parse(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Card.MaxHeight != 80 || cfg.Card.MaxLines != 2 {
-		t.Fatalf("card %+v", cfg.Card)
+	if saved.Bindings[1].Keys != "leader v" || !saved.Bindings[1].Stay {
+		t.Fatalf("leader row %#v", saved.Bindings[1])
 	}
-	text := strings.Repeat("tall card ", 40)
-	layout := cfg.Card.Layout(text, 200, 0)
-	if layout.Height != 80 || !layout.Scrolls || layout.Text != text {
-		t.Fatalf("layout %+v", layout)
+	if saved.Bindings[2].Keys != "CmdOrCtrl+Shift+V" || saved.Bindings[2].Stay {
+		t.Fatalf("global row dropped stay? %#v", saved.Bindings[2])
+	}
+	if err := Save(path, saved); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Bindings) != 3 || got.Bindings[0].Keys != "CmdOrCtrl+Shift+Space" || got.Bindings[1].Stay != true {
+		t.Fatalf("reloaded %#v", got.Bindings)
 	}
 }
 
-func TestParseKeepsMaxLinesWhenSavingHeight(t *testing.T) {
-	prev := Default()
-	prev.Card.MaxLines = 9
-	f := FormFrom(prev)
-	f.MaxHeight = "180"
-	next, err := f.Parse(prev)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if next.Card.MaxHeight != 180 || next.Card.MaxLines != 9 {
-		t.Fatalf("card %+v", next.Card)
+func TestParseRejectsShortcutConflict(t *testing.T) {
+	form := FormFrom(Default())
+	form.Bindings = append(form.Bindings, Binding{Action: "delete", Keys: "cmd+shift+v"})
+	if _, err := form.Parse(Default()); err == nil {
+		t.Fatal("expected conflict")
 	}
 }

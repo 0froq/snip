@@ -2,6 +2,7 @@ package app
 
 import (
 	"log"
+	"strconv"
 	"strings"
 
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/input"
@@ -20,7 +21,7 @@ func (a *App) installMenus() {
 	lang := cfg.Language
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 		{Label: tr(lang, "app_menu"), Submenu: []*mygo.MenuItem{
-			{Label: tr(lang, "menu_settings"), Accelerator: strings.TrimSpace(cfg.Bindings.Settings.Direct), Click: func(*mygo.MenuItem, *mygo.Window) {
+			{Label: tr(lang, "menu_settings"), Accelerator: settingsAccelerator(cfg), Click: func(*mygo.MenuItem, *mygo.Window) {
 				a.showSettings()
 			}},
 			{Label: tr(lang, "menu_toggle"), Click: func(*mygo.MenuItem, *mygo.Window) { a.toggleVisible() }},
@@ -309,18 +310,15 @@ func (a *App) settingsCapture(c *ui.Context, f *config.Form, lang string) {
 }
 
 func (a *App) settingsShortcuts(c *ui.Context, f *config.Form, lang string) {
-	found := map[string]*config.ActionBinding{}
-	for _, item := range f.Bindings.NamedBindings() {
-		bindingGroup(item.Name)
-		found[item.Name] = item.Binding
-	}
-	a.settingsSection(c, tr(lang, "group_cards"), func() {
-		for _, name := range []string{"next", "prev", "paste", "delete", "clear_cards", "pin"} {
-			settingsBinding(c, tr(lang, name), found[name], lang)
+	issues := config.CheckBindings(f.Bindings)
+	var addAction string
+	removeAt := -1
+	a.settingsSection(c, tr(lang, "leader"), func() {
+		text.Paragraph(c, tr(lang, "leader_key_hint"), text.ParagraphOptions{MaxLines: 2, Slot: pixel.Faint})
+		bindingRows(c, f, lang, "leader", issues, &removeAt)
+		if input.Button(c, tr(lang, "bind_add"), input.ButtonOptions{Label: tr(lang, "bind_add") + " leader"}).Clicked {
+			addAction = "leader"
 		}
-	})
-	a.settingsSection(c, tr(lang, "group_leader"), func() {
-		shortcutField(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
 		shortcutField(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
 		shortcutField(c, tr(lang, "double_ms"), &f.DoublePressMs)
 		shortcutField(c, tr(lang, "which_key_x"), &f.WhichKeyX)
@@ -329,12 +327,138 @@ func (a *App) settingsShortcuts(c *ui.Context, f *config.Form, lang string) {
 		shortcutChoice(c, tr(lang, "which_key_align_x"), &f.WhichKeyAlignX, aligns)
 		shortcutChoice(c, tr(lang, "which_key_align_y"), &f.WhichKeyAlignY, aligns)
 	})
-	a.settingsSection(c, tr(lang, "group_visibility"), func() {
-		settingsBinding(c, tr(lang, "toggle"), found["toggle"], lang)
-	})
-	a.settingsSection(c, tr(lang, "group_app"), func() {
-		settingsBinding(c, tr(lang, "settings"), found["settings"], lang)
-	})
+	for _, group := range []struct {
+		title string
+		names []string
+	}{
+		{"group_cards", []string{"next", "prev", "paste", "delete", "clear_cards", "pin"}},
+		{"group_visibility", []string{"toggle"}},
+		{"group_app", []string{"settings"}},
+	} {
+		title, names := group.title, group.names
+		a.settingsSection(c, tr(lang, title), func() {
+			text.Paragraph(c, tr(lang, "bind_hint"), text.ParagraphOptions{MaxLines: 3, Slot: pixel.Faint})
+			for _, name := range names {
+				name := name
+				text.Paragraph(c, tr(lang, name), text.ParagraphOptions{MaxLines: 2, Slot: pixel.Ink})
+				bindingRows(c, f, lang, name, issues, &removeAt)
+				if input.Button(c, tr(lang, "bind_add"), input.ButtonOptions{Label: tr(lang, "bind_add") + " " + name}).Clicked {
+					addAction = name
+				}
+			}
+		})
+	}
+	for _, name := range extraShortcutActions(f.Bindings) {
+		name := name
+		a.settingsSection(c, name, func() {
+			bindingRows(c, f, lang, name, issues, &removeAt)
+			if input.Button(c, tr(lang, "bind_add"), input.ButtonOptions{Label: tr(lang, "bind_add") + " " + name}).Clicked {
+				addAction = name
+			}
+		})
+	}
+	if addAction != "" {
+		f.Bindings = insertBinding(f.Bindings, addAction)
+	}
+	if removeAt >= 0 {
+		f.Bindings = removeBinding(f.Bindings, removeAt)
+	}
+}
+
+func extraShortcutActions(rows config.BindingList) []string {
+	known := map[string]bool{
+		"leader": true, "toggle": true, "next": true, "prev": true, "paste": true,
+		"delete": true, "clear_cards": true, "pin": true, "settings": true,
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, row := range rows {
+		if known[row.Action] || seen[row.Action] {
+			continue
+		}
+		seen[row.Action] = true
+		out = append(out, row.Action)
+	}
+	return out
+}
+
+func bindingRows(c *ui.Context, f *config.Form, lang, action string, issues []*config.BindingIssue, removeAt *int) {
+	k := pixel.K(c)
+	for i := range f.Bindings {
+		if f.Bindings[i].Action != action {
+			continue
+		}
+		i := i
+		ui.Column(c).Shrink(0).Gap(k.D(1)).Children(func() {
+			ui.Row(c).Gap(k.D(4)).AlignItems(ui.Center).Shrink(0).Children(func() {
+				input.TextInput(c, action, &f.Bindings[i].Keys, input.TextInputOptions{Width: shortcutFieldDots})
+				if input.Button(c, tr(lang, "bind_remove"), input.ButtonOptions{Label: tr(lang, "bind_remove") + " " + action + " " + strconv.Itoa(i)}).Clicked {
+					*removeAt = i
+				}
+			})
+			if action != "leader" && config.HasLeaderPrefix(f.Bindings[i].Keys) {
+				input.Checkbox(c, tr(lang, "sticky"), &f.Bindings[i].Stay, input.CheckboxOptions{})
+			}
+			if i < len(issues) && issues[i] != nil {
+				text.Paragraph(c, bindingIssueText(lang, issues[i]), text.ParagraphOptions{MaxLines: 2, Slot: pixel.Bad})
+			}
+		})
+	}
+}
+
+func bindingIssueText(lang string, issue *config.BindingIssue) string {
+	switch issue.Code {
+	case "empty":
+		return tr(lang, "bind_empty")
+	case "unknown":
+		return tr(lang, "bind_unknown") + " " + issue.Token
+	case "conflict":
+		return tr(lang, "bind_conflict")
+	case "leader":
+		return tr(lang, "bind_leader_key")
+	case "action":
+		return tr(lang, "bind_action") + " " + issue.Token
+	default:
+		panic("snip: unknown binding issue " + issue.Code)
+	}
+}
+
+func insertBinding(rows config.BindingList, action string) config.BindingList {
+	row := config.Binding{Action: action}
+	last := -1
+	for i, item := range rows {
+		if item.Action == action {
+			last = i
+		}
+	}
+	if last < 0 {
+		return append(rows, row)
+	}
+	rows = append(rows, config.Binding{})
+	copy(rows[last+2:], rows[last+1:])
+	rows[last+1] = row
+	return rows
+}
+
+func removeBinding(rows config.BindingList, index int) config.BindingList {
+	if index < 0 || index >= len(rows) {
+		return rows
+	}
+	return append(rows[:index], rows[index+1:]...)
+}
+
+func settingsAccelerator(cfg config.Config) string {
+	for _, row := range cfg.Bindings {
+		if row.Action != "settings" {
+			continue
+		}
+		parsed, err := config.ParseBinding(row.Keys)
+		if err != nil || parsed.Leader {
+			continue
+		}
+		return parsed.Chord
+	}
+	return ""
 }
 
 // bindingGroup is the shortcuts section an action belongs to.
@@ -605,32 +729,6 @@ func shortcutChoice(c *ui.Context, label string, value *string, options []string
 	shortcutLine(c, label, func() {
 		ui.Box(c).Width(k.D(shortcutFieldDots)).Shrink(0).Children(func() {
 			pixelChoice(c, label, value, options, func(opt string) string { return opt })
-		})
-	})
-}
-
-func settingsBinding(c *ui.Context, label string, binding *config.ActionBinding, lang string) {
-	if binding == nil {
-		return
-	}
-	k := pixel.K(c)
-	ui.Column(c).Shrink(0).Gap(k.D(2)).Children(func() {
-		shortcutLine(c, label, func() {
-			text.Paragraph(c, tr(lang, "direct_binding"), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Faint})
-		})
-		shortcutField(c, "", &binding.Direct)
-		shortcutLine(c, "", func() {
-			input.Checkbox(c, tr(lang, "double_press"), &binding.DirectDouble, input.CheckboxOptions{})
-		})
-		shortcutLine(c, "", func() {
-			text.Paragraph(c, tr(lang, "leader_binding"), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Faint})
-		})
-		shortcutField(c, "", &binding.Leader)
-		shortcutLine(c, "", func() {
-			input.Checkbox(c, tr(lang, "double_press"), &binding.LeaderDouble, input.CheckboxOptions{})
-		})
-		shortcutLine(c, "", func() {
-			input.Checkbox(c, tr(lang, "sticky"), &binding.Sticky, input.CheckboxOptions{})
 		})
 	})
 }

@@ -46,7 +46,6 @@ enabled = true
 duration_ms = 160
 
 [leader]
-shortcut = "CmdOrCtrl+Shift+Space"
 timeout_ms = 1500
 double_press_ms = 400
 # which_key_x/y: 0..100 percent of the work area. align is which point of the
@@ -56,41 +55,79 @@ which_key_y = 100
 which_key_align_x = "end"
 which_key_align_y = "end"
 
-[bindings.toggle]
-direct = "CmdOrCtrl+Shift+S"
-leader = "s"
+# A shortcut is a global combo, or "leader" plus a key pressed after the leader key.
+# stay keeps leader mode open after that key.
+[[bindings]]
+action = "leader"
+keys = "CmdOrCtrl+Shift+Space"
 
-[bindings.next]
-direct = "CmdOrCtrl+Shift+]"
-leader = "j"
-sticky = true
+[[bindings]]
+action = "toggle"
+keys = "CmdOrCtrl+Shift+S"
 
-[bindings.prev]
-direct = "CmdOrCtrl+Shift+["
-leader = "k"
-sticky = true
+[[bindings]]
+action = "toggle"
+keys = "leader s"
 
-[bindings.paste]
-direct = "CmdOrCtrl+Shift+V"
-leader = "v"
+[[bindings]]
+action = "next"
+keys = "CmdOrCtrl+Shift+]"
 
-[bindings.delete]
-direct = "CmdOrCtrl+Shift+Backspace"
-leader = "d"
+[[bindings]]
+action = "next"
+keys = "leader j"
+stay = true
 
-[bindings.clear_cards]
-direct = "CmdOrCtrl+Shift+Option+Backspace"
+[[bindings]]
+action = "prev"
+keys = "CmdOrCtrl+Shift+["
+
+[[bindings]]
+action = "prev"
+keys = "leader k"
+stay = true
+
+[[bindings]]
+action = "paste"
+keys = "CmdOrCtrl+Shift+V"
+
+[[bindings]]
+action = "paste"
+keys = "leader v"
+
+[[bindings]]
+action = "delete"
+keys = "CmdOrCtrl+Shift+Backspace"
+
+[[bindings]]
+action = "delete"
+keys = "leader d"
+
+[[bindings]]
+action = "clear_cards"
+keys = "CmdOrCtrl+Shift+Option+Backspace"
+
 # Shift+D, not "D": a single letter is case-insensitive in the shortcut parser.
-leader = "Shift+D"
+[[bindings]]
+action = "clear_cards"
+keys = "leader Shift+D"
 
-[bindings.pin]
-direct = "CmdOrCtrl+Shift+F"
-leader = "p"
-sticky = true
+[[bindings]]
+action = "pin"
+keys = "CmdOrCtrl+Shift+F"
 
-[bindings.settings]
-direct = "CmdOrCtrl+,"
-leader = ","
+[[bindings]]
+action = "pin"
+keys = "leader p"
+stay = true
+
+[[bindings]]
+action = "settings"
+keys = "CmdOrCtrl+,"
+
+[[bindings]]
+action = "settings"
+keys = "leader ,"
 
 [pasteboard]
 honor_concealed = true

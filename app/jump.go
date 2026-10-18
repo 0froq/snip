@@ -84,10 +84,14 @@ func normalizeJumpKey(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
-func boundLeaderKeys(bindings config.ActionBindings) map[string]struct{} {
+func boundLeaderKeys(bindings config.BindingList) map[string]struct{} {
 	out := map[string]struct{}{}
-	for _, item := range bindings.NamedBindings() {
-		if k := normalizeJumpKey(item.Binding.Leader); k != "" {
+	for _, row := range bindings {
+		parsed, err := config.ParseBinding(row.Keys)
+		if err != nil || !parsed.Leader {
+			continue
+		}
+		if k := normalizeJumpKey(parsed.Chord); k != "" {
 			out[k] = struct{}{}
 		}
 	}
@@ -222,12 +226,16 @@ func whichKeyOrigin(anchor, size int, align string) int {
 
 func whichKeyItems(cfg config.Config) []whichKeyItem {
 	var items []whichKeyItem
-	for _, item := range cfg.Bindings.NamedBindings() {
-		key := strings.TrimSpace(item.Binding.Leader)
-		if key == "" {
+	for _, row := range cfg.Bindings {
+		parsed, err := config.ParseBinding(row.Keys)
+		if err != nil || !parsed.Leader || row.Action == "leader" {
 			continue
 		}
-		items = append(items, whichKeyItem{Key: key, Name: actionHint(cfg.Language, item.Name)})
+		key := parsed.Chord
+		if len([]rune(key)) == 1 {
+			key = strings.ToLower(key)
+		}
+		items = append(items, whichKeyItem{Key: key, Name: actionHint(cfg.Language, row.Action)})
 	}
 	return items
 }

@@ -6,6 +6,190 @@ import (
 	"unicode/utf8"
 )
 
+// DefaultBindings is the built-in shortcut list. The leader key is first.
+func DefaultBindings() BindingList {
+	return BindingList{
+		{Action: "leader", Keys: "CmdOrCtrl+Shift+Space"},
+		{Action: "toggle", Keys: "CmdOrCtrl+Shift+S"},
+		{Action: "toggle", Keys: "leader s"},
+		{Action: "next", Keys: "CmdOrCtrl+Shift+]"},
+		{Action: "next", Keys: "leader j", Stay: true},
+		{Action: "prev", Keys: "CmdOrCtrl+Shift+["},
+		{Action: "prev", Keys: "leader k", Stay: true},
+		{Action: "paste", Keys: "CmdOrCtrl+Shift+V"},
+		{Action: "paste", Keys: "leader v"},
+		{Action: "delete", Keys: "CmdOrCtrl+Shift+Backspace"},
+		{Action: "delete", Keys: "leader d"},
+		{Action: "clear_cards", Keys: "CmdOrCtrl+Shift+Option+Backspace"},
+		{Action: "clear_cards", Keys: "leader Shift+D"},
+		{Action: "pin", Keys: "CmdOrCtrl+Shift+F"},
+		{Action: "pin", Keys: "leader p", Stay: true},
+		{Action: "settings", Keys: "CmdOrCtrl+,"},
+		{Action: "settings", Keys: "leader ,"},
+	}
+}
+
+// BindingList is the shortcut list. It decodes the list form and the old tables.
+type BindingList []Binding
+
+// UnmarshalTOML accepts the list form and the old per-action tables.
+func (b *BindingList) UnmarshalTOML(v any) error {
+	switch val := v.(type) {
+	case []map[string]any:
+		rows, err := bindingsFromMaps(val)
+		if err != nil {
+			return err
+		}
+		*b = rows
+		return nil
+	case map[string]any:
+		*b = migrateLegacyBindings(val)
+		return nil
+	default:
+		return fmt.Errorf("bindings must be a list or the old action tables, got %T", v)
+	}
+}
+
+func bindingsFromMaps(items []map[string]any) (BindingList, error) {
+	out := make(BindingList, 0, len(items))
+	for _, m := range items {
+		action, _ := m["action"].(string)
+		keys, _ := m["keys"].(string)
+		stay, _ := m["stay"].(bool)
+		out = append(out, Binding{Action: action, Keys: keys, Stay: stay})
+	}
+	return out, nil
+}
+
+// migrateLegacyBindings turns direct/leader/sticky fields into list rows.
+// direct_double and leader_double have no list equivalent; the key remains
+// and fires on a single press.
+func migrateLegacyBindings(table map[string]any) BindingList {
+	order := []string{"toggle", "next", "prev", "paste", "delete", "clear_cards", "pin", "settings"}
+	var out BindingList
+	for _, name := range order {
+		raw, ok := table[name]
+		if !ok {
+			continue
+		}
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if direct := strings.TrimSpace(asString(m["direct"])); direct != "" {
+			out = append(out, Binding{Action: name, Keys: direct})
+		}
+		if leader := strings.TrimSpace(asString(m["leader"])); leader != "" {
+			out = append(out, Binding{Action: name, Keys: "leader " + leader, Stay: asBool(m["sticky"])})
+		}
+	}
+	return out
+}
+
+func asString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func asBool(v any) bool {
+	b, _ := v.(bool)
+	return b
+}
+
+// finishLegacyLeader copies the old [leader].shortcut into the leader
+// binding when the file still uses action tables, or when it has no
+// binding list. A [[bindings]] list already names the leader key.
+func (c *Config) finishLegacyLeader(data []byte) {
+	array, table := bindingsKind(data)
+	if array {
+		c.Leader.Shortcut = ""
+		return
+	}
+	shortcut := strings.TrimSpace(c.Leader.Shortcut)
+	if shortcut == "" {
+		shortcut = "CmdOrCtrl+Shift+Space"
+	}
+	if table || c.leaderRow() < 0 {
+		rows := make(BindingList, 0, len(c.Bindings)+1)
+		rows = append(rows, Binding{Action: "leader", Keys: shortcut})
+		for _, row := range c.Bindings {
+			if row.Action == "leader" {
+				continue
+			}
+			rows = append(rows, row)
+		}
+		c.Bindings = rows
+	} else if strings.TrimSpace(c.Leader.Shortcut) != "" {
+		c.Bindings[c.leaderRow()].Keys = shortcut
+	}
+	c.Leader.Shortcut = ""
+}
+
+func (c Config) leaderRow() int {
+	for i, row := range c.Bindings {
+		if row.Action == "leader" {
+			return i
+		}
+	}
+	return -1
+}
+
+func bindingsKind(data []byte) (array, table bool) {
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[[bindings]]") {
+			array = true
+		}
+		if strings.HasPrefix(line, "[bindings.") || line == "[bindings]" {
+			table = true
+		}
+	}
+	return array, table
+}
+
+// KnownAction reports whether action is one snip can run.
+func KnownAction(action string) bool {
+	switch action {
+	case "leader", "toggle", "next", "prev", "paste", "delete", "clear_cards", "pin", "settings":
+		return true
+	default:
+		return false
+	}
+}
+
+// Format renders a parsed shortcut in the form the file stores.
+func (p ParsedBinding) Format() string {
+	if !p.Leader {
+		return p.Chord
+	}
+	chord := p.Chord
+	if utf8.RuneCountInString(chord) == 1 {
+		chord = strings.ToLower(chord)
+	}
+	return "leader " + chord
+}
+
+// CanonicalBindings rewrites each row to its stored spelling.
+// Stay is kept only on leader combos.
+func CanonicalBindings(rows []Binding) (BindingList, error) {
+	out := make(BindingList, len(rows))
+	for i, row := range rows {
+		parsed, err := ParseBinding(row.Keys)
+		if err != nil {
+			return nil, err
+		}
+		row.Keys = parsed.Format()
+		if !parsed.Leader {
+			row.Stay = false
+		}
+		out[i] = row
+	}
+	return out, nil
+}
+
 // Binding is one shortcut for an action. Keys is either a global combo
 // ("cmd+shift+v") or a leader combo ("leader d"), pressed after the leader key.
 // Stay keeps leader mode open after a leader combo runs.
@@ -48,6 +232,10 @@ func CheckBindings(rows []Binding) []*BindingIssue {
 	out := make([]*BindingIssue, len(rows))
 	seen := map[string]int{}
 	for i, row := range rows {
+		if !KnownAction(row.Action) {
+			out[i] = &BindingIssue{Code: "action", Token: row.Action}
+			continue
+		}
 		if row.Action == "leader" && HasLeaderPrefix(row.Keys) {
 			out[i] = &BindingIssue{Code: "leader"}
 			continue

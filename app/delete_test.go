@@ -23,15 +23,15 @@ func TestPasteboardHeldOnlyForTheDeletedGeneration(t *testing.T) {
 
 func TestClearCardsBinding(t *testing.T) {
 	cfg := config.Default()
-	if cfg.Bindings.ClearCards.Direct != "CmdOrCtrl+Shift+Option+Backspace" {
-		t.Fatalf("direct %q", cfg.Bindings.ClearCards.Direct)
+	if keys := firstKeys(cfg, "clear_cards", false); keys != "CmdOrCtrl+Shift+Option+Backspace" {
+		t.Fatalf("direct %q", keys)
 	}
-	if cfg.Bindings.ClearCards.Leader != "Shift+D" {
-		t.Fatalf("leader %q", cfg.Bindings.ClearCards.Leader)
+	if keys := firstKeys(cfg, "clear_cards", true); keys != "leader Shift+D" {
+		t.Fatalf("leader %q", keys)
 	}
 	found := false
-	for _, item := range cfg.Bindings.NamedBindings() {
-		if item.Name == "clear_cards" {
+	for _, row := range cfg.Bindings {
+		if row.Action == "clear_cards" {
 			found = true
 		}
 	}

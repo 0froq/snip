@@ -309,20 +309,47 @@ func (a *App) settingsCapture(c *ui.Context, f *config.Form, lang string) {
 }
 
 func (a *App) settingsShortcuts(c *ui.Context, f *config.Form, lang string) {
-	a.settingsSection(c, tr(lang, "hotkeys"), func() {
-		labeledInput(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
-		labeledInput(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
-		labeledInput(c, tr(lang, "double_ms"), &f.DoublePressMs)
-		labeledInput(c, tr(lang, "which_key_x"), &f.WhichKeyX)
-		labeledInput(c, tr(lang, "which_key_y"), &f.WhichKeyY)
-		text.Paragraph(c, tr(lang, "which_key_align_x"), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Ink})
-		input.Select(c, tr(lang, "which_key_align_x"), &f.WhichKeyAlignX, []string{config.AlignStart, config.AlignCenter, config.AlignEnd}, input.SelectOptions{})
-		text.Paragraph(c, tr(lang, "which_key_align_y"), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Ink})
-		input.Select(c, tr(lang, "which_key_align_y"), &f.WhichKeyAlignY, []string{config.AlignStart, config.AlignCenter, config.AlignEnd}, input.SelectOptions{})
-		for _, item := range f.Bindings.NamedBindings() {
-			settingsBinding(c, tr(lang, item.Name), item.Binding, lang)
+	found := map[string]*config.ActionBinding{}
+	for _, item := range f.Bindings.NamedBindings() {
+		bindingGroup(item.Name)
+		found[item.Name] = item.Binding
+	}
+	a.settingsSection(c, tr(lang, "group_cards"), func() {
+		for _, name := range []string{"next", "prev", "paste", "delete", "clear_cards", "pin"} {
+			settingsBinding(c, tr(lang, name), found[name], lang)
 		}
 	})
+	a.settingsSection(c, tr(lang, "group_leader"), func() {
+		shortcutField(c, tr(lang, "leader_shortcut"), &f.LeaderShortcut)
+		shortcutField(c, tr(lang, "leader_timeout"), &f.LeaderTimeout)
+		shortcutField(c, tr(lang, "double_ms"), &f.DoublePressMs)
+		shortcutField(c, tr(lang, "which_key_x"), &f.WhichKeyX)
+		shortcutField(c, tr(lang, "which_key_y"), &f.WhichKeyY)
+		aligns := []string{config.AlignStart, config.AlignCenter, config.AlignEnd}
+		shortcutChoice(c, tr(lang, "which_key_align_x"), &f.WhichKeyAlignX, aligns)
+		shortcutChoice(c, tr(lang, "which_key_align_y"), &f.WhichKeyAlignY, aligns)
+	})
+	a.settingsSection(c, tr(lang, "group_visibility"), func() {
+		settingsBinding(c, tr(lang, "toggle"), found["toggle"], lang)
+	})
+	a.settingsSection(c, tr(lang, "group_app"), func() {
+		settingsBinding(c, tr(lang, "settings"), found["settings"], lang)
+	})
+}
+
+// bindingGroup is the shortcuts section an action belongs to.
+// A new action has to be placed, or this panics.
+func bindingGroup(name string) string {
+	switch name {
+	case "next", "prev", "paste", "delete", "clear_cards", "pin":
+		return "cards"
+	case "toggle":
+		return "visibility"
+	case "settings":
+		return "app"
+	default:
+		panic("snip: shortcut " + name + " has no group")
+	}
 }
 
 func (a *App) settingsPrivacy(c *ui.Context, f *config.Form, lang string) {
@@ -548,15 +575,61 @@ func labeledInput(c *ui.Context, label string, value *string) {
 	})
 }
 
-func settingsBinding(c *ui.Context, label string, binding *config.ActionBinding, lang string) {
+// shortcutLabelDots is the label column. shortcutFieldDots is the key
+// column. Every shortcut row uses both, so the fields share a left edge.
+const (
+	shortcutLabelDots = 120
+	shortcutFieldDots = 150
+)
+
+func shortcutLine(c *ui.Context, label string, control func()) {
 	k := pixel.K(c)
-	ui.Column(c).Gap(k.D(3)).Padding(k.D(2), 0).Children(func() {
-		text.Heading(c, label, text.HeadingOptions{Level: 3, Slot: pixel.Ink})
-		labeledInput(c, tr(lang, "direct_binding"), &binding.Direct)
-		input.Checkbox(c, tr(lang, "double_press"), &binding.DirectDouble, input.CheckboxOptions{})
-		labeledInput(c, tr(lang, "leader_binding"), &binding.Leader)
-		ui.Row(c).Gap(k.D(6)).Children(func() {
+	ui.Row(c).Gap(k.D(4)).AlignItems(ui.Center).Shrink(0).Children(func() {
+		ui.Box(c).Width(k.D(shortcutLabelDots)).Shrink(0).Children(func() {
+			if label != "" {
+				text.Paragraph(c, label, text.ParagraphOptions{MaxLines: 2, Slot: pixel.Ink})
+			}
+		})
+		control()
+	})
+}
+
+func shortcutField(c *ui.Context, label string, value *string) {
+	shortcutLine(c, label, func() {
+		input.TextInput(c, label, value, input.TextInputOptions{Width: shortcutFieldDots})
+	})
+}
+
+func shortcutChoice(c *ui.Context, label string, value *string, options []string) {
+	k := pixel.K(c)
+	shortcutLine(c, label, func() {
+		ui.Box(c).Width(k.D(shortcutFieldDots)).Shrink(0).Children(func() {
+			pixelChoice(c, label, value, options, func(opt string) string { return opt })
+		})
+	})
+}
+
+func settingsBinding(c *ui.Context, label string, binding *config.ActionBinding, lang string) {
+	if binding == nil {
+		return
+	}
+	k := pixel.K(c)
+	ui.Column(c).Shrink(0).Gap(k.D(2)).Children(func() {
+		shortcutLine(c, label, func() {
+			text.Paragraph(c, tr(lang, "direct_binding"), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Faint})
+		})
+		shortcutField(c, "", &binding.Direct)
+		shortcutLine(c, "", func() {
+			input.Checkbox(c, tr(lang, "double_press"), &binding.DirectDouble, input.CheckboxOptions{})
+		})
+		shortcutLine(c, "", func() {
+			text.Paragraph(c, tr(lang, "leader_binding"), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Faint})
+		})
+		shortcutField(c, "", &binding.Leader)
+		shortcutLine(c, "", func() {
 			input.Checkbox(c, tr(lang, "double_press"), &binding.LeaderDouble, input.CheckboxOptions{})
+		})
+		shortcutLine(c, "", func() {
 			input.Checkbox(c, tr(lang, "sticky"), &binding.Sticky, input.CheckboxOptions{})
 		})
 	})

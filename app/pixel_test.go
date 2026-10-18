@@ -46,6 +46,30 @@ func TestAppearancePaletteFollowsNight(t *testing.T) {
 	}
 }
 
+func TestShortcutGroupsCoverActions(t *testing.T) {
+	cfg := config.Default()
+	seen := map[string]int{}
+	for _, item := range cfg.Bindings.NamedBindings() {
+		seen[bindingGroup(item.Name)]++
+	}
+	if seen["cards"] != 6 || seen["visibility"] != 1 || seen["app"] != 1 || len(seen) != 3 {
+		t.Fatalf("groups %v", seen)
+	}
+}
+
+func TestShortcutPageGroups(t *testing.T) {
+	a := New(config.Default(), "")
+	form := config.FormFrom(a.config())
+	form.SettingsTab = int(settingsShortcuts)
+	a.settingsForm = &form
+	tt := ui.NewTester(func(c *ui.Context) { a.settingsView(c) }, 640, 720)
+	for _, s := range []string{"Cards", "Leader mode", "Visibility", "App", "Next card", "Show or hide cards"} {
+		if !tt.HasText(s) {
+			t.Fatalf("missing %q in %v", s, tt.Texts())
+		}
+	}
+}
+
 func TestSelectedTabMeetsTheDivider(t *testing.T) {
 	pal := pixel.AutumnDay
 	face := pal.C(pixel.Face)

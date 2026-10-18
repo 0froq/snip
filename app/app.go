@@ -293,19 +293,58 @@ func (a *App) applyWindowFlags(win *mygo.Window) {
 	win.SetAlwaysOnTop(w.AlwaysOnTop)
 }
 
-func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, placeY int, havePlacement bool) (int, int) {
+func (a *App) cardOrigin(id string, cascadeIndex int, cardW, cardH int, placeX, placeY int, havePlacement bool) (int, int) {
 	a.mu.Lock()
 	if p, ok := a.cardPositions[id]; ok {
 		a.mu.Unlock()
 		return p.x, p.y
 	}
 	a.mu.Unlock()
+	var x, y int
 	if havePlacement {
-		return placeX, placeY
+		x, y = placeX, placeY
+	} else {
+		c := a.config().Card
+		x = c.CascadeOriginX + (cascadeIndex%8)*c.CascadeStepX
+		y = c.CascadeOriginY + (cascadeIndex%12)*c.CascadeStepY
 	}
-	c := a.config().Card
-	return c.CascadeOriginX + (cascadeIndex%8)*c.CascadeStepX,
-		c.CascadeOriginY + (cascadeIndex%12)*c.CascadeStepY
+	return macplace.AvoidCards(x, y, cardW, cardH, a.visibleCardRects(id), a.workAreaAt(x, y, cardW, cardH))
+}
+
+// visibleCardRects is the on-screen bounds of every card except id. Hidden
+// cards are omitted: a new note may use the selection even when a dismissed
+// card last sat there.
+func (a *App) visibleCardRects(except string) []macplace.Rect {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.visible {
+		return nil
+	}
+	out := make([]macplace.Rect, 0, len(a.cards))
+	for id, h := range a.cards {
+		if id == except || h == nil || h.win == nil {
+			continue
+		}
+		w, ht := h.win.Size()
+		if w < 1 || ht < 1 {
+			continue
+		}
+		x, y := h.win.Position()
+		out = append(out, macplace.Rect{X: x, Y: y, Width: w, Height: ht})
+	}
+	return out
+}
+
+func (a *App) workAreaAt(x, y, w, h int) macplace.Rect {
+	areas := screenWorkAreas()
+	if len(areas) == 0 {
+		return macplace.Rect{}
+	}
+	displays := make([]macplace.Display, len(areas))
+	for i, area := range areas {
+		displays[i] = macplace.Display{WorkArea: area}
+	}
+	return macplace.WorkAreaForPoint(x+w/2, y+h/2, displays)
 }
 
 // fitCardWidth reflows at the card's current viewport. A viewport of 0 is

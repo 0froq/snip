@@ -18,6 +18,10 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+// activeCardMix is how far the selected card's surface moves toward the accent.
+// 0.25 of the default accent is dark #5B4A39 and light #EAD5C6.
+const activeCardMix float32 = 0.25
+
 // App coordinates clipboard watching, cards, and shortcuts.
 type App struct {
 	cfg      config.Config
@@ -241,7 +245,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		Panel:           macplace.Supported || cfg.Window.EffectivePanel(),
 		AlwaysOnTop:     cfg.Window.AlwaysOnTop,
 		DisableShadow:   true,
-		BackgroundColor: "light-dark(#F3EADF, #312924)",
+		BackgroundColor: "light-dark(#F7F4EF, #2E2C29)",
 		Content:         ui.View(func(c *ui.Context) { a.cardView(c, host) }),
 	})
 	host.win = win
@@ -540,7 +544,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	surface := t.Surface
 	border := paperStroke(dark)
 	if host.selected || host.pulse {
-		surface = t.Surface.Mix(accent, 0.14)
+		surface = t.Surface.Mix(accent, activeCardMix)
 		border = accent.Alpha(0.25)
 	}
 	cardCfg := cfg.Card

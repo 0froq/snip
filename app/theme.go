@@ -10,14 +10,16 @@ func paperTheme(dark bool, active ui.Color, font ui.Font) *ui.Theme {
 	if dark {
 		t = ui.DarkTheme()
 		t.Background = ui.Hex("#1A1613")
-		t.Surface = ui.Hex("#312924")
-		t.SurfaceHover = ui.Hex("#3C332C")
+		// Neutral warm gray. The previous #312924 was a redder brown.
+		t.Surface = ui.Hex("#2E2C29")
+		t.SurfaceHover = ui.Hex("#3A3834")
 		t.Text = paperInk(true)
 		t.TextMuted = ui.Hex("#B6A694")
 	} else {
 		t.Background = ui.Hex("#E6D9C8")
-		t.Surface = ui.Hex("#F3EADF")
-		t.SurfaceHover = ui.Hex("#E9DFD0")
+		// Neutral warm paper. The previous #F3EADF leaned pink.
+		t.Surface = ui.Hex("#F7F4EF")
+		t.SurfaceHover = ui.Hex("#EFEBE4")
 		t.Text = paperInk(false)
 		t.TextMuted = ui.Hex("#8A7764")
 	}

@@ -6,4 +6,7 @@ func TestWindowCornerRadius(t *testing.T) {
 	if WindowCornerRadius != 6 {
 		t.Fatalf("corner radius %v", WindowCornerRadius)
 	}
+	if CornerCurveContinuous != "continuous" {
+		t.Fatalf("corner curve %q", CornerCurveContinuous)
+	}
 }

@@ -18,7 +18,8 @@ var (
 )
 
 // SquareWindow clears the titled style bits that make AppKit use its own
-// ~10–12pt corner radius, then clips the content view to WindowCornerRadius.
+// ~10–12pt corner radius, then clips the content view to WindowCornerRadius
+// with a continuous (squircle) corner curve.
 // The window is non-opaque so the clipped corners show through. The resizable
 // bit stays on: borderless windows still need it for edge tracking and resize
 // cursors. Hit testing uses the rectangular frame, so the resize band is unchanged.
@@ -103,5 +104,8 @@ func roundContent(view id, radius float64) {
 		return
 	}
 	setLayerRadius(layer, sel("setCornerRadius:"), radius)
+	if send(layer, "respondsToSelector:", uintptr(sel("setCornerCurve:"))) != 0 {
+		send(layer, "setCornerCurve:", uintptr(nsString(CornerCurveContinuous)))
+	}
 	send(layer, "setMasksToBounds:", 1)
 }

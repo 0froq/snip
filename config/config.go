@@ -131,6 +131,7 @@ type Config struct {
 	Pasteboard      Pasteboard     `toml:"pasteboard"`
 	Leader          Leader         `toml:"leader"`
 	Motion          Motion         `toml:"motion"`
+	Theme           Theme          `toml:"theme"`
 	Language        string         `toml:"language"`
 }
 
@@ -186,6 +187,7 @@ func Default() Config {
 			WhichKeyAlignY: AlignEnd,
 		},
 		Motion:   Motion{Enabled: true, DurationMs: 160},
+		Theme:    Theme{Palette: PaletteAuto},
 		Language: "en",
 		Secrets: Secrets{
 			MaskEnabled:     true,

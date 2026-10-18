@@ -2,6 +2,7 @@ package app
 
 import (
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
+	"github.com/0froq/snip/config"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -13,14 +14,39 @@ const cardFrameDots = 3
 
 // usePixel installs the pixel kit for this frame. Call it before any
 // pixel component. dark is the system appearance read before Use, because
-// Use replaces the theme.
-func usePixel(c *ui.Context, dark bool, lang string) pixel.Kit {
+// Use replaces the theme. Auto maps that appearance to Autumn Day or Autumn Night.
+func usePixel(c *ui.Context, cfg config.Config, dark bool) pixel.Kit {
 	pixel.Use(c, pixel.Settings{
-		Palette: appearancePalette(dark),
+		Palette: resolvePalette(cfg.Theme.EffectivePalette(), dark),
 		Dot:     pixelDot,
-		Locale:  pixelLocale(lang),
+		Locale:  pixelLocale(cfg.Language),
 	})
 	return pixel.K(c)
+}
+
+func resolvePalette(name string, dark bool) *pixel.Palette {
+	switch name {
+	case config.PaletteAuto, "":
+		return appearancePalette(dark)
+	case config.PaletteSpringDay:
+		return pixel.SpringDay
+	case config.PaletteSpringNight:
+		return pixel.SpringNight
+	case config.PaletteSummerDay:
+		return pixel.SummerDay
+	case config.PaletteSummerNight:
+		return pixel.SummerNight
+	case config.PaletteAutumnDay:
+		return pixel.AutumnDay
+	case config.PaletteAutumnNight:
+		return pixel.AutumnNight
+	case config.PaletteWinterDay:
+		return pixel.WinterDay
+	case config.PaletteWinterNight:
+		return pixel.WinterNight
+	default:
+		return appearancePalette(dark)
+	}
 }
 
 // appearancePalette follows the system appearance until a saved palette

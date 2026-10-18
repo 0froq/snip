@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/0froq/snip/config"
@@ -25,6 +26,16 @@ func TestSettingsDraftSurvivesTabChange(t *testing.T) {
 	f.SettingsTab = int(settingsCards)
 	if f.ClipboardPollMs != "450" || f.SettingsTab != int(settingsCards) {
 		t.Fatalf("draft poll %q tab %d", f.ClipboardPollMs, f.SettingsTab)
+	}
+}
+
+func TestPaletteNames(t *testing.T) {
+	for _, id := range config.PaletteIDs {
+		key := "palette_" + strings.ReplaceAll(id, "-", "_")
+		en, zh := tr("en", key), tr("zh", key)
+		if en == key || zh == key || en == zh {
+			t.Fatalf("%s en %q zh %q", key, en, zh)
+		}
 	}
 }
 

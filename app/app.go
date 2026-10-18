@@ -550,7 +550,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	cfg := a.config()
 	// Read appearance before Use replaces the theme.
 	dark := c.Theme().Dark
-	k := usePixel(c, dark, cfg.Language)
+	k := usePixel(c, cfg, dark)
 	font := cfg.Card.UIFont(0)
 	ink := k.C(pixel.Ink)
 	cardCfg := cfg.Card

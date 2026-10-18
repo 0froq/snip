@@ -111,7 +111,10 @@ func (a *App) settingsView(c *ui.Context) {
 	if lang == "" {
 		lang = "en"
 	}
-	k := usePixel(c, dark, lang)
+	draft := a.config()
+	draft.Language = lang
+	draft.Theme.Palette = f.Palette
+	k := usePixel(c, draft, dark)
 	if c.Shortcut(ui.Cmd, ui.KeyW) || c.Shortcut(0, ui.KeyEscape) {
 		a.closeSettings()
 	}
@@ -208,6 +211,11 @@ func (a *App) settingsGeneral(c *ui.Context, f *config.Form, lang string) {
 }
 
 func (a *App) settingsCards(c *ui.Context, f *config.Form, lang string) {
+	a.settingsSection(c, tr(lang, "palette"), func() {
+		pixelChoice(c, tr(lang, "palette"), &f.Palette, config.PaletteIDs, func(id string) string {
+			return tr(lang, "palette_"+strings.ReplaceAll(id, "-", "_"))
+		})
+	})
 	a.settingsSection(c, tr(lang, "windows"), func() {
 		input.Checkbox(c, tr(lang, "always_on_top"), &f.AlwaysOnTop, input.CheckboxOptions{})
 		input.Checkbox(c, tr(lang, "all_spaces"), &f.VisibleOnAllWorkspaces, input.CheckboxOptions{})
@@ -223,7 +231,6 @@ func (a *App) settingsCards(c *ui.Context, f *config.Form, lang string) {
 		labeledInput(c, tr(lang, "pad_y"), &f.PaddingY)
 		labeledInput(c, tr(lang, "font_family"), &f.FontFamily)
 		labeledInput(c, tr(lang, "font"), &f.FontSize)
-		labeledInput(c, tr(lang, "active_color"), &f.ActiveColor)
 		input.Checkbox(c, tr(lang, "double_click_paste"), &f.DoubleClickPaste, input.CheckboxOptions{})
 		labeledInput(c, "Cascade origin x", &f.CascadeOriginX)
 		labeledInput(c, "Cascade origin y", &f.CascadeOriginY)

@@ -39,6 +39,11 @@ func TestAppearancePaletteFollowsNight(t *testing.T) {
 	if appearancePalette(false) != pixel.AutumnDay || appearancePalette(true) != pixel.AutumnNight {
 		t.Fatalf("day %s night %s", appearancePalette(false).Name, appearancePalette(true).Name)
 	}
+	day := resolvePalette(config.PaletteAuto, false)
+	night := resolvePalette(config.PaletteWinterNight, true)
+	if day != pixel.AutumnDay || night != pixel.WinterNight {
+		t.Fatalf("auto %s named %s", day.Name, night.Name)
+	}
 }
 
 func TestWritePixelCardShots(t *testing.T) {
@@ -56,7 +61,7 @@ func TestWritePixelCardShots(t *testing.T) {
 func renderWhichKey(t *testing.T) *image.RGBA {
 	t.Helper()
 	tt := ui.NewTester(func(c *ui.Context) {
-		k := usePixel(c, false, "en")
+		k := usePixel(c, config.Config{Language: "en"}, false)
 		pad := k.D(cardFrameDots + 3)
 		ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
 			g := k.Canvas(p, r)
@@ -85,7 +90,7 @@ func renderWhichKey(t *testing.T) *image.RGBA {
 func renderClose(t *testing.T) *image.RGBA {
 	t.Helper()
 	tt := ui.NewTester(func(c *ui.Context) {
-		k := usePixel(c, false, "en")
+		k := usePixel(c, config.Config{Language: "en"}, false)
 		ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
 			drawCardChrome(k.Canvas(p, r), true, false)
 		}).Children(func() {
@@ -103,7 +108,7 @@ func renderSettings(t *testing.T) *image.RGBA {
 	tab := 1
 	on := true
 	tt := ui.NewTester(func(c *ui.Context) {
-		k := usePixel(c, false, "en")
+		k := usePixel(c, config.Config{Language: "en"}, false)
 		pad := k.D(cardFrameDots + 3)
 		ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
 			g := k.Canvas(p, r)

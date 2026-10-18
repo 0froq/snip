@@ -469,7 +469,7 @@ func showChrome(win *mygo.Window) {
 
 func (a *App) badgeView(c *ui.Context, h *cardUI) {
 	dark := c.Theme().Dark
-	k := usePixel(c, dark, a.config().Language)
+	k := usePixel(c, a.config(), dark)
 	label := h.jumpLabel
 	ui.Column(c).Fill().PassThrough().Draw(func(p *ui.Painter, r ui.Rect) {
 		g := k.Canvas(p, r)
@@ -492,7 +492,7 @@ func (a *App) badgeView(c *ui.Context, h *cardUI) {
 func (a *App) whichKeyView(c *ui.Context) {
 	dark := c.Theme().Dark
 	cfg := a.config()
-	k := usePixel(c, dark, cfg.Language)
+	k := usePixel(c, cfg, dark)
 	items := append([]whichKeyItem(nil), a.whichItems...)
 	keyW := 0
 	for _, item := range items {

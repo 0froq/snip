@@ -57,6 +57,7 @@ type Form struct {
 	MotionEnabled     bool
 	MotionMs          string
 	Language          string
+	Palette           string
 	Message           string
 }
 
@@ -105,6 +106,7 @@ func FormFrom(c Config) Form {
 		MotionEnabled:          c.Motion.Enabled,
 		MotionMs:               strconv.Itoa(c.Motion.DurationMs),
 		Language:               c.Language,
+		Palette:                c.Theme.EffectivePalette(),
 	}
 }
 
@@ -158,6 +160,11 @@ func (f Form) Parse(prev Config) (Config, error) {
 	}
 	cfg.Card.FontFamily = strings.TrimSpace(f.FontFamily)
 	cfg.Card.ActiveColor = strings.TrimSpace(f.ActiveColor)
+	palette, err := NormalizePalette(f.Palette)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Theme.Palette = palette
 	cfg.Card.DoubleClickPaste = f.DoubleClickPaste
 	mode, err := NormalizeCaptureMode(f.CaptureMode)
 	if err != nil {

@@ -29,6 +29,12 @@ cascade_step_y = 10
 
 language = "en"
 
+[theme]
+# auto follows the system appearance (Autumn Day / Autumn Night).
+# Or spring-day, spring-night, summer-day, summer-night,
+# autumn-day, autumn-night, winter-day, winter-night.
+palette = "auto"
+
 [capture]
 # mode: all (default), blocklist, or allowlist. Lists store bundle ids.
 mode = "all"

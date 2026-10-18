@@ -19,11 +19,11 @@ var (
 
 // SquareWindow clears the titled window chrome, including
 // fullSizeContentView, which keeps AppKit's light hairline after the title
-// bar is gone. The content view is then clipped to WindowCornerRadius with
-// a continuous corner curve. The window is non-opaque so the clipped
-// corners show through. The resizable bit stays on: borderless windows
-// still need it for edge tracking and resize cursors. Hit testing uses the
-// rectangular frame, so the resize band is unchanged.
+// bar is gone. The content view is not rounded: a corner radius or a
+// continuous corner curve would clip the pixel frame's stepped corners.
+// The window stays non-opaque so those empty corner dots show the desktop.
+// The resizable bit stays on: borderless windows still need it for edge
+// tracking and resize cursors. Hit testing uses the rectangular frame.
 func SquareWindow(handle uintptr) {
 	if handle == 0 {
 		return
@@ -37,7 +37,7 @@ func SquareWindow(handle uintptr) {
 	send(w, "setTitlebarAppearsTransparent:", 1)
 	send(w, "setTitleVisibility:", 1)
 	content := send(w, "contentView")
-	roundContent(content, WindowCornerRadius)
+	flattenContent(content)
 	// setStyleMask keeps the old content rect. The window frame and the
 	// view the border is drawn into then disagree by about a title bar.
 	// Read both rects as arm64 HFAs and make the content view fill the frame.
@@ -89,7 +89,7 @@ func syncContentFrame(w, content id) {
 	}
 }
 
-func roundContent(view id, radius float64) {
+func flattenContent(view id) {
 	if view == 0 {
 		return
 	}
@@ -102,13 +102,15 @@ func roundContent(view id, radius float64) {
 	if layer == 0 {
 		return
 	}
-	setLayerRadius(layer, sel("setCornerRadius:"), radius)
+	setLayerRadius(layer, sel("setCornerRadius:"), 0)
 	setLayerRadius(layer, sel("setBorderWidth:"), 0)
+	// A layer that once used the continuous curve keeps it until told
+	// otherwise. Radius 0 on that curve is still a smooth clip.
 	if send(layer, "respondsToSelector:", uintptr(sel("setCornerCurve:"))) != 0 {
-		send(layer, "setCornerCurve:", uintptr(nsString(CornerCurveContinuous)))
+		send(layer, "setCornerCurve:", uintptr(nsString("circular")))
 	}
 	send(layer, "setOpaque:", 0)
 	clear := send(class("NSColor"), "clearColor")
 	send(layer, "setBackgroundColor:", uintptr(send(clear, "CGColor")))
-	send(layer, "setMasksToBounds:", 1)
+	send(layer, "setMasksToBounds:", 0)
 }

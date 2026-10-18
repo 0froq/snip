@@ -2,11 +2,8 @@ package macplace
 
 import "testing"
 
-func TestWindowCornerRadius(t *testing.T) {
-	if WindowCornerRadius != 6 {
+func TestWindowMaskIsSquare(t *testing.T) {
+	if WindowCornerRadius != 0 {
 		t.Fatalf("corner radius %v", WindowCornerRadius)
-	}
-	if CornerCurveContinuous != "continuous" {
-		t.Fatalf("corner curve %q", CornerCurveContinuous)
 	}
 }

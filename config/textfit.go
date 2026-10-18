@@ -9,7 +9,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const cardBorderPx = 1
+// cardBorderPx matches a 3-dot pixel window frame at 2 DIPs per dot.
+const cardBorderPx = 6
 
 // CardResizeMargin is the drag band around a card. The native text view is
 // inset by at least this much so the band stays hittable, and the window

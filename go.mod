@@ -3,6 +3,7 @@ module github.com/0froq/snip
 go 1.27.1
 
 require (
+	git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI v0.0.0-20261017053108-03e1f917066f
 	github.com/BurntSushi/toml v1.6.0
 	github.com/ebitengine/purego v0.11.1
 	github.com/egoist/mygo v0.5.5

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
 	"github.com/0froq/snip/config"
 	"github.com/0froq/snip/internal/macpaste"
 	"github.com/0froq/snip/internal/macplace"
@@ -17,10 +18,6 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
-
-// activeCardMix is how far the selected card's surface moves toward the accent.
-// 0.25 of the default accent is dark #5B4A39 and light #EAD5C6.
-const activeCardMix float32 = 0.25
 
 // App coordinates clipboard watching, cards, and shortcuts.
 type App struct {
@@ -254,10 +251,11 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		Frameless: cfg.Window.EffectiveFrameless(),
 		// AppKit needs the nonactivating panel style at creation time, even
 		// when the legacy panel setting is disabled. Settings is unaffected.
-		Panel:           macplace.Supported || cfg.Window.EffectivePanel(),
-		AlwaysOnTop:     cfg.Window.AlwaysOnTop,
-		DisableShadow:   true,
-		BackgroundColor: "light-dark(#F7F4EF, #2E2C29)",
+		Panel:         macplace.Supported || cfg.Window.EffectivePanel(),
+		AlwaysOnTop:   cfg.Window.AlwaysOnTop,
+		DisableShadow: true,
+		// Clear, so the frame's empty corner dots show the desktop.
+		BackgroundColor: "transparent",
 		Content:         ui.View(func(c *ui.Context) { a.cardView(c, host) }),
 	})
 	host.win = win
@@ -550,68 +548,46 @@ func (a *App) rememberCardPosition(id string, win *mygo.Window) {
 
 func (a *App) cardView(c *ui.Context, host *cardUI) {
 	cfg := a.config()
+	// Read appearance before Use replaces the theme.
 	dark := c.Theme().Dark
-	accent := activeColor(cfg.Card.ActiveColor, dark)
+	k := usePixel(c, dark, cfg.Language)
 	font := cfg.Card.UIFont(0)
-	c.SetTheme(paperTheme(dark, accent, font))
-	t := c.Theme()
-	surface := t.Surface
-	border := paperStroke(dark)
-	if host.selected || host.pulse {
-		surface = t.Surface.Mix(accent, activeCardMix)
-		border = accent.Alpha(0.25)
-	}
+	ink := k.C(pixel.Ink)
 	cardCfg := cfg.Card
 	padX := float32(cardCfg.EffectivePaddingX())
 	padY := float32(cardCfg.EffectivePaddingY())
-	// Enter still fades the card in. Color flags stay off: with every flag
-	// false the toolkit tweens colors anyway, and a selection swap has to
-	// land in the press frame. Position is named so Colors stays off; the
-	// shell does not move inside the window.
-	motion := ui.ElementTransition{Duration: cfg.Motion.Duration(), Position: true}
-	if cfg.Motion.Enabled {
-		motion.Enter = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 8}
-	}
-	radius := float32(macplace.WindowCornerRadius)
-	// Motion stays on a layer whose colors do not change. The stroke and
-	// the paper sit inside it, so a selection swap does not tween, and the
-	// 25% edge stays over the desktop.
-	shell := ui.Column(c).Fill().
-		Radius(radius).
-		FocusRing(false)
-	if cfg.Motion.Enabled {
-		shell = shell.Transition(motion)
-	}
+	frame := k.D(cardFrameDots)
+	// No color tween and no scale: a selection swap is a palette slot, and
+	// a scale would blur the dots. Enter motion stays off for the same reason.
+	shell := ui.Column(c).Fill().FocusRing(false)
 	shell = cardPointerInput(a, host, host.win, shell).Cursor(edgeCursor(host.hoverEdge))
 	cardHot := shell.Hovered()
 	if host.textHost != nil {
-		ink := paperInk(dark)
 		host.textHost.SetColor(ink.R, ink.G, ink.B)
 	}
+	active := host.selected || host.pulse
+	editing := host.textHost != nil && host.textHost.Editing()
 	shell.Children(func() {
-		ui.Column(c).Fill().
-			Radius(radius).
-			Border(1, border).
-			FocusRing(false).
-			Children(func() {
-				ui.Column(c).Fill().
-					Padding(padY, padX, padY, padX).
-					Background(surface).
-					Radius(radius - 1).
-					Children(func() {
-						// macOS draws the string in the NSTextView. Other platforms scroll
-						// the full string in the toolkit; nothing is ellipsized.
-						if macplace.NativeCardText {
-							return
-						}
-						ui.Scroll(c).Fill().Children(func() {
-							ui.Text(c, host.display).
-								Font(font.Family).
-								FontSize(font.Size).
-								TextColor(paperInk(dark))
-						})
+		ui.Column(c).Fill().FocusRing(false).Draw(func(p *ui.Painter, r ui.Rect) {
+			drawCardChrome(k.Canvas(p, r), active, editing)
+		}).Children(func() {
+			ui.Column(c).Fill().
+				Padding(padY+frame, padX+frame, padY+frame, padX+frame).
+				Children(func() {
+					// macOS draws the string in the NSTextView, in the
+					// configured face so code and CJK stay sharp. Other
+					// platforms scroll the same face in the toolkit.
+					if macplace.NativeCardText {
+						return
+					}
+					ui.Scroll(c).Fill().Children(func() {
+						ui.Text(c, host.display).
+							Font(font.Family).
+							FontSize(font.Size).
+							TextColor(ink)
 					})
-			})
+				})
+		})
 		if cardHot || host.closePress {
 			cardCloseButton(c, host.closeHot)
 		}
@@ -834,7 +810,7 @@ func (a *App) attachCardText(host *cardUI) {
 	}
 	cfg := a.config().Card
 	w, h := host.win.Size()
-	ink := paperInk(false)
+	ink := appearancePalette(false).C(pixel.Ink)
 	host.textHost = macplace.AttachCardText(host.win.NativeHandle(), macplace.CardTextOptions{
 		Text:         host.display,
 		FontFamily:   cfg.EffectiveFontFamily(),

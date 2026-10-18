@@ -74,8 +74,7 @@ func Origin(mode config.Placement, cardW, cardH int) (x, y int, ok bool) {
 		displays := readDisplays()
 		if mode == config.PlacementNearSelection {
 			if ax, okSel := selectionBounds(); okSel {
-				wa := WorkAreaForPoint(ax.X+ax.Width/2, ax.Y+ax.Height/2, displays)
-				rx, ry := PlaceBelowOrAbove(ax, cardW, cardH, wa)
+				rx, ry, _ := PlaceCard(ax, true, 0, 0, false, displays, cardW, cardH)
 				result.x, result.y, result.ok = rx, ry, true
 				return
 			}
@@ -83,8 +82,7 @@ func Origin(mode config.Placement, cardW, cardH int) (x, y int, ok bool) {
 		if mode == config.PlacementNearSelection || mode == config.PlacementNearCursor {
 			cx, cy, okCur := cursorPoint()
 			if okCur {
-				wa := WorkAreaForPoint(cx, cy, displays)
-				rx, ry := PlaceNearCursor(cx, cy, cardW, cardH, wa)
+				rx, ry, _ := PlaceCard(Rect{}, false, cx, cy, true, displays, cardW, cardH)
 				result.x, result.y, result.ok = rx, ry, true
 			}
 		}
@@ -152,8 +150,11 @@ func frontmostPID() int32 {
 
 func cursorPoint() (int, int, bool) {
 	p := msgPoint(class("NSEvent"), sel("mouseLocation"))
-	h := primaryScreenHeight()
-	return int(p.x), int(h - p.y), true
+	y, ok := FlipAppKitY(p.y, primaryScreenHeight())
+	if !ok {
+		return 0, 0, false
+	}
+	return int(p.x), y, true
 }
 
 func readDisplays() []Display {
@@ -302,26 +303,79 @@ type nsRect struct {
 }
 
 var (
-	rectOnce sync.Once
-	readRect func(id, objc.SEL) nsRect
+	rectOnce  sync.Once
+	readRect  func(id, objc.SEL) nsRect
+	pointOnce sync.Once
+	readPoint func(id, objc.SEL) nsPoint
+	stretOnce sync.Once
+	stretAddr uintptr
 )
 
-// msgRect reads an NSRect-returning method. On arm64 that struct is four
-// float64s, an HFA returned in d0–d3. Passing an out-pointer through
-// SyscallN leaves the Go value zero, and windowDidEndLiveResize then
-// setFrame's the card to the bottom-left of the screen.
-func msgRect(obj id, s objc.SEL) nsRect {
+// structReturnSend is the objc entry that returns an NSRect.
+// arm64 has no objc_msgSend_stret: a four-double NSRect is an HFA in d0–d3
+// and comes back through objc_msgSend. amd64 returns it through
+// objc_msgSend_stret.
+func structReturnSend() uintptr {
 	load()
-	rectOnce.Do(func() {
-		purego.RegisterFunc(&readRect, msgSendAddr)
+	if runtime.GOARCH != "amd64" {
+		return msgSendAddr
+	}
+	stretOnce.Do(func() {
+		stretAddr = dlsym(libObjC, "objc_msgSend_stret")
 	})
-	return readRect(obj, s)
+	return stretAddr
 }
 
+// msgRect reads an NSRect-returning method.
+//
+// On arm64 the value is four float64s. RegisterFunc copies d0–d3 back into
+// the struct. SyscallN does not: it only returns the integer registers, and
+// the out-pointer sits in x2 while the indirect-result register x8 is left
+// at 0. e310696 switched this helper to RegisterFunc only. That made
+// NSWindow.frame visible to the resize snap, but a screen rect that the
+// out-pointer had been returning then came back empty, and placement clamped
+// the new card onto that empty rect. A positive out-pointer is therefore
+// kept. A non-positive one is not the screen origin: the HFA read is used
+// instead, which is what keeps a live-resize frame from being treated as
+// (0,0). When both are empty the result stays empty so the caller can skip
+// the write.
+func msgRect(obj id, s objc.SEL) nsRect {
+	load()
+	if runtime.GOARCH == "arm64" {
+		var indirect nsRect
+		_, _, _ = purego.SyscallN(msgSendAddr, uintptr(obj), uintptr(s), uintptr(unsafe.Pointer(&indirect)))
+		if usableFrame(indirect.origin.x, indirect.origin.y, indirect.size.width, indirect.size.height) {
+			return indirect
+		}
+	}
+	rectOnce.Do(func() {
+		purego.RegisterFunc(&readRect, structReturnSend())
+	})
+	direct := readRect(obj, s)
+	if usableFrame(direct.origin.x, direct.origin.y, direct.size.width, direct.size.height) {
+		return direct
+	}
+	return nsRect{}
+}
+
+// msgPoint reads an NSPoint-returning method. Two float64s are an HFA in
+// d0–d1 on arm64 and in xmm0/xmm1 on amd64. SyscallN leaves the Go value at
+// (0,0), which is also the bottom-left of the primary screen. Once
+// primaryScreenHeight() is a real height, flipping that failed point
+// (y = height - 0) parks the cursor fallback on the bottom edge.
 func msgPoint(obj id, s objc.SEL) nsPoint {
-	var p nsPoint
-	_, _, _ = purego.SyscallN(msgSendAddr, uintptr(obj), uintptr(s), uintptr(unsafe.Pointer(&p)))
-	return p
+	load()
+	if runtime.GOARCH == "arm64" {
+		var indirect nsPoint
+		_, _, _ = purego.SyscallN(msgSendAddr, uintptr(obj), uintptr(s), uintptr(unsafe.Pointer(&indirect)))
+		if indirect.x != 0 || indirect.y != 0 {
+			return indirect
+		}
+	}
+	pointOnce.Do(func() {
+		purego.RegisterFunc(&readPoint, msgSendAddr)
+	})
+	return readPoint(obj, s)
 }
 
 func primaryScreenHeight() float64 {

@@ -21,6 +21,7 @@ const NativeCardText = true
 const (
 	nsViewWidthSizable     = 2
 	nsEventModifierCommand = 1 << 20
+	nsScrollerStyleOverlay = 1
 	// Left, right, and other mouse-down. A global monitor only sees events
 	// delivered to other apps; the local one sees events in this app.
 	mouseDownMask = (1 << 1) | (1 << 3) | (1 << 25)
@@ -114,6 +115,10 @@ func AttachCardText(handle uintptr, opt CardTextOptions) *CardText {
 	send(scroll, "setHasVerticalScroller:", 1)
 	send(scroll, "setHasHorizontalScroller:", 0)
 	send(scroll, "setAutohidesScrollers:", 1)
+	// Overlay scrollers do not narrow the clip view. A legacy scroller
+	// would, and the last word would wrap in a card sized to the ink.
+	send(scroll, "setScrollerStyle:", nsScrollerStyleOverlay)
+	send(scroll, "setAutomaticallyAdjustsContentInsets:", 0)
 	send(scroll, "setAutoresizingMask:", 0)
 	send(scroll, "setDocumentView:", uintptr(view))
 

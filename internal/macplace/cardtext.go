@@ -119,9 +119,12 @@ func pointInNSRect(px, py, x, y, w, h float64) bool {
 	return w > 0 && h > 0 && px >= x && py >= y && px < x+w && py < y+h
 }
 
-// FontFace is the first concrete family in a CSS-style list. Generic
-// names (-apple-system, system-ui, sans-serif, serif, monospace) are
-// skipped. system is true when the list has no concrete family.
+// FontFace is the face the card text view draws with, which is the face
+// the card width is measured with. A leading generic (-apple-system,
+// system-ui, sans-serif, serif, monospace) is the system font: names after
+// it only cover glyphs that face lacks, and are not the face for the whole
+// string. A leading concrete family is that face. system is true when the
+// text view should use the system font.
 func FontFace(family string) (name string, system bool) {
 	start := 0
 	for i := 0; i <= len(family); i++ {
@@ -134,8 +137,7 @@ func FontFace(family string) (name string, system bool) {
 			continue
 		}
 		if genericFont(part) {
-			system = true
-			continue
+			return "", true
 		}
 		return part, false
 	}

@@ -30,6 +30,10 @@ const (
 	TextContainerInsetX = 0.0
 	TextContainerInsetY = 0.0
 	LineFragmentPadding = 5.0
+	// lineFitSlack keeps the fragment strictly wider than the ink. A line
+	// that fills the fragment exactly wraps the last word when the text
+	// view's advances are a fraction over the measure.
+	lineFitSlack = 1.0
 )
 
 // CardBorderPx is the slip border width in the card view.
@@ -275,7 +279,7 @@ func (c Card) naturalSlipWidth(display string) int {
 	// min_width is a resize floor, not part of this measurement.
 	w, _ := ui.ShapeText(display, c.cardFont(), 0).Size()
 	chrome := 2*float64(c.FrameInsetX()) + 2*TextContainerInsetX + 2*LineFragmentPadding
-	est := int(math.Ceil(float64(w) + chrome))
+	est := int(math.Ceil(float64(w) + chrome + lineFitSlack))
 	if est < 1 {
 		return 1
 	}

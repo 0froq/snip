@@ -16,7 +16,7 @@ func TestEstimateSizeOneLine(t *testing.T) {
 	}
 	ink, _ := ui.ShapeText("hi", c.cardFont(), 0).Size()
 	chrome := 2*float64(c.FrameInsetX()) + 2*TextContainerInsetX + 2*LineFragmentPadding
-	want := int(math.Ceil(float64(ink) + chrome))
+	want := int(math.Ceil(float64(ink) + chrome + lineFitSlack))
 	if layout.Width != want {
 		t.Fatalf("width %d want ink+padding %d", layout.Width, want)
 	}
@@ -26,6 +26,33 @@ func TestEstimateSizeOneLine(t *testing.T) {
 	chosen := c.Layout("hi", 200, 0)
 	if chosen.Width != 200 {
 		t.Fatalf("resized width %d", chosen.Width)
+	}
+}
+
+func TestVoidJingleDeployFitsOnOneLine(t *testing.T) {
+	c := Default().Card
+	const text = "void-jingle deploy"
+	layout := c.Layout(text, 0, 0)
+	if layout.FullLines != 1 || layout.Scrolls || layout.Width >= c.EffectiveMaxWidth() {
+		t.Fatalf("layout %+v max %d", layout, c.EffectiveMaxWidth())
+	}
+	ink, _ := ui.ShapeText(text, c.cardFont(), 0).Size()
+	chrome := 2*float64(c.FrameInsetX()) + 2*TextContainerInsetX + 2*LineFragmentPadding
+	want := int(math.Ceil(float64(ink) + chrome + lineFitSlack))
+	if layout.Width != want {
+		t.Fatalf("width %d want %d ink %v chrome %v", layout.Width, want, ink, chrome)
+	}
+	// The pixel frame is part of the horizontal inset. A fragment that
+	// drops it is a word short of this line.
+	inset := c.EffectivePaddingX() + cardBorderPx
+	if CardResizeMargin > inset {
+		inset = CardResizeMargin
+	}
+	if c.FrameInsetX() != inset {
+		t.Fatalf("frame inset %d want %d", c.FrameInsetX(), inset)
+	}
+	if fragment := float64(layout.Width) - chrome; fragment < float64(ink)+lineFitSlack-1e-6 {
+		t.Fatalf("fragment %v ink %v slack %v", fragment, ink, lineFitSlack)
 	}
 }
 

@@ -46,6 +46,54 @@ func TestAppearancePaletteFollowsNight(t *testing.T) {
 	}
 }
 
+func TestSelectedTabMeetsTheDivider(t *testing.T) {
+	pal := pixel.AutumnDay
+	face := pal.C(pixel.Face)
+	for _, tab := range []settingsPage{settingsGeneral, settingsCards, settingsPrivacy} {
+		a := New(config.Default(), "")
+		form := config.FormFrom(a.config())
+		form.SettingsTab = int(tab)
+		a.settingsForm = &form
+		img := ui.NewTester(func(c *ui.Context) { a.settingsView(c) }, 640, 420).Image()
+		_, y, end := longestAccentRun(t, img, pal, 180)
+		next := img.RGBAAt(end, y)
+		if next.R == face.R && next.G == face.G && next.B == face.B {
+			t.Fatalf("tab %d highlight ends on Face at %d,%d", tab, end, y)
+		}
+	}
+}
+
+func longestAccentRun(t *testing.T, img *image.RGBA, pal *pixel.Palette, maxY int) (x, y, end int) {
+	t.Helper()
+	accent := pal.C(pixel.Accent)
+	best := 0
+	b := img.Bounds()
+	if maxY > b.Max.Y {
+		maxY = b.Max.Y
+	}
+	for py := b.Min.Y; py < maxY; py++ {
+		run, at := 0, 0
+		for px := b.Min.X; px < b.Max.X; px++ {
+			c := img.RGBAAt(px, py)
+			if c.R == accent.R && c.G == accent.G && c.B == accent.B {
+				if run == 0 {
+					at = px
+				}
+				run++
+				if run > best && px+1 < b.Max.X {
+					best, x, y, end = run, at, py, px+1
+				}
+				continue
+			}
+			run = 0
+		}
+	}
+	if best < pixelDot*8 {
+		t.Fatalf("no tab highlight")
+	}
+	return x, y, end
+}
+
 func TestWritePixelCardShots(t *testing.T) {
 	dir := os.Getenv("PIXEL_SHOTS")
 	if dir == "" {

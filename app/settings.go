@@ -141,7 +141,7 @@ func (a *App) settingsView(c *ui.Context) {
 					a.closeSettings()
 				}
 			})
-			input.Segmented(c, tr(lang, "settings"), settingsTabLabels(lang), &f.SettingsTab, input.SegmentedOptions{})
+			pixelTabs(c, tr(lang, "settings"), settingsTabLabels(lang), &f.SettingsTab)
 			// The scroll keeps its content height, and shrinks only when the
 			// page is taller than the window. Leftover space sits below Save,
 			// so a short page is not a box with a hole under the last control.
@@ -170,6 +170,59 @@ const (
 	settingsShortcuts
 	settingsPrivacy
 )
+
+// pixelTabs is the settings tab bar. The kit's highlight stops one dot
+// short of each segment, which leaves a Face gap before the next divider.
+// A middle tab paints through its right edge. The last tab stops on the
+// frame, and the first tab leaves the left frame.
+func pixelTabs(c *ui.Context, label string, labels []string, selected *int) {
+	k := pixel.K(c)
+	v := *selected
+	p := ui.SegmentedBase(c, &v, len(labels))
+	w := 0
+	for _, l := range labels {
+		w += pixel.Measure(l) + 12
+	}
+	last := len(labels) - 1
+	p.Track.Width(k.D(w)).Label(label).Draw(func(pt *ui.Painter, r ui.Rect) {
+		g := k.Canvas(pt, r)
+		if g.W < 3 || g.H < 3 {
+			return
+		}
+		g.Frame(0, 0, g.W, g.H, pixel.Notched, pixel.Face)
+	}).Children(func() {
+		for i, l := range labels {
+			i, l := i, l
+			shell, _, st := pixel.Shell(c, func() ui.Element { return p.Segment(i).Label(l) })
+			shell.Size(k.D(pixel.Measure(l)+12), k.D(pixel.LineHeight+4)).Draw(func(pt *ui.Painter, r ui.Rect) {
+				g := k.Canvas(pt, r)
+				if g.W < 3 || g.H < 3 {
+					return
+				}
+				fillW := g.W - 1
+				if i == last {
+					fillW = g.W - 2
+				}
+				ink := pixel.Ink
+				switch {
+				case *selected == i:
+					g.Rect(1, 1, fillW, g.H-2, pixel.Accent)
+					ink = pixel.AccentInk
+				case st.Hover:
+					g.Rect(1, 1, fillW, g.H-2, pixel.Lit)
+				}
+				if i > 0 {
+					g.VLine(0, 1, g.H-2, pixel.Edge)
+				}
+				g.Text(6, 2, l, ink, 1)
+				g.Finish(st)
+			})
+		}
+	})
+	if v != *selected && !pixel.Current(c).Inert {
+		*selected = v
+	}
+}
 
 func settingsTabLabels(lang string) []string {
 	return []string{

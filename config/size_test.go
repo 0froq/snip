@@ -56,6 +56,44 @@ func TestVoidJingleDeployFitsOnOneLine(t *testing.T) {
 	}
 }
 
+func TestSingleAndMultiLineViewports(t *testing.T) {
+	c := Default().Card
+	one := c.Layout("void-jingle deploy", 0, 0)
+	if one.FullLines != 1 || one.Scrolls || one.Width >= c.EffectiveMaxWidth() {
+		t.Fatalf("single: %+v", one)
+	}
+	left, top, right, bottom := c.edgeInsets()
+	if top < CardTitleStripPx || bottom < cardBorderPx || left < cardBorderPx || right != left {
+		t.Fatalf("chrome LTRB %d %d %d %d", left, top, right, bottom)
+	}
+	viewH := one.Height - top - bottom
+	if viewH < c.LineBoxPx()+int(math.Ceil(2*TextContainerInsetY+lineFitSlack)) {
+		t.Fatalf("single viewport %d line %d", viewH, c.LineBoxPx())
+	}
+	frag := float64(one.Width-left-right) - 2*TextContainerInsetX - 2*LineFragmentPadding
+	_, shapedH := ui.ShapeText(one.Text, c.cardFont(), float32(frag)).Size()
+	if float64(viewH) < float64(math.Ceil(float64(shapedH)))+2*TextContainerInsetY+lineFitSlack-1e-6 {
+		t.Fatalf("viewport %d shaped %v", viewH, shapedH)
+	}
+
+	multi := c.Layout("void-jingle deploy\nagain\nand more", 0, 0)
+	if multi.FullLines != 3 || multi.Scrolls || multi.Height <= one.Height {
+		t.Fatalf("multi: %+v one %d", multi, one.Height)
+	}
+	if multi.Height-one.Height != 2*c.LineBoxPx() {
+		t.Fatalf("multi grew %d, want %d", multi.Height-one.Height, 2*c.LineBoxPx())
+	}
+	if multi.Height-top-bottom < 3*c.LineBoxPx() {
+		t.Fatalf("multi viewport %d", multi.Height-top-bottom)
+	}
+
+	c.MaxHeight = one.Height
+	over := c.Layout("void-jingle deploy\nagain\nand more\nand past the max", 0, 0)
+	if over.FullLines <= 3 || !over.Scrolls || over.Height != c.EffectiveMaxHeight() {
+		t.Fatalf("over max: %+v max %d", over, c.EffectiveMaxHeight())
+	}
+}
+
 func TestLayoutWrapsOnlyAtMaxWidth(t *testing.T) {
 	c := Default().Card
 	short := c.Layout("short note", 0, 0)
@@ -118,23 +156,22 @@ func TestCardHeightFitsOneLineThreeLinesAndMax(t *testing.T) {
 	c.FontSize = 14
 	one := c.Layout("#00000", 240, 0)
 	line := c.LineBoxPx()
-	chrome := 2 * c.FrameInsetY()
 	if one.FullLines != 1 || one.Scrolls || one.Truncated || one.Text != "#00000" {
 		t.Fatalf("one line: %+v", one)
 	}
 	if one.Height != c.windowHeight(c.textBlockPx(1, c.lineBox())) {
 		t.Fatalf("one line height %d", one.Height)
 	}
-	if one.Height-chrome < line {
-		t.Fatalf("one line viewport %d clips line box %d", one.Height-chrome, line)
+	if one.Height-c.TopInset()-c.FrameInsetY() < line+int(math.Ceil(lineFitSlack)) {
+		t.Fatalf("one line viewport %d clips line box %d", one.Height-c.TopInset()-c.FrameInsetY(), line)
 	}
 
 	three := c.Layout("#00000\n#00000\n#00000", 240, 0)
 	if three.FullLines != 3 || three.Scrolls || three.Text != "#00000\n#00000\n#00000" {
 		t.Fatalf("three lines: %+v", three)
 	}
-	if three.Height-chrome < 3*line {
-		t.Fatalf("three line viewport %d clips %d", three.Height-chrome, 3*line)
+	if three.Height-c.TopInset()-c.FrameInsetY() < 3*line {
+		t.Fatalf("three line viewport %d clips %d", three.Height-c.TopInset()-c.FrameInsetY(), 3*line)
 	}
 	if three.Height <= one.Height {
 		t.Fatalf("three lines not taller than one: %d vs %d", three.Height, one.Height)

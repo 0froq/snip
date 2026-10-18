@@ -1,6 +1,10 @@
 package macplace
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/0froq/snip/config"
+)
 
 // CardMenuAction is one item in a card's context menu.
 type CardMenuAction int
@@ -97,82 +101,21 @@ func ScrollHit(editing bool, eventType int, inScroller bool) bool {
 // cover the edges that resize the card. topExtra raises the top inset
 // when a title strip is taller than that band.
 func TextContentFrame(winW, winH, padX, padY, border, resizeMargin, topExtra int) (x, y, w, h float64, ok bool) {
-	insetX := padX + border
-	insetBottom := padY + border
-	if resizeMargin > insetX {
-		insetX = resizeMargin
-	}
-	if resizeMargin > insetBottom {
-		insetBottom = resizeMargin
-	}
-	insetTop := insetBottom
-	if topExtra > insetTop {
-		insetTop = topExtra
-	}
-	if winW <= 2*insetX || winH <= insetTop+insetBottom || insetX < 0 || insetTop < 0 || insetBottom < 0 {
+	left, top, right, bottom := config.TextFrameInsets(padX, padY, border, resizeMargin, topExtra)
+	if winW <= left+right || winH <= top+bottom || left < 0 || top < 0 || right < 0 || bottom < 0 {
 		return 0, 0, 0, 0, false
 	}
-	return float64(insetX), float64(insetBottom), float64(winW - 2*insetX), float64(winH - insetTop - insetBottom), true
+	return float64(left), float64(bottom), float64(winW - left - right), float64(winH - top - bottom), true
 }
 
 func pointInNSRect(px, py, x, y, w, h float64) bool {
 	return w > 0 && h > 0 && px >= x && py >= y && px < x+w && py < y+h
 }
 
-// FontFace is the face the card text view draws with, which is the face
-// the card width is measured with. A leading generic (-apple-system,
-// system-ui, sans-serif, serif, monospace) is the system font: names after
-// it only cover glyphs that face lacks, and are not the face for the whole
-// string. A leading concrete family is that face. system is true when the
-// text view should use the system font.
+// FontFace is the face the card text view draws with. It is the same face
+// the card measures, so a short line's width and height match the view.
 func FontFace(family string) (name string, system bool) {
-	start := 0
-	for i := 0; i <= len(family); i++ {
-		if i != len(family) && family[i] != ',' {
-			continue
-		}
-		part := trimSpace(family[start:i])
-		start = i + 1
-		if part == "" {
-			continue
-		}
-		if genericFont(part) {
-			return "", true
-		}
-		return part, false
-	}
-	return "", true
-}
-
-func genericFont(name string) bool {
-	switch lowerASCII(name) {
-	case "-apple-system", "system-ui", "sans-serif", "serif", "monospace":
-		return true
-	default:
-		return false
-	}
-}
-
-func lowerASCII(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + ('a' - 'A')
-		}
-	}
-	return string(b)
-}
-
-func trimSpace(s string) string {
-	i := 0
-	j := len(s)
-	for i < j && (s[i] == ' ' || s[i] == '\t') {
-		i++
-	}
-	for j > i && (s[j-1] == ' ' || s[j-1] == '\t') {
-		j--
-	}
-	return s[i:j]
+	return config.ResolveFont(family)
 }
 
 // CardTextOptions describes the scroll view embedded in a card window.

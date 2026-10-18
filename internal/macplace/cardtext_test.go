@@ -1,6 +1,8 @@
 package macplace
 
 import (
+	"math"
+	"strings"
 	"testing"
 
 	"github.com/0froq/snip/config"
@@ -102,7 +104,7 @@ func TestShortCopyFitsTheTextView(t *testing.T) {
 		}
 		face := cardTextFont(c)
 		ink, _ := ui.ShapeText(text, face, 0).Size()
-		_, _, viewW, _, ok := TextContentFrame(
+		_, _, viewW, viewH, ok := TextContentFrame(
 			layout.Width, layout.Height,
 			c.EffectivePaddingX(), c.EffectivePaddingY(),
 			config.CardBorderPx(), config.CardResizeMargin, config.CardTitleStripPx,
@@ -115,6 +117,36 @@ func TestShortCopyFitsTheTextView(t *testing.T) {
 			t.Fatalf("family %q face %q fragment %v < ink %v (window %d, text view %v)",
 				c.FontFamily, face.Family, fragment, ink, layout.Width, viewW)
 		}
+		_, shapedH := ui.ShapeText(text, face, float32(fragment)).Size()
+		need := math.Ceil(float64(shapedH)) + 2*config.TextContainerInsetY
+		if layout.Scrolls || viewH < need {
+			t.Fatalf("family %q view height %v need %v scrolls %v", c.FontFamily, viewH, need, layout.Scrolls)
+		}
+	}
+}
+
+func TestMultiLineViewportFitsWithoutScrolling(t *testing.T) {
+	c := config.Default().Card
+	one := c.Layout("void-jingle deploy", 0, 0)
+	multi := c.Layout("void-jingle deploy\nagain\nand more", 0, 0)
+	if one.Scrolls || multi.Scrolls || multi.FullLines != 3 || multi.Height <= one.Height {
+		t.Fatalf("one %+v multi %+v", one, multi)
+	}
+	_, _, _, viewH, ok := TextContentFrame(
+		multi.Width, multi.Height,
+		c.EffectivePaddingX(), c.EffectivePaddingY(),
+		config.CardBorderPx(), config.CardResizeMargin, config.CardTitleStripPx,
+	)
+	if !ok {
+		t.Fatal("no text frame")
+	}
+	if viewH < float64(3*c.LineBoxPx()) {
+		t.Fatalf("view height %v for 3 lines of %d", viewH, c.LineBoxPx())
+	}
+	c.MaxHeight = one.Height
+	over := c.Layout(strings.Repeat("void-jingle deploy\n", 12)+"end", 0, 0)
+	if !over.Scrolls || over.Height != c.EffectiveMaxHeight() {
+		t.Fatalf("over max %+v", over)
 	}
 }
 

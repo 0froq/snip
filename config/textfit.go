@@ -40,17 +40,40 @@ const (
 func CardBorderPx() int { return cardBorderPx }
 
 // FrameInsetX is how far the text view sits from the left and right edges.
-func (c Card) FrameInsetX() int { return frameInset(c.EffectivePaddingX()) }
+func (c Card) FrameInsetX() int {
+	left, _, _, _ := c.edgeInsets()
+	return left
+}
 
-// FrameInsetY is how far the text view sits from the top and bottom edges.
-func (c Card) FrameInsetY() int { return frameInset(c.EffectivePaddingY()) }
+// FrameInsetY is how far the text view sits from the bottom edge.
+func (c Card) FrameInsetY() int {
+	_, _, _, bottom := c.edgeInsets()
+	return bottom
+}
 
-func frameInset(pad int) int {
-	inset := pad + cardBorderPx
-	if CardResizeMargin > inset {
-		return CardResizeMargin
+// TextFrameInsets is the scroll view's distance from each window edge.
+// Left, right, and bottom are the pixel frame plus padding, and at least
+// the resize band. Top is that same band, or the title strip when the
+// close control is taller, so the line starts below the button.
+func TextFrameInsets(padX, padY, border, resizeMargin, topExtra int) (left, top, right, bottom int) {
+	left = padX + border
+	bottom = padY + border
+	if resizeMargin > left {
+		left = resizeMargin
 	}
-	return inset
+	if resizeMargin > bottom {
+		bottom = resizeMargin
+	}
+	right = left
+	top = bottom
+	if topExtra > top {
+		top = topExtra
+	}
+	return left, top, right, bottom
+}
+
+func (c Card) edgeInsets() (left, top, right, bottom int) {
+	return TextFrameInsets(c.EffectivePaddingX(), c.EffectivePaddingY(), cardBorderPx, CardResizeMargin, CardTitleStripPx)
 }
 
 // LineBoxPx is one line's height: ascent, descent, and leading, rounded up
@@ -64,7 +87,13 @@ func (c Card) LineBoxPx() int {
 }
 
 func (c Card) cardFont() ui.Font {
-	return c.UIFont(c.EffectiveFontSize())
+	// The text view draws ResolveFont's face. Measuring the whole CSS list
+	// would size a leading concrete family with a later, narrower fallback.
+	font := c.UIFont(c.EffectiveFontSize())
+	if name, system := ResolveFont(font.Family); !system && name != "" {
+		font.Family = name
+	}
+	return font
 }
 
 // UIFont is the face used for cards, badges, which-key text and for measuring
@@ -79,7 +108,8 @@ func (c Card) UIFont(size int) ui.Font {
 func (c Card) textWidthForSlip(slipWidth int) float32 {
 	// The scroll view is inside the frame inset. NSTextView then eats
 	// textContainerInset and lineFragmentPadding before the glyphs wrap.
-	inner := float64(slipWidth) - 2*float64(c.FrameInsetX()) - 2*TextContainerInsetX - 2*LineFragmentPadding
+	left, _, right, _ := c.edgeInsets()
+	inner := float64(slipWidth-left-right) - 2*TextContainerInsetX - 2*LineFragmentPadding
 	if inner < 1 {
 		return 1
 	}
@@ -151,9 +181,11 @@ func (c Card) measureBox(display string, width int) (lines, height int) {
 	return lines, c.windowHeight(c.textBlockPx(lines, shaped))
 }
 
-// textBlockPx is the text view's height for this many lines: the line box
-// (ascent, descent, leading) times the line count, or the shaped height when
-// a fallback face is taller, plus the text container's vertical inset.
+// textBlockPx is the NSTextView document height for this many lines: the
+// line box (ascent, descent, leading) times the line count, or the shaped
+// height when a fallback face is taller, plus the text container's vertical
+// inset. One extra point covers the used rect running a fraction past that
+// box; without it the scroll view shows a scrollbar on a single line.
 func (c Card) textBlockPx(lines int, shaped float32) int {
 	if lines < 1 {
 		lines = 1
@@ -162,7 +194,7 @@ func (c Card) textBlockPx(lines int, shaped float32) int {
 	if shapedPx := int(math.Ceil(float64(shaped))); shapedPx > used {
 		used = shapedPx
 	}
-	used += int(math.Ceil(2 * TextContainerInsetY))
+	used += int(math.Ceil(2*TextContainerInsetY + lineFitSlack))
 	if used < 1 {
 		return 1
 	}
@@ -172,11 +204,8 @@ func (c Card) textBlockPx(lines int, shaped float32) int {
 // TopInset is the text's top inset. The close strip wins when it is taller
 // than the padding, so a line never sits under the button.
 func (c Card) TopInset() int {
-	y := c.FrameInsetY()
-	if CardTitleStripPx > y {
-		return CardTitleStripPx
-	}
-	return y
+	_, top, _, _ := c.edgeInsets()
+	return top
 }
 
 // windowHeight adds the top strip and the bottom inset around the text.
@@ -274,11 +303,13 @@ func (c Card) shapedHeight(display string, slipWidth int) (lines int, heightPx i
 }
 
 func (c Card) naturalSlipWidth(display string) int {
-	// Width 0 is ui.Text's max-content measure: break only at newlines and
-	// use the ink width. A huge wrap width is not the same number, and
-	// min_width is a resize floor, not part of this measurement.
+	// Width and height share cardFont and edgeInsets. Width 0 is ui.Text's
+	// max-content measure: break only at newlines and use the ink width.
+	// A huge wrap width is not the same number, and min_width is a resize
+	// floor, not part of this measurement.
 	w, _ := ui.ShapeText(display, c.cardFont(), 0).Size()
-	chrome := 2*float64(c.FrameInsetX()) + 2*TextContainerInsetX + 2*LineFragmentPadding
+	left, _, right, _ := c.edgeInsets()
+	chrome := float64(left+right) + 2*TextContainerInsetX + 2*LineFragmentPadding
 	est := int(math.Ceil(float64(w) + chrome + lineFitSlack))
 	if est < 1 {
 		return 1

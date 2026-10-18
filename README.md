@@ -13,16 +13,17 @@ This repo was built and cross-compiled on Linux; run and exercise it on a Mac.
 
 ```bash
 # From repo root — produces build/darwin-arm64/snip.app
-go tool mygo build -platform darwin/arm64 -sign "snip local"
+# This default build is ad hoc signed. Leave SNIP_CODESIGN_IDENTITY unset.
+go tool mygo build -platform darwin/arm64
 
 # Alternative: single binary (no .app bundle). This ad hoc signature
-# does not keep Accessibility across rebuilds; prefer the command above.
+# does not keep Accessibility across rebuilds.
 GOOS=darwin GOARCH=arm64 go build -o snip .
 ```
 
 ### Stable code signature
 
-MyGo signs ad hoc by default (`codesign -s -`). That signature’s hash changes on every rebuild, so macOS TCC treats the new binary as a different app. Accessibility can look enabled while double-click paste still opens System Settings.
+MyGo signs ad hoc by default (`codesign -s -`). That signature’s hash changes on every rebuild, so macOS TCC treats the new binary as a different app. Accessibility can look enabled while paste still fails.
 
 Create one local code-signing certificate, then reuse it:
 
@@ -33,14 +34,17 @@ Create one local code-signing certificate, then reuse it:
 5. Certificate Type: Code Signing
 
 ```bash
-go tool mygo build -platform darwin/arm64 -sign "snip local"
-# or, after an unsigned build:
-SNIP_SIGN_IDENTITY="snip local" ./scripts/sign-mac.sh
+# Optional. Unset, this is the same ad hoc build as above.
+# Set, the .app is codesigned with that identity after the build.
+SNIP_CODESIGN_IDENTITY="snip local" ./scripts/build-mac.sh
+
+# Or re-sign an app you already built:
+SNIP_CODESIGN_IDENTITY="snip local" ./scripts/sign-mac.sh
 ```
 
 An existing Apple Development identity works the same way (`security find-identity -v -p codesigning` lists them). Grant Accessibility once for that signature. Later builds signed with the same identity keep the grant.
 
-`scripts/sign-mac.sh` refuses to ad hoc sign. snip asks `AXIsProcessTrusted` without the prompt option first, and opens the Accessibility pane only when that check is false.
+`scripts/sign-mac.sh` refuses to ad hoc sign. `SNIP_SIGN_IDENTITY` is accepted as an older name for the same variable. snip asks `AXIsProcessTrusted` without the prompt option first. If paste still cannot run, it opens the Accessibility pane once per launch and only logs after that. A click does not open System Settings again.
 
 ## Run on Mac
 

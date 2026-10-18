@@ -17,8 +17,8 @@ func AccessibilityTrusted(prompt bool) bool { return false }
 // PostCommandV is a no-op off macOS.
 func PostCommandV() error { return errUnsupported }
 
-// OpenAccessibilitySettings is a no-op off macOS.
-func OpenAccessibilitySettings() {}
+// openAccessibilityPane is a no-op off macOS.
+func openAccessibilityPane() {}
 
 // errUnsupported is returned when macOS APIs are not available.
 var errUnsupported = unsupportedError{}

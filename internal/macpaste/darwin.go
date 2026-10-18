@@ -209,8 +209,9 @@ func PostCommandV() error {
 	return nil
 }
 
-// OpenAccessibilitySettings opens the Privacy > Accessibility pane (best effort).
-func OpenAccessibilitySettings() {
+// openAccessibilityPane opens Privacy > Accessibility. Callers decide how
+// often that is allowed to happen.
+func openAccessibilityPane() {
 	load()
 	withPool(func() {
 		url := nsString("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")

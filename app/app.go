@@ -916,10 +916,11 @@ func (a *App) pasteCard(h *cardUI) {
 	a.mu.Unlock()
 	mygo.Clipboard.WriteText(text)
 	if err := macpaste.PostCommandV(); err != nil {
-		log.Printf("snip: paste: %v", err)
 		if errors.Is(err, macpaste.ErrAccessibility) {
 			macpaste.OpenAccessibilitySettings()
+			return
 		}
+		log.Printf("snip: paste: %v", err)
 	}
 }
 

@@ -5,7 +5,9 @@
 set -eu
 
 APP="${1:-build/darwin-arm64/snip.app}"
-IDENTITY="${SNIP_SIGN_IDENTITY:-}"
+# SNIP_CODESIGN_IDENTITY is the optional stable identity. SNIP_SIGN_IDENTITY
+# is the older name for the same thing.
+IDENTITY="${SNIP_CODESIGN_IDENTITY:-${SNIP_SIGN_IDENTITY:-}}"
 
 if [ ! -d "$APP" ]; then
 	echo "app not found: $APP" >&2
@@ -25,7 +27,7 @@ if [ -z "$IDENTITY" ]; then
 	echo "  3. Name: snip local" >&2
 	echo "  4. Identity Type: Self Signed Root" >&2
 	echo "  5. Certificate Type: Code Signing" >&2
-	echo "Or pass an existing identity: SNIP_SIGN_IDENTITY='Apple Development: Name' $0" >&2
+	echo "Or pass an existing identity: SNIP_CODESIGN_IDENTITY='Apple Development: Name' $0" >&2
 	exit 1
 fi
 

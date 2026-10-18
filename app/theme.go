@@ -21,7 +21,7 @@ func paperTheme(dark bool, active ui.Color, font ui.Font) *ui.Theme {
 		t.Text = paperInk(false)
 		t.TextMuted = ui.Hex("#8A7764")
 	}
-	t.Border = paperEdge(dark)
+	t.Border = paperStroke(dark)
 	t.Accent = active
 	t.Radius = float32(macplace.WindowCornerRadius)
 	t.Font = font.Family

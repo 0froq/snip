@@ -533,7 +533,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	c.SetTheme(paperTheme(dark, accent, font))
 	t := c.Theme()
 	surface := t.Surface
-	border := paperEdge(dark)
+	border := paperStroke(dark)
 	if host.selected || host.pulse {
 		surface = t.Surface.Mix(accent, 0.14)
 		border = accent

@@ -117,7 +117,7 @@ func (a *App) settingsView(c *ui.Context) {
 		a.closeSettings()
 	}
 	ui.Column(c).Fill().Background(t.Background).Radius(t.Radius).Padding(14).Children(func() {
-		ui.Column(c).Fill().Background(t.Surface).Radius(t.Radius).Border(1, paperEdge(dark)).
+		ui.Column(c).Fill().Background(t.Surface).Radius(t.Radius).Border(1, paperStroke(dark)).
 			Shadow(0, 4, 14, 0, paperShadow(dark)).
 			Children(func() {
 				ui.Row(c).Shrink(0).Padding(14, 14, 10, 14).Gap(10).AlignItems(ui.Center).
@@ -219,7 +219,7 @@ func (a *App) settingsCloseButton(c *ui.Context, lang string, dark bool) {
 	label := tr(lang, "close")
 	btn := ui.ButtonBase(c).Size(28, 28).Radius(t.Radius).Center().
 		Label(label).Tooltip(label).
-		Border(1, paperEdge(dark)).Background(t.SurfaceHover.Mix(t.Surface, 0.5)).
+		Border(1, paperStroke(dark)).Background(t.SurfaceHover.Mix(t.Surface, 0.5)).
 		TextColor(t.TextMuted)
 	btn.Children(func() {
 		ui.Text(c, "×").FontSize(18).TextColor(paperInk(dark))
@@ -232,7 +232,7 @@ func (a *App) settingsCloseButton(c *ui.Context, lang string, dark bool) {
 func (a *App) settingsSection(c *ui.Context, title string, body func()) {
 	t := c.Theme()
 	dark := t.Dark
-	ui.Column(c).Gap(8).Padding(14).Background(t.SurfaceHover.Mix(t.Surface, 0.35)).Radius(t.Radius).Border(1, paperEdge(dark).Alpha(0.7)).
+	ui.Column(c).Gap(8).Padding(14).Background(t.SurfaceHover.Mix(t.Surface, 0.35)).Radius(t.Radius).Border(1, paperStroke(dark)).
 		Children(func() {
 			ui.Text(c, title).FontSize(16).TextColor(paperInk(dark))
 			body()

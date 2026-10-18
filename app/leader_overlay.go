@@ -531,7 +531,7 @@ func (a *App) whichKeyView(c *ui.Context) {
 	ui.Column(c).Fill().Padding(10, 12).Gap(4).
 		Background(fill).
 		Radius(float32(macplace.WindowCornerRadius)).
-		Border(1, paperEdge(dark).Alpha(0.9)).
+		Border(1, paperStroke(dark)).
 		Children(func() {
 			for _, item := range items {
 				key, name := item.Key, item.Name

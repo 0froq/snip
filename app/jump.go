@@ -9,9 +9,9 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// BadgeDiameter is the jump-badge window size. It is even so the badge center
-// lands on the card's top-right corner in integer screen coordinates.
-const BadgeDiameter = 28
+// BadgeDiameter is the jump-badge window size. Fifteen dots is odd, so the
+// disc has a real center dot that can sit on the card's top-right corner.
+const BadgeDiameter = 15 * pixelDot
 
 const whichKeyMargin = 16
 
@@ -45,27 +45,39 @@ type whichKeyItem struct {
 	Name string
 }
 
-// BadgeFrame is the badge window whose center is the card's top-right corner.
-// The bottom-left quarter of an even-sized badge lies on the card. The other
-// three quarters sit outside, above the top edge and to the right of the card.
+// BadgeFrame is the badge window whose center dot is the card's top-right
+// corner dot. The window origin shares the card's pixel grid, so the disc
+// and the card frame meet on dot edges. The bottom-left of the disc lies on
+// the card; the other three quadrants sit above the top edge and to the right.
 func BadgeFrame(card frame, diameter int) frame {
-	d := evenDiameter(diameter)
+	d := oddDotDiameter(diameter)
+	dots := d / pixelDot
+	center := dots / 2
+	cornerX := card.X
+	if card.W >= pixelDot {
+		cornerX = card.X + (card.W/pixelDot)*pixelDot - pixelDot
+	}
 	return frame{
-		X: card.X + card.W - d/2,
-		Y: card.Y - d/2,
+		X: cornerX - center*pixelDot,
+		Y: card.Y - center*pixelDot,
 		W: d,
 		H: d,
 	}
 }
 
-func evenDiameter(d int) int {
-	if d < 2 {
-		d = 2
+// oddDotDiameter rounds d up to a whole odd number of pixel dots.
+func oddDotDiameter(d int) int {
+	if d < pixelDot {
+		d = pixelDot
 	}
-	if d%2 != 0 {
-		d++
+	dots := (d + pixelDot - 1) / pixelDot
+	if dots%2 == 0 {
+		dots++
 	}
-	return d
+	if dots < 3 {
+		dots = 3
+	}
+	return dots * pixelDot
 }
 
 func normalizeJumpKey(s string) string {

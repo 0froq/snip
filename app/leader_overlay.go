@@ -476,16 +476,20 @@ func (a *App) badgeView(c *ui.Context, h *cardUI) {
 		if g.W < 5 || g.H < 5 {
 			return
 		}
-		rads := min(g.W, g.H)/2 - 1
-		g.Disc(g.W/2, g.H/2, rads, pixel.Face)
-		g.Circle(g.W/2, g.H/2, rads, pixel.Accent)
+		cx, cy := g.W/2, g.H/2
+		rads := min(cx, cy)
+		g.Disc(cx, cy, rads, pixel.Face)
+		g.Circle(cx, cy, rads, pixel.Accent)
 		if label == "" || !pixel.MicroOK(label) {
 			return
 		}
-		scale := 2
-		adv := pixel.MicroAdvance * scale
-		tw := len([]rune(label)) * adv
-		g.Micro((g.W-tw)/2, (g.H-pixel.MicroHeight*scale)/2, label, pixel.Ink, scale)
+		scale := 1
+		if pixel.MicroWidth(label)*2 <= g.W-2 {
+			scale = 2
+		}
+		tw := pixel.MicroWidth(label) * scale
+		th := pixel.MicroHeight * scale
+		g.Micro((g.W-tw)/2, (g.H-th)/2, label, pixel.Ink, scale)
 	})
 }
 

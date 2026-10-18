@@ -103,36 +103,54 @@ func TestBadgeFrameCentersOnTopRight(t *testing.T) {
 	if b.W != BadgeDiameter || b.H != BadgeDiameter {
 		t.Fatalf("size %d x %d", b.W, b.H)
 	}
-	if b.X+b.W/2 != card.X+card.W || b.Y+b.H/2 != card.Y {
-		t.Fatalf("center (%d,%d), card corner (%d,%d)", b.X+b.W/2, b.Y+b.H/2, card.X+card.W, card.Y)
+	if b.W%pixelDot != 0 || (b.W/pixelDot)%2 == 0 {
+		t.Fatalf("diameter %d is not an odd number of dots", b.W)
 	}
-	midX, midY := b.X+b.W/2, b.Y+b.H/2
-	bottomLeft := frame{X: b.X, Y: midY, W: b.W / 2, H: b.H / 2}
-	if !frameInside(bottomLeft, card) {
-		t.Fatalf("bottom-left quarter %+v not on card %+v", bottomLeft, card)
+	if (b.X-card.X)%pixelDot != 0 || (b.Y-card.Y)%pixelDot != 0 {
+		t.Fatalf("origin %+v is off the card grid %+v", b, card)
+	}
+	cx, cy := badgeCenterDot(b)
+	cornerX := card.X + card.W - pixelDot
+	if cx != cornerX || cy != card.Y {
+		t.Fatalf("center dot (%d,%d), card corner dot (%d,%d)", cx, cy, cornerX, card.Y)
+	}
+	// The center dot is the shared corner. Everything below-left of it,
+	// including that dot, lies on the card. The other three quadrants do not.
+	onCard := frame{X: b.X, Y: cy, W: cx + pixelDot - b.X, H: b.Y + b.H - cy}
+	if !frameInside(onCard, card) {
+		t.Fatalf("bottom-left %+v not on card %+v", onCard, card)
 	}
 	outside := []frame{
-		{X: b.X, Y: b.Y, W: b.W / 2, H: b.H / 2},
-		{X: midX, Y: b.Y, W: b.W / 2, H: b.H / 2},
-		{X: midX, Y: midY, W: b.W / 2, H: b.H / 2},
+		{X: b.X, Y: b.Y, W: cx + pixelDot - b.X, H: cy - b.Y},
+		{X: cx + pixelDot, Y: b.Y, W: b.X + b.W - (cx + pixelDot), H: cy + pixelDot - b.Y},
+		{X: cx + pixelDot, Y: cy + pixelDot, W: b.X + b.W - (cx + pixelDot), H: b.Y + b.H - (cy + pixelDot)},
 	}
 	for _, q := range outside {
 		if framesOverlap(q, card) {
 			t.Fatalf("quadrant %+v overlaps card", q)
 		}
-		if q.Y+q.H > card.Y && q.X+q.W <= card.X+card.W {
-			t.Fatalf("quadrant %+v is not above or right of the card", q)
-		}
-	}
-	overlap := (b.W / 2) * (b.H / 2)
-	if overlap*4 != b.W*b.H {
-		t.Fatalf("overlap %d is not one quarter of %d", overlap, b.W*b.H)
 	}
 
 	odd := BadgeFrame(card, 27)
-	if odd.W != 28 || odd.X+odd.W/2 != card.X+card.W || odd.Y+odd.H/2 != card.Y {
+	ox, oy := badgeCenterDot(odd)
+	if odd.W != 15*pixelDot || ox != cornerX || oy != card.Y {
 		t.Fatalf("odd diameter %+v", odd)
 	}
+
+	skewed := frame{X: 101, Y: 201, W: 81, H: 41}
+	snapped := BadgeFrame(skewed, BadgeDiameter)
+	if (snapped.X-skewed.X)%pixelDot != 0 || (snapped.Y-skewed.Y)%pixelDot != 0 {
+		t.Fatalf("skewed origin %+v off grid of %+v", snapped, skewed)
+	}
+	sx, sy := badgeCenterDot(snapped)
+	wantX := skewed.X + (skewed.W/pixelDot)*pixelDot - pixelDot
+	if sx != wantX || sy != skewed.Y {
+		t.Fatalf("skewed center (%d,%d), want (%d,%d)", sx, sy, wantX, skewed.Y)
+	}
+}
+
+func badgeCenterDot(b frame) (x, y int) {
+	return b.X + (b.W/pixelDot/2)*pixelDot, b.Y + (b.H/pixelDot/2)*pixelDot
 }
 
 func TestPlaceWhichKeyAnchor(t *testing.T) {

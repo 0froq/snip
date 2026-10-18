@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/ebitengine/purego v0.11.1
-	github.com/egoist/mygo v0.5.2
+	github.com/egoist/mygo v0.5.5
 )
 
 require (

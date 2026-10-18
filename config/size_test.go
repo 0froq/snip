@@ -44,7 +44,10 @@ func TestHeightForWidthCJKWraps(t *testing.T) {
 	c := Default().Card
 	text := strings.Repeat("还有这个样式，我认为既然要做纸色，窗口可以再纸一点", 3)
 	layout := c.Layout(text, 220, 0)
-	if layout.VisibleLines != c.EffectiveMaxLines() || !layout.Truncated || !strings.Contains(layout.Text, "\n…\n") {
+	if layout.Truncated || layout.Text != text || strings.Contains(layout.Text, "…") {
+		t.Fatalf("layout %+v", layout)
+	}
+	if layout.Height > c.EffectiveMaxHeight() || layout.FullLines < 2 {
 		t.Fatalf("layout %+v", layout)
 	}
 }
@@ -81,19 +84,20 @@ func TestEstimateSizeCapsLines(t *testing.T) {
 	c.MaxWidth = 80
 	c.CharWidth = 10
 	c.PaddingX = 10
-	c.MaxLines = 2
+	c.MaxHeight = c.OneLineHeight(80) + 4
 	long := "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
 	layout := c.Layout(long, 80, 0)
-	if layout.VisibleLines != c.EffectiveMaxLines() || !layout.Truncated {
-		t.Fatalf("layout %+v", layout)
+	if layout.Truncated || layout.Text != long || !layout.Scrolls || layout.Height != c.EffectiveMaxHeight() {
+		t.Fatalf("layout %+v max %d", layout, c.EffectiveMaxHeight())
 	}
 }
 
 func TestLayoutKeepsChosenLines(t *testing.T) {
 	c := Default().Card
 	text := strings.Repeat("word ", 60)
-	layout := c.Layout(text, 200, 4)
-	if layout.VisibleLines != 4 || !layout.Truncated {
+	one := c.OneLineHeight(200)
+	layout := c.LayoutViewport(text, 200, one+12)
+	if layout.Truncated || layout.Text != text || layout.Height != one+12 || !layout.Scrolls {
 		t.Fatalf("chosen layout %+v", layout)
 	}
 }
@@ -101,21 +105,18 @@ func TestLayoutKeepsChosenLines(t *testing.T) {
 func TestMiddleTruncationShapes(t *testing.T) {
 	c := Default().Card
 	text := strings.Repeat("还有这个样式，我认为既然要做纸色，窗口可以再纸一点", 4) + "END"
-	for n, want := range map[int]int{1: 1, 2: 2, 3: 3, 4: 4} {
-		l := c.Layout(text, 220, n)
-		_ = want
-		if !l.Truncated || l.VisibleLines != n {
+	one := c.OneLineHeight(220)
+	for _, n := range []int{1, 2, 3, 4} {
+		l := c.LayoutViewport(text, 220, one*n)
+		if l.Truncated || l.Text != text || !strings.HasSuffix(l.Text, "END") {
 			t.Fatalf("n=%d: %+v", n, l)
 		}
-		if n == 2 && !strings.HasSuffix(l.Text, "\n…") {
-			t.Fatalf("n=2: %q", l.Text)
-		}
-		if n >= 3 && !strings.HasSuffix(l.Text, "END") {
-			t.Fatalf("n=%d lost last line: %q", n, l.Text)
+		if l.Height > c.EffectiveMaxHeight() || l.Height < one {
+			t.Fatalf("n=%d height %d", n, l.Height)
 		}
 	}
 	short := c.Layout("短短", 0, 4)
-	if short.Truncated || short.VisibleLines != 1 {
+	if short.Truncated || short.VisibleLines != 1 || short.Scrolls || short.Text != "短短" {
 		t.Fatalf("short: %+v", short)
 	}
 }

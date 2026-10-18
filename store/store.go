@@ -12,6 +12,9 @@ type Card struct {
 	CreatedAt time.Time
 	// Concealed is true when the copy carried org.nspasteboard.ConcealedType.
 	Concealed bool
+	// Original is the clipboard text from before the first edit. Empty
+	// means Text is still that text.
+	Original string
 }
 
 // Store holds cards in insertion order (oldest first).
@@ -85,6 +88,40 @@ func (s *Store) Get(id string) (Card, bool) {
 	defer s.mu.RUnlock()
 	c, ok := s.byID[id]
 	return c, ok
+}
+
+// UpdateText replaces a card's text. The first edit remembers the previous
+// text as Original so RestoreOriginal can put it back.
+func (s *Store) UpdateText(id, text string) (Card, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.byID[id]
+	if !ok {
+		return Card{}, false
+	}
+	if c.Original == "" && c.Text != text {
+		c.Original = c.Text
+	}
+	c.Text = text
+	s.byID[id] = c
+	return c, true
+}
+
+// RestoreOriginal puts the pre-edit clipboard text back. A card that was
+// never edited is unchanged.
+func (s *Store) RestoreOriginal(id string) (Card, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.byID[id]
+	if !ok {
+		return Card{}, false
+	}
+	if c.Original != "" {
+		c.Text = c.Original
+		c.Original = ""
+		s.byID[id] = c
+	}
+	return c, true
 }
 
 // Delete removes a card.

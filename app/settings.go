@@ -151,7 +151,7 @@ func (a *App) settingsView(c *ui.Context) {
 						a.settingsSection(c, tr(lang, "size"), func() {
 							labeledInput(c, tr(lang, "min_w"), &f.MinWidth)
 							labeledInput(c, tr(lang, "max_w"), &f.MaxWidth)
-							labeledInput(c, tr(lang, "max_lines"), &f.MaxLines)
+							labeledInput(c, tr(lang, "max_height"), &f.MaxHeight)
 							labeledInput(c, tr(lang, "pad_x"), &f.PaddingX)
 							labeledInput(c, tr(lang, "pad_y"), &f.PaddingY)
 							labeledInput(c, tr(lang, "font_family"), &f.FontFamily)

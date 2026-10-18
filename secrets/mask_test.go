@@ -22,6 +22,31 @@ func TestDisplayTextDisabled(t *testing.T) {
 	}
 }
 
+func TestIsSensitiveMatchesDisplayMasking(t *testing.T) {
+	cfg := Config{Enabled: true, MinEntropyBits: 10, MinSecretLength: 32}
+	raw := "token=supersecretvalue123"
+	if !IsSensitive(raw, cfg, false) {
+		t.Fatal("pattern match should be sensitive")
+	}
+	if IsSensitive("hello", cfg, false) {
+		t.Fatal("plain text is editable")
+	}
+	off := Config{Enabled: false, HonorPasteboardConcealed: true}
+	if IsSensitive("hunter2", off, false) {
+		t.Fatal("masking off and not concealed")
+	}
+	if !IsSensitive("hunter2", off, true) {
+		t.Fatal("concealed pasteboard is sensitive")
+	}
+	off.HonorPasteboardConcealed = false
+	if IsSensitive("hunter2", off, true) {
+		t.Fatal("concealed is ignored when honor is off")
+	}
+	if IsSensitive("", cfg, true) {
+		t.Fatal("empty is not sensitive")
+	}
+}
+
 func TestDisplayTextPasteboardConcealed(t *testing.T) {
 	cfg := Config{Enabled: false, HonorPasteboardConcealed: true}
 	raw := "hunter2"

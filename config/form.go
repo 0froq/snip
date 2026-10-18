@@ -128,7 +128,7 @@ func (f Form) Parse(prev Config) (Config, error) {
 	}{
 		{&cfg.Card.MinWidth, f.MinWidth, "Min width"},
 		{&cfg.Card.MaxWidth, f.MaxWidth, "Max width"},
-		{&cfg.Card.MaxLines, f.MaxLines, "Max lines"},
+		{&cfg.Card.MaxHeight, f.MaxHeight, "Max height"},
 		{&cfg.Card.PaddingX, f.PaddingX, "Padding x"},
 		{&cfg.Card.PaddingY, f.PaddingY, "Padding y"},
 		{&cfg.Card.FontSize, f.FontSize, "Font size"},

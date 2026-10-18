@@ -23,11 +23,13 @@ type Window struct {
 
 // Card controls the paper-strip snippet appearance.
 type Card struct {
-	MinWidth    int    `toml:"min_width"`
-	MaxWidth    int    `toml:"max_width"`
-	Height      int    `toml:"height"`
-	MaxHeight   int    `toml:"max_height"`
-	LineHeight  int    `toml:"line_height"`
+	MinWidth   int `toml:"min_width"`
+	MaxWidth   int `toml:"max_width"`
+	Height     int `toml:"height"`
+	MaxHeight  int `toml:"max_height"`
+	LineHeight int `toml:"line_height"`
+	// MaxLines is accepted so older config files still load. Card text is
+	// no longer clipped to a line count; MaxHeight is the viewport cap.
 	MaxLines    int    `toml:"max_lines"`
 	ActiveColor string `toml:"active_color"`
 	PaddingX    int    `toml:"padding_x"`
@@ -253,7 +255,8 @@ func (c Card) EffectiveLineHeight() int {
 	return c.LineHeight
 }
 
-// EstimateSize returns a width and a height that fit the text, from one line up to max lines.
+// EstimateSize returns the natural width and height. Height is the measured
+// text capped at max height; the card scrolls once the text is taller.
 func (c Card) EstimateSize(display string) (int, int) {
 	width := c.EstimateWidth(display)
 	return width, c.HeightForWidth(display, width)
@@ -271,6 +274,9 @@ func (c Card) HeightForWidth(display string, width int) int {
 	return h
 }
 
+// EffectiveMaxLines reports the deprecated line cap. Layout does not clip
+// to it. A missing or non-positive value stays at the historical default
+// so old files that set max_lines keep a readable number in settings.
 func (c Card) EffectiveMaxLines() int {
 	if c.MaxLines <= 0 {
 		return 4

@@ -85,6 +85,8 @@ type cardUI struct {
 	resizeDepth int
 	jumpLabel   string
 	badge       *mygo.Window
+	textHost    *macplace.CardText
+	closingEdit bool
 }
 
 // New creates the application state.
@@ -212,8 +214,9 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	layout := cardCfg.Layout(host.display, 0, 0)
 	width, height := layout.Width, layout.Height
 	host.rendered = layout.Text
+	host.userW, host.userH = layout.Width, layout.Height
 	x, y := a.cardOrigin(card.ID, idx, width, height, placeX, placeY, havePlacement)
-	minH := cardCfg.Layout(host.display, width, 1).Height
+	minH := cardCfg.OneLineHeight(width)
 
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:     "snip",
@@ -224,7 +227,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		MinWidth:  cardCfg.WidthFloor(host.display),
 		MinHeight: minH,
 		MaxWidth:  cardCfg.EffectiveMaxWidth(),
-		MaxHeight: 10000,
+		MaxHeight: cardCfg.EffectiveMaxHeight(),
 		// NewWindow otherwise calls Show(), making the note key before we
 		// can configure it. Notes must only be shown via ShowInactive.
 		Hidden:    true,
@@ -269,9 +272,14 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	})
 	win.OnClosed(func() {
 		cleanupResize()
+		if host.textHost != nil {
+			host.textHost.Close()
+			host.textHost = nil
+		}
 		a.closeBadge(host)
 	})
 	a.visible = true
+	a.attachCardText(host)
 	a.syncCardHeight(host)
 	a.showCard(host)
 	a.refreshSelection()
@@ -300,27 +308,21 @@ func (a *App) cardOrigin(id string, cascadeIndex int, _ int, _ int, placeX, plac
 		c.CascadeOriginY + (cascadeIndex%12)*c.CascadeStepY
 }
 
-func (a *App) slipLines(host *cardUI, width int) int {
-	cardCfg := a.config().Card
-	if width <= 0 {
-		width = cardCfg.EstimateWidth(host.display)
-	}
-	return cardCfg.Layout(host.display, width, 0).VisibleLines
-}
-
-// fitCardWidth is shared by the native pre-resize delegate and programmatic
-// resizing. Height is never user-controlled: measure the exact (possibly
-// ellipsized) text at the clamped width, using the configured line/height caps.
+// fitCardWidth reflows at the card's current viewport. A viewport of 0 is
+// the natural height, capped at max height. The string is never ellipsized.
 func (a *App) fitCardWidth(host *cardUI, w int) config.CardLayout {
-	layout := a.layoutAt(host, w, host.userLines)
-	host.rendered = layout.Text
-	host.userW, host.userH = layout.Width, layout.Height
-	return layout
+	w = a.clampCardWidth(host, w)
+	cardCfg := a.config().Card
+	var layout config.CardLayout
+	if host.userH > 0 {
+		layout = cardCfg.LayoutViewport(host.display, w, host.userH)
+	} else {
+		layout = cardCfg.Layout(host.display, w, 0)
+	}
+	return a.publishCardLayout(host, layout)
 }
 
-// layoutAt measures a card without publishing host.userLines or host.rendered.
-// A zero line count means the configured max.
-func (a *App) layoutAt(host *cardUI, w, lines int) config.CardLayout {
+func (a *App) clampCardWidth(host *cardUI, w int) int {
 	cardCfg := a.config().Card
 	floor := cardCfg.WidthFloor(host.display)
 	maxW := cardCfg.EffectiveMaxWidth()
@@ -330,63 +332,31 @@ func (a *App) layoutAt(host *cardUI, w, lines int) config.CardLayout {
 	if w > maxW {
 		w = maxW
 	}
-	return cardCfg.Layout(host.display, w, lines)
+	if w < 1 {
+		w = 1
+	}
+	return w
 }
 
-// fitCardSize handles a drag: width as fitCardWidth, and the dragged height
-// picks how many lines show, from one line up to max_lines, so the bottom
-// edge stops there and never exposes blank space. The chosen count is
-// published once, at the end. Zero userLines means "up to max_lines"; writing
-// that zero before the snap would make a nested sync lay the card back out
-// at full height.
+// layoutAt measures a viewport without publishing it. A non-positive
+// viewport is one line, which is what a collapsed drag proposes.
+func (a *App) layoutAt(host *cardUI, w, viewport int) config.CardLayout {
+	w = a.clampCardWidth(host, w)
+	return a.config().Card.LayoutViewport(host.display, w, viewport)
+}
+
+// fitCardSize clamps a drag to one line, the measured text, and max height.
+// A shorter viewport than the text scrolls; a taller one snaps back to the
+// text so the card does not keep empty paper.
 func (a *App) fitCardSize(host *cardUI, w, h int) config.CardLayout {
-	cardCfg := a.config().Card
-	base := a.layoutAt(host, w, 0)
-	maxN := min(base.FullLines, cardCfg.EffectiveMaxLines())
-	if maxN < 1 {
-		maxN = 1
-	}
-	one := a.layoutAt(host, base.Width, 1)
-	if one.Height < 1 {
-		one.Height = 1
-	}
-	if one.Width < 1 {
-		one.Width = 1
-	}
-	lines := 1
-	snapped := one
-	// Anything shorter than one line box stays at that box. A fast drag can
-	// propose 0 or a negative height; growing past it would hide the card.
-	if h >= one.Height {
-		for n := 1; n <= maxN; n++ {
-			l := a.layoutAt(host, base.Width, n)
-			if l.Height < 1 {
-				l.Height = 1
-			}
-			if l.VisibleLines < n || l.Height > h {
-				break
-			}
-			lines = n
-			snapped = l
-		}
-		if lines == cardCfg.EffectiveMaxLines() && base.VisibleLines == lines {
-			lines = 0
-			snapped = a.layoutAt(host, base.Width, 0)
-			if snapped.Height < one.Height {
-				snapped.Height = one.Height
-			}
-		}
-	}
-	if snapped.Width < one.Width {
-		snapped.Width = one.Width
-	}
-	if snapped.Height < one.Height {
-		snapped.Height = one.Height
-	}
-	host.userLines = lines
-	host.rendered = snapped.Text
-	host.userW, host.userH = snapped.Width, snapped.Height
-	return snapped
+	return a.publishCardLayout(host, a.layoutAt(host, w, h))
+}
+
+func (a *App) publishCardLayout(host *cardUI, layout config.CardLayout) config.CardLayout {
+	host.userLines = layout.FullLines
+	host.rendered = layout.Text
+	host.userW, host.userH = layout.Width, layout.Height
+	return layout
 }
 
 // commitCardFrame publishes the line layout for a window frame. Callers pass
@@ -414,6 +384,7 @@ func (a *App) relayoutFromWindow(host *cardUI, live bool) {
 	layout := a.commitCardFrame(host, w, h)
 	minW, minH := a.cardMinSize(host.display)
 	below := w < minW || h < minH || w < 1 || h < 1
+	a.syncCardText(host)
 	if live && !below {
 		host.win.Invalidate()
 		return
@@ -436,6 +407,9 @@ func (a *App) relayoutFromWindow(host *cardUI, live bool) {
 	if !live {
 		a.keepCardOnScreen(host)
 	}
+	// SetSize above can settle on a different frame than the one synced
+	// before it. The scroll view follows the frame that remains.
+	a.syncCardText(host)
 	host.win.Invalidate()
 }
 
@@ -447,7 +421,7 @@ func (a *App) cardMinSize(display string) (int, int) {
 	if minW < 1 {
 		minW = 1
 	}
-	minH := cardCfg.Layout(display, minW, 1).Height
+	minH := cardCfg.OneLineHeight(minW)
 	if minH < 1 {
 		minH = 1
 	}
@@ -542,23 +516,22 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		col = col.Transition(motion)
 	}
 	col = cardPointerInput(a, host, host.win, col).Cursor(edgeCursor(host.hoverEdge))
+	if host.textHost != nil {
+		ink := paperInk(dark)
+		host.textHost.SetColor(ink.R, ink.G, ink.B)
+	}
 	col.Children(func() {
-		// Draw from the frame, not a previously published string. A fast
-		// resize can paint between the frame change and the snap.
-		text, lines := host.rendered, max(a.slipLines(host, host.userW), 1)
-		if host.win != nil {
-			w, h := host.win.Size()
-			if w > 0 && h > 0 {
-				layout := a.commitCardFrame(host, w, h)
-				text = layout.Text
-				lines = max(layout.VisibleLines, 1)
-			}
+		// macOS draws the string in the NSTextView. Other platforms scroll
+		// the full string in the toolkit; nothing is ellipsized.
+		if macplace.NativeCardText {
+			return
 		}
-		ui.Text(c, text).
-			Font(font.Family).
-			FontSize(font.Size).
-			TextColor(paperInk(dark)).
-			MaxLines(lines)
+		ui.Scroll(c).Fill().Children(func() {
+			ui.Text(c, host.display).
+				Font(font.Family).
+				FontSize(font.Size).
+				TextColor(paperInk(dark))
+		})
 	})
 }
 
@@ -744,6 +717,156 @@ func (a *App) pasteSelected() {
 	a.pasteCard(h)
 }
 
+func (a *App) attachCardText(host *cardUI) {
+	if host == nil || host.win == nil {
+		return
+	}
+	cfg := a.config().Card
+	w, h := host.win.Size()
+	ink := paperInk(false)
+	host.textHost = macplace.AttachCardText(host.win.NativeHandle(), macplace.CardTextOptions{
+		Text:         host.display,
+		FontFamily:   cfg.EffectiveFontFamily(),
+		FontSize:     float64(cfg.EffectiveFontSize()),
+		Red:          ink.R,
+		Green:        ink.G,
+		Blue:         ink.B,
+		CanEdit:      a.canEditCard(host.card),
+		Titles:       a.cardMenuTitles(),
+		Width:        w,
+		Height:       h,
+		PadX:         cfg.EffectivePaddingX(),
+		PadY:         cfg.EffectivePaddingY(),
+		Border:       config.CardBorderPx(),
+		ResizeMargin: nativeResizeMargin,
+		OnAction: func(action macplace.CardMenuAction) {
+			a.cardMenuAction(host, action)
+		},
+		OnCommit: func(text string) { a.commitCardEdit(host, text) },
+	})
+}
+
+func (a *App) syncCardText(host *cardUI) {
+	if host == nil || host.textHost == nil || host.win == nil {
+		return
+	}
+	cfg := a.config().Card
+	w, h := host.win.Size()
+	host.textHost.SetTitles(a.cardMenuTitles())
+	host.textHost.SetCanEdit(a.canEditCard(host.card))
+	host.textHost.SetFont(cfg.EffectiveFontFamily(), float64(cfg.EffectiveFontSize()))
+	host.textHost.Layout(w, h, cfg.EffectivePaddingX(), cfg.EffectivePaddingY(), config.CardBorderPx(), nativeResizeMargin)
+	if !host.textHost.Editing() {
+		host.textHost.SetText(host.display)
+	}
+}
+
+func (a *App) cardMenuTitles() macplace.CardMenuTitles {
+	lang := a.config().Language
+	return macplace.CardMenuTitles{
+		Edit:    tr(lang, "menu_edit"),
+		Copy:    tr(lang, "menu_copy"),
+		Delete:  tr(lang, "menu_delete"),
+		Restore: tr(lang, "menu_restore"),
+	}
+}
+
+func (a *App) canEditCard(card store.Card) bool {
+	return !secrets.IsSensitive(card.Text, a.secrets(), card.Concealed)
+}
+
+func (a *App) openCardMenu(host *cardUI, win *mygo.Window) {
+	if host == nil || host.textHost == nil || win == nil {
+		return
+	}
+	host.textHost.SetTitles(a.cardMenuTitles())
+	host.textHost.SetCanEdit(a.canEditCard(host.card))
+	w, h := win.Size()
+	sp := mygo.Screen.CursorScreenPoint()
+	wx, wy := win.Position()
+	host.textHost.ShowMenu(sp.X-wx, sp.Y-wy, w, h)
+}
+
+func (a *App) cardMenuAction(host *cardUI, action macplace.CardMenuAction) {
+	switch action {
+	case macplace.CardMenuEdit:
+		a.beginCardEdit(host)
+	case macplace.CardMenuCopy:
+		a.copyCard(host)
+	case macplace.CardMenuDelete:
+		a.removeCard(host.card.ID)
+	case macplace.CardMenuRestore:
+		a.restoreCard(host)
+	default:
+		panic("snip: unhandled card menu action")
+	}
+}
+
+func (a *App) beginCardEdit(host *cardUI) {
+	if host == nil || host.textHost == nil || !a.canEditCard(host.card) {
+		return
+	}
+	host.textHost.BeginEdit(host.card.Text)
+}
+
+func (a *App) commitCardEdit(host *cardUI, text string) {
+	if host == nil || host.closingEdit {
+		return
+	}
+	host.closingEdit = true
+	defer func() { host.closingEdit = false }()
+	updated, ok := a.store.UpdateText(host.card.ID, text)
+	if !ok {
+		return
+	}
+	host.card = updated
+	host.display = a.cardDisplay(updated)
+	a.reflowCard(host)
+}
+
+func (a *App) copyCard(host *cardUI) {
+	if host == nil {
+		return
+	}
+	text := host.card.Text
+	if host.textHost != nil && host.textHost.Editing() {
+		text = host.textHost.Text()
+	}
+	a.mu.Lock()
+	a.ignoreNextChange = true
+	a.mu.Unlock()
+	mygo.Clipboard.WriteText(text)
+}
+
+func (a *App) restoreCard(host *cardUI) {
+	if host == nil {
+		return
+	}
+	if host.textHost != nil && host.textHost.Editing() {
+		host.textHost.CancelEdit()
+	}
+	updated, ok := a.store.RestoreOriginal(host.card.ID)
+	if !ok {
+		return
+	}
+	host.card = updated
+	host.display = a.cardDisplay(updated)
+	a.reflowCard(host)
+}
+
+func (a *App) reflowCard(host *cardUI) {
+	if host == nil || host.win == nil {
+		return
+	}
+	w, _ := host.win.Size()
+	layout := a.fitCardWidth(host, w)
+	host.syncing = true
+	host.win.SetSize(layout.Width, layout.Height)
+	host.syncing = false
+	a.syncCardText(host)
+	host.win.Invalidate()
+}
+
 func (a *App) pasteCard(h *cardUI) {
 	if h == nil {
 		return
@@ -859,7 +982,7 @@ func (a *App) applyConfig(next config.Config) {
 		minW, minH := a.cardMinSize(h.display)
 		h.win.SetMinimumSize(minW, minH)
 		macplace.SetContentMinSize(h.win.NativeHandle(), minW, minH)
-		h.win.SetMaximumSize(next.Card.EffectiveMaxWidth(), 10000)
+		h.win.SetMaximumSize(next.Card.EffectiveMaxWidth(), next.Card.EffectiveMaxHeight())
 		if h.userW == 0 {
 			width, height := next.Card.EstimateSize(h.display)
 			h.win.SetSize(width, height)

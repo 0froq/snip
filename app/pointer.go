@@ -80,6 +80,12 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 	return col.HandleInput(func(ev ui.InputEvent) bool {
 		switch ev.Kind {
 		case ui.InputPointerDown:
+			if ev.Button == 1 {
+				if host.resizeEdge == 0 {
+					a.openCardMenu(host, win)
+				}
+				return true
+			}
 			if ev.Button != 0 {
 				return false
 			}

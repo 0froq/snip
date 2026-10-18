@@ -52,6 +52,9 @@ type CardLayout struct {
 	VisibleLines int
 	FullLines    int
 	Truncated    bool
+	// Scrolls is true when the text is taller than the window. The card
+	// shows it in a scroll view instead of clipping it.
+	Scrolls bool
 }
 
 // linesForText counts the visual lines MyGo actually lays out, by distinct
@@ -83,103 +86,34 @@ func (c Card) linesForText(text string, width int) int {
 	return rows
 }
 
-func (c Card) truncate(display string, width, lines int) (string, bool) {
-	if c.linesForText(display, width) <= lines {
-		return display, false
+// measureBox is the full text's line count and the window height that
+// shows every line, using the same font the card renders with.
+func (c Card) measureBox(display string, width int) (lines, height int) {
+	if strings.TrimSpace(display) == "" {
+		display = " "
 	}
-	runes := []rune(display)
-	lo, hi := 0, len(runes)
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		candidate := string(runes[:mid]) + "…"
-		if c.linesForText(candidate, width) <= lines {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
+	lines = c.linesForText(display, width)
+	if lines < 1 {
+		lines = 1
 	}
-	if lo == 0 {
-		return "…", true
+	_, textH := ui.ShapeText(display, c.cardFont(), c.textWidthForSlip(width)).Size()
+	height = int(math.Ceil(float64(textH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
+	if height < 1 {
+		height = 1
 	}
-	return string(runes[:lo]) + "…", true
+	return lines, height
 }
 
-// head is the longest prefix that fits in n lines (kept for reference callers).
-func (c Card) head(runes []rune, width, n int) string {
-	lo, hi := 0, len(runes)
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		if c.linesForText(string(runes[:mid]), width) <= n {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
+// OneLineHeight is the shortest window that still shows one line at width.
+func (c Card) OneLineHeight(width int) int {
+	h := int(math.Ceil(float64(c.lineBox()))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
+	if h < 1 {
+		return 1
 	}
-	return strings.TrimRight(string(runes[:lo]), "\n")
+	return h
 }
 
-// headWithEllipsis is the longest prefix p such that p + "\n…" fits in n lines.
-func (c Card) headWithEllipsis(runes []rune, width, n int) string {
-	lo, hi := 0, len(runes)
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		cand := strings.TrimRight(string(runes[:mid]), "\n") + "\n…"
-		if c.linesForText(cand, width) <= n {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	return strings.TrimRight(string(runes[:lo]), "\n") + "\n…"
-}
-
-// tail is the longest suffix that fits on one line.
-func (c Card) tail(runes []rune, width int) string {
-	end := len(runes)
-	for end > 0 && runes[end-1] == '\n' {
-		end--
-	}
-	runes = runes[:end]
-	lo, hi := 0, len(runes)
-	for lo < hi {
-		mid := (lo + hi) / 2
-		cand := string(runes[mid:])
-		if !strings.Contains(cand, "\n") && c.linesForText(cand, width) <= 1 {
-			hi = mid
-		} else {
-			lo = mid + 1
-		}
-	}
-	return string(runes[lo:])
-}
-
-// truncateMiddle shows all text when it fits in n lines. Otherwise it keeps
-// the first n-2 lines, one line holding only an ellipsis, and the last line
-// (n=2: first line plus the ellipsis line; n=1: one line ending in "…").
-func (c Card) truncateMiddle(display string, width, n int) (string, bool) {
-	if c.linesForText(display, width) <= n {
-		return display, false
-	}
-	if n <= 1 {
-		return c.truncate(display, width, 1)
-	}
-	runes := []rune(display)
-	// Measure the head together with the ellipsis line: a head that exactly
-	// fills its last line can make the following newline wrap an empty line.
-	if n == 2 {
-		return c.headWithEllipsis(runes, width, 2), true
-	}
-	head := c.headWithEllipsis(runes, width, n-1)
-	return head + "\n" + c.tail(runes, width), true
-}
-
-// Layout truncates first, then measures the exact text that the card draws.
-// A zero width chooses a natural one-line width, capped at max width.
-// A zero visibleLines uses the configured max line count.
-func (c Card) Layout(display string, width, visibleLines int) CardLayout {
-	if !utf8.ValidString(display) {
-		display = string([]rune(display))
-	}
+func (c Card) clampWidth(display string, width int) int {
 	maxW := c.EffectiveMaxWidth()
 	if width <= 0 {
 		width = c.naturalSlipWidth(display)
@@ -190,26 +124,66 @@ func (c Card) Layout(display string, width, visibleLines int) CardLayout {
 	if width < 1 {
 		width = 1
 	}
-	full := c.linesForText(display, width)
-	if visibleLines <= 0 {
-		visibleLines = c.EffectiveMaxLines()
+	return width
+}
+
+func (c Card) maxWindowHeight(one int) int {
+	maxH := c.EffectiveMaxHeight()
+	if maxH < one {
+		return one
 	}
-	if visibleLines > full {
-		visibleLines = full
+	return maxH
+}
+
+// Layout sizes a new card around the whole string. Nothing is ellipsized.
+// The window is the measured height, capped at max height; past that the
+// card scrolls.
+func (c Card) Layout(display string, width, _ int) CardLayout {
+	return c.layout(display, width, 0, true)
+}
+
+// LayoutViewport fits display into an explicit window height. A viewport
+// shorter than the text scrolls. A viewport taller than the text shrinks
+// to the text. Height stays inside one line and max height.
+func (c Card) LayoutViewport(display string, width, viewport int) CardLayout {
+	return c.layout(display, width, viewport, false)
+}
+
+func (c Card) layout(display string, width, viewport int, natural bool) CardLayout {
+	if !utf8.ValidString(display) {
+		display = string([]rune(display))
 	}
-	if visibleLines < 1 {
-		visibleLines = 1
+	width = c.clampWidth(display, width)
+	lines, contentH := c.measureBox(display, width)
+	one := c.OneLineHeight(width)
+	if contentH < one {
+		contentH = one
 	}
-	text, truncated := c.truncateMiddle(display, width, visibleLines)
-	_, textH := ui.ShapeText(text, c.cardFont(), c.textWidthForSlip(width)).Size()
-	height := int(math.Ceil(float64(textH))) + 2*c.EffectivePaddingY() + 2*cardBorderPx
+	maxH := c.maxWindowHeight(one)
+	height := contentH
+	if !natural {
+		if viewport < one {
+			viewport = one
+		}
+		height = viewport
+		if height > contentH {
+			height = contentH
+		}
+	}
+	if height > maxH {
+		height = maxH
+	}
+	if height < one {
+		height = one
+	}
 	return CardLayout{
-		Text:         text,
+		Text:         display,
 		Width:        width,
 		Height:       height,
-		VisibleLines: visibleLines,
-		FullLines:    full,
-		Truncated:    truncated,
+		VisibleLines: lines,
+		FullLines:    lines,
+		Truncated:    false,
+		Scrolls:      contentH > height,
 	}
 }
 

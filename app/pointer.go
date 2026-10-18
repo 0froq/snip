@@ -9,6 +9,15 @@ import (
 
 const pointerSlop = 6.0
 
+// The close control matches a macOS traffic-light button: a 12pt circle
+// in the card's top-left. Its hit target wins over the resize band and
+// the drag interior so a click there does not move, select, or paste.
+const (
+	closeButtonSize = 12
+	closeButtonX    = 8
+	closeButtonY    = 6
+)
+
 // Leave all four native resize borders alone, including the top corners.
 // This is only a drag-to-move exclusion, not a resize grip or hit tracker.
 const nativeResizeMargin = config.CardResizeMargin
@@ -54,6 +63,38 @@ func cardMoveInterior(x, y, width, height int) bool {
 		x < width-nativeResizeMargin && y < height-nativeResizeMargin
 }
 
+type cardHit int
+
+const (
+	cardHitNone cardHit = iota
+	cardHitClose
+	cardHitResize
+	cardHitMove
+)
+
+// closeButtonContains reports a window-local point on the close circle.
+func closeButtonContains(x, y int) bool {
+	r := closeButtonSize / 2
+	dx := x - (closeButtonX + r)
+	dy := y - (closeButtonY + r)
+	return dx*dx+dy*dy <= r*r
+}
+
+// cardHitTest is what a press on the card does. The close circle is first,
+// then a resize edge, then a drag of the interior.
+func cardHitTest(x, y, width, height int) (cardHit, int) {
+	if closeButtonContains(x, y) {
+		return cardHitClose, 0
+	}
+	if e := cardEdge(x, y, width, height); e != 0 {
+		return cardHitResize, e
+	}
+	if cardMoveInterior(x, y, width, height) {
+		return cardHitMove, 0
+	}
+	return cardHitNone, 0
+}
+
 // cardPointerInput moves the card window on drag and selects on a tap.
 // HandleInput must consume the pointer stream because DragWindow skips
 // press tracking, so Clicked and release handlers never run.
@@ -97,11 +138,24 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			if host.resizeEdge != 0 {
 				a.snapWindowToLineCount(host, win)
 			}
+			if host.closePress {
+				host.closePress = false
+				host.pointerActive = false
+			}
 			sp := mygo.Screen.CursorScreenPoint()
 			wx, wy := win.Position()
 			ww, wh := win.Size()
-			if e := cardEdge(sp.X-wx, sp.Y-wy, ww, wh); e != 0 {
-				host.resizeEdge = e
+			kind, edge := cardHitTest(sp.X-wx, sp.Y-wy, ww, wh)
+			switch kind {
+			case cardHitClose:
+				// Do not select. A click here only arms the close control.
+				host.closePress = true
+				host.pointerActive = true
+				host.pointerDragged = false
+				host.resizeEdge = 0
+				return true
+			case cardHitResize:
+				host.resizeEdge = edge
 				host.pointerActive = true
 				host.pressScreenX, host.pressScreenY = sp.X, sp.Y
 				host.startX, host.startY, host.startW, host.startH = wx, wy, ww, wh
@@ -109,28 +163,40 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 				// event so the accent follows the raise, including on a drag.
 				a.selectID(host.card.ID)
 				return true
-			}
-			if !cardMoveInterior(sp.X-wx, sp.Y-wy, ww, wh) {
+			case cardHitMove:
+				host.pointerActive = true
+				host.pointerDragged = false
+				host.pressClicks = ev.Clicks
+				host.pressScreenX, host.pressScreenY = sp.X, sp.Y
+				host.dragOffX = sp.X - wx
+				host.dragOffY = sp.Y - wy
+				a.selectID(host.card.ID)
+				return true
+			case cardHitNone:
 				return false
+			default:
+				panic("snip: unhandled card hit")
 			}
-			host.pointerActive = true
-			host.pointerDragged = false
-			host.pressClicks = ev.Clicks
-			host.pressScreenX, host.pressScreenY = sp.X, sp.Y
-			host.dragOffX = sp.X - wx
-			host.dragOffY = sp.Y - wy
-			a.selectID(host.card.ID)
-			return true
 		case ui.InputPointerMove:
 			sp := mygo.Screen.CursorScreenPoint()
 			if !host.pointerActive {
 				wx, wy := win.Position()
 				ww, wh := win.Size()
-				if e := cardEdge(sp.X-wx, sp.Y-wy, ww, wh); e != host.hoverEdge {
-					host.hoverEdge = e
+				kind, edge := cardHitTest(sp.X-wx, sp.Y-wy, ww, wh)
+				hot := kind == cardHitClose
+				hoverEdge := 0
+				if kind == cardHitResize {
+					hoverEdge = edge
+				}
+				if hot != host.closeHot || hoverEdge != host.hoverEdge {
+					host.closeHot = hot
+					host.hoverEdge = hoverEdge
 					win.Invalidate()
 				}
 				return false
+			}
+			if host.closePress {
+				return true
 			}
 			dx := sp.X - host.pressScreenX
 			dy := sp.Y - host.pressScreenY
@@ -158,6 +224,17 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 			// allowed to sync. The release cursor is the whole drag: the
 			// pointer can leave the shrinking card and drop the last moves.
 			host.pointerActive = false
+			if host.closePress {
+				host.closePress = false
+				sp := mygo.Screen.CursorScreenPoint()
+				wx, wy := win.Position()
+				ww, wh := win.Size()
+				kind, _ := cardHitTest(sp.X-wx, sp.Y-wy, ww, wh)
+				if kind == cardHitClose {
+					a.deleteCard(host.card.ID)
+				}
+				return true
+			}
 			if host.resizeEdge != 0 {
 				a.finishPointerResize(host, win)
 				return true

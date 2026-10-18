@@ -90,6 +90,8 @@ type cardUI struct {
 	pressScreenX   int
 	pressScreenY   int
 	pressClicks    int
+	closeHot       bool
+	closePress     bool
 	syncing        bool
 	// resizeDepth is non-zero while a resize callback is on the stack.
 	// hide/orderOut must not run from that stack.
@@ -579,6 +581,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		shell = shell.Transition(motion)
 	}
 	shell = cardPointerInput(a, host, host.win, shell).Cursor(edgeCursor(host.hoverEdge))
+	cardHot := shell.Hovered()
 	if host.textHost != nil {
 		ink := paperInk(dark)
 		host.textHost.SetColor(ink.R, ink.G, ink.B)
@@ -607,7 +610,35 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 						})
 					})
 			})
+		if cardHot || host.closePress {
+			cardCloseButton(c, host.closeHot)
+		}
 	})
+}
+
+// cardCloseButton is the traffic-light close control. The circle is always
+// the same red; the glyph shows only while the pointer is on the circle.
+func cardCloseButton(c *ui.Context, hot bool) {
+	fade := ui.ElementTransition{Duration: 90 * time.Millisecond, Position: true}
+	fade.Enter = &ui.Motion{Opacity: 0}
+	fade.Exit = &ui.Motion{Opacity: 0}
+	ui.Column(c.Key("card-close")).
+		Absolute().
+		Left(closeButtonX).
+		Top(closeButtonY).
+		Size(closeButtonSize, closeButtonSize).
+		Radius(closeButtonSize/2).
+		Background(ui.Hex("#FF5F57")).
+		Border(1, ui.Hex("#E0443E")).
+		FocusRing(false).
+		Center().
+		Transition(fade).
+		Children(func() {
+			if !hot {
+				return
+			}
+			ui.Text(c, "×").FontSize(9).TextColor(ui.Hex("#4A0000"))
+		})
 }
 
 func (a *App) toggleVisible() {

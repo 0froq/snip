@@ -41,6 +41,38 @@ func TestParseBinding(t *testing.T) {
 	}
 }
 
+func TestBindingConflicts(t *testing.T) {
+	rows := []Binding{
+		{Action: "paste", Keys: "cmd+shift+v"},
+		{Action: "delete", Keys: "CmdOrCtrl+Shift+V"},
+		{Action: "next", Keys: "leader d"},
+		{Action: "prev", Keys: "leader D"},
+		{Action: "pin", Keys: "leader shift+p"},
+		{Action: "toggle", Keys: ""},
+		{Action: "settings", Keys: "cmd+nope"},
+		{Action: "leader", Keys: "leader x"},
+		{Action: "leader", Keys: "cmd+shift+space"},
+		{Action: "clear_cards", Keys: "cmd+shift+space"},
+	}
+	got := CheckBindings(rows)
+	want := []string{"conflict", "conflict", "conflict", "conflict", "", "empty", "unknown", "leader", "conflict", "conflict"}
+	if len(got) != len(want) {
+		t.Fatalf("len %d", len(got))
+	}
+	for i, code := range want {
+		gotCode := ""
+		if got[i] != nil {
+			gotCode = got[i].Code
+		}
+		if gotCode != code {
+			t.Fatalf("row %d %q want %q (%+v)", i, gotCode, code, got[i])
+		}
+	}
+	if got[6].Token != "nope" {
+		t.Fatalf("unknown token %q", got[6].Token)
+	}
+}
+
 func issueCode(t *testing.T, err error) string {
 	t.Helper()
 	issue, ok := err.(*BindingIssue)

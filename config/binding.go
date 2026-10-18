@@ -40,6 +40,43 @@ func (e *BindingIssue) Error() string {
 	return e.Code + ": " + e.Token
 }
 
+// CheckBindings reports one issue per row. Empty and unknown keys win over
+// a duplicate. A leader prefix on the leader action is its own error.
+// Two rows conflict when they parse to the same global combo, or the same
+// key after the leader key. A global combo does not conflict with a leader key.
+func CheckBindings(rows []Binding) []*BindingIssue {
+	out := make([]*BindingIssue, len(rows))
+	seen := map[string]int{}
+	for i, row := range rows {
+		if row.Action == "leader" && HasLeaderPrefix(row.Keys) {
+			out[i] = &BindingIssue{Code: "leader"}
+			continue
+		}
+		parsed, err := ParseBinding(row.Keys)
+		if err != nil {
+			issue, ok := err.(*BindingIssue)
+			if !ok {
+				issue = &BindingIssue{Code: "unknown"}
+			}
+			out[i] = issue
+			continue
+		}
+		id := parsed.Chord
+		if parsed.Leader {
+			id = "leader " + parsed.Chord
+		}
+		if prev, ok := seen[id]; ok {
+			if out[prev] == nil {
+				out[prev] = &BindingIssue{Code: "conflict"}
+			}
+			out[i] = &BindingIssue{Code: "conflict"}
+			continue
+		}
+		seen[id] = i
+	}
+	return out
+}
+
 // HasLeaderPrefix reports whether s starts a leader combo.
 func HasLeaderPrefix(s string) bool {
 	fields := strings.Fields(s)

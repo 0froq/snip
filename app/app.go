@@ -114,6 +114,7 @@ func New(cfg config.Config, configPath string) *App {
 // WhenReady registers UI hooks (call inside mygo.App.WhenReady).
 func (a *App) WhenReady() {
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	macpaste.WatchFrontmost()
 	a.installMenus()
 	a.registerShortcuts()
 	a.checkAccessibility()
@@ -922,7 +923,7 @@ func (a *App) pasteCard(h *cardUI) {
 	a.ignoreNextChange = true
 	a.mu.Unlock()
 	mygo.Clipboard.WriteText(text)
-	if err := macpaste.PostCommandV(); err != nil {
+	if err := macpaste.PasteToPrevious(); err != nil {
 		if errors.Is(err, macpaste.ErrAccessibility) {
 			macpaste.OpenAccessibilitySettings()
 			return

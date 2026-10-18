@@ -17,6 +17,12 @@ func AccessibilityTrusted(prompt bool) bool { return false }
 // PostCommandV is a no-op off macOS.
 func PostCommandV() error { return errUnsupported }
 
+// WatchFrontmost is a no-op off macOS.
+func WatchFrontmost() {}
+
+// PasteToPrevious is a no-op off macOS.
+func PasteToPrevious() error { return errUnsupported }
+
 // openAccessibilityPane is a no-op off macOS.
 func openAccessibilityPane() {}
 

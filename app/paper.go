@@ -24,10 +24,3 @@ func paperEdge(dark bool) ui.Color {
 func paperStroke(dark bool) ui.Color {
 	return paperEdge(dark).Alpha(0.25)
 }
-
-func paperShadow(dark bool) ui.Color {
-	if dark {
-		return ui.Hex("#000000").Alpha(0.42)
-	}
-	return ui.Hex("#3A2E24").Alpha(0.16)
-}

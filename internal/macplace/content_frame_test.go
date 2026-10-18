@@ -2,6 +2,29 @@ package macplace
 
 import "testing"
 
+func TestBorderlessStyleMaskDropsWindowChrome(t *testing.T) {
+	const full = styleBitTitled | styleBitClosable | styleBitMiniaturizable | styleBitResizable | styleBitFullSizeContent
+	got := borderlessStyleMask(full)
+	if got&styleBitFullSizeContent != 0 || got&styleBitTitled != 0 {
+		t.Fatalf("chrome still set: %#x", got)
+	}
+	if got&styleBitResizable == 0 {
+		t.Fatal("resizable bit cleared")
+	}
+}
+
+func TestSubviewShouldFillOnlyTheTitleBarInset(t *testing.T) {
+	if !subviewShouldFill(460, 640, 0, 28, 460, 612) {
+		t.Fatal("title-bar inset surface should fill the window")
+	}
+	if subviewShouldFill(460, 640, 0, 0, 460, 640) {
+		t.Fatal("a view that already fills the window is left alone")
+	}
+	if subviewShouldFill(460, 640, 11, 10, 438, 620) {
+		t.Fatal("an inset text view must not be stretched to the window")
+	}
+}
+
 func TestContentFrameMatchingWindow(t *testing.T) {
 	// Title-bar inset: the view is shorter and lifted off the bottom of a
 	// window whose frame is already the size the user asked for.

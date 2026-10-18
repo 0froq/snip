@@ -17,28 +17,20 @@ var (
 	setViewFrame   func(id, objc.SEL, nsRect)
 )
 
-// SquareWindow clears the titled style bits that make AppKit use its own
-// ~10–12pt corner radius, then clips the content view to WindowCornerRadius
-// with a continuous (squircle) corner curve.
-// The window is non-opaque so the clipped corners show through. The resizable
-// bit stays on: borderless windows still need it for edge tracking and resize
-// cursors. Hit testing uses the rectangular frame, so the resize band is unchanged.
+// SquareWindow clears the titled window chrome, including
+// fullSizeContentView, which keeps AppKit's light hairline after the title
+// bar is gone. The content view is then clipped to WindowCornerRadius with
+// a continuous corner curve. The window is non-opaque so the clipped
+// corners show through. The resizable bit stays on: borderless windows
+// still need it for edge tracking and resize cursors. Hit testing uses the
+// rectangular frame, so the resize band is unchanged.
 func SquareWindow(handle uintptr) {
 	if handle == 0 {
 		return
 	}
 	load()
 	w := id(handle)
-	const (
-		styleTitled    = 1 << 0
-		styleClosable  = 1 << 1
-		styleMini      = 1 << 2
-		styleResizable = 1 << 3
-	)
-	mask := uintptr(send(w, "styleMask"))
-	mask &^= styleTitled | styleClosable | styleMini
-	mask |= styleResizable
-	send(w, "setStyleMask:", mask)
+	send(w, "setStyleMask:", borderlessStyleMask(uintptr(send(w, "styleMask"))))
 	send(w, "setHasShadow:", 0)
 	send(w, "setOpaque:", 0)
 	send(w, "setBackgroundColor:", uintptr(send(class("NSColor"), "clearColor")))
@@ -74,11 +66,18 @@ func syncContentFrame(w, content id) {
 	bounds := nsRect{size: nsSize{width: fw, height: fh}}
 	if changed {
 		setViewFrame(content, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: bounds.size})
-		subs := send(content, "subviews")
-		n := sendInt(subs, "count")
-		for i := 0; i < n; i++ {
-			setViewFrame(send(subs, "objectAtIndex:", uintptr(i)), sel("setFrame:"), bounds)
+	}
+	// Only the surface that still fills the old content width grows with
+	// the window. An inset text view keeps its own frame.
+	subs := send(content, "subviews")
+	n := sendInt(subs, "count")
+	for i := 0; i < n; i++ {
+		sub := send(subs, "objectAtIndex:", uintptr(i))
+		r := msgRect(sub, sel("frame"))
+		if !subviewShouldFill(fw, fh, r.origin.x, r.origin.y, r.size.width, r.size.height) {
+			continue
 		}
+		setViewFrame(sub, sel("setFrame:"), bounds)
 	}
 	layer := send(content, "layer")
 	if layer == 0 {
@@ -104,8 +103,12 @@ func roundContent(view id, radius float64) {
 		return
 	}
 	setLayerRadius(layer, sel("setCornerRadius:"), radius)
+	setLayerRadius(layer, sel("setBorderWidth:"), 0)
 	if send(layer, "respondsToSelector:", uintptr(sel("setCornerCurve:"))) != 0 {
 		send(layer, "setCornerCurve:", uintptr(nsString(CornerCurveContinuous)))
 	}
+	send(layer, "setOpaque:", 0)
+	clear := send(class("NSColor"), "clearColor")
+	send(layer, "setBackgroundColor:", uintptr(send(clear, "CGColor")))
 	send(layer, "setMasksToBounds:", 1)
 }

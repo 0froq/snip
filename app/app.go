@@ -274,13 +274,15 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	macplace.UseFrameResizeCursors()
 	macplace.PreventWindowFocus(win.NativeHandle())
 	a.applyWindowFlags(win)
-	macplace.SquareWindow(win.NativeHandle())
 	minW, minH := a.cardMinSize(host.display)
 	win.SetMinimumSize(minW, minH)
 	// Style-mask changes drop the frame min. The content min is what stops a
 	// borderless live resize from collapsing the card to zero height.
 	macplace.SetContentMinSize(win.NativeHandle(), minW, minH)
 	win.SetResizable(true)
+	// SetResizable writes the style mask again and puts the content view
+	// back at the title-bar inset. Square the window after that write.
+	macplace.SquareWindow(win.NativeHandle())
 	cleanupResize := macplace.ConstrainWindowResize(win.NativeHandle(), func(width, height int) (int, int) {
 		host.beginResize()
 		defer host.endResize()

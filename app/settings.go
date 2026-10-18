@@ -142,8 +142,11 @@ func (a *App) settingsView(c *ui.Context) {
 				}
 			})
 			input.Segmented(c, tr(lang, "settings"), settingsTabLabels(lang), &f.SettingsTab, input.SegmentedOptions{})
-			ui.Scroll(c).Grow(1).Children(func() {
-				ui.Column(c).Gap(k.D(6)).Children(func() {
+			// The scroll keeps its content height, and shrinks only when the
+			// page is taller than the window. Leftover space sits below Save,
+			// so a short page is not a box with a hole under the last control.
+			ui.Scroll(c).Shrink(1).MinHeight(0).Children(func() {
+				ui.Column(c).Shrink(0).Gap(k.D(6)).Children(func() {
 					a.settingsPage(c, f, lang)
 				})
 			})
@@ -153,6 +156,7 @@ func (a *App) settingsView(c *ui.Context) {
 			if input.Button(c, tr(lang, "save"), input.ButtonOptions{Variant: input.Primary}).Clicked {
 				a.saveSettings()
 			}
+			ui.Box(c).Grow(1)
 		})
 	})
 }
@@ -285,11 +289,11 @@ func (a *App) settingsPrivacy(c *ui.Context, f *config.Form, lang string) {
 func (a *App) settingsSection(c *ui.Context, title string, body func()) {
 	k := pixel.K(c)
 	layout.Panel(c, layout.PanelOptions{Style: pixel.Raised, Padding: 4}, func() {
-		ui.Column(c).Gap(k.D(4)).Children(func() {
+		ui.Column(c).Shrink(0).Gap(k.D(4)).Children(func() {
 			text.Heading(c, title, text.HeadingOptions{Level: 3, Slot: pixel.Ink})
 			body()
 		})
-	})
+	}).Shrink(0)
 }
 
 func (a *App) captureModeSelect(c *ui.Context, lang string, mode *string) {
@@ -358,20 +362,34 @@ func (a *App) captureAppSelect(c *ui.Context, f *config.Form, choices []macpaste
 	})
 }
 
-// pixelChoice is a sunken pixel menu. The row text is the system face so
-// app names stay readable when the pixel font lacks a glyph.
+// choiceDown is the select chevron. The kit's copy is unexported.
+var choiceDown = pixel.MustSprite(`
+	#####
+	.###.
+	..#..
+`)
+
+// pixelChoice is a pixel-kit select: notched face, left-aligned pixel
+// text, and a chevron. textOf is the row the value shows.
 func pixelChoice(c *ui.Context, label string, value *string, options []string, textOf func(string) string) {
 	k := pixel.K(c)
-	sel := ui.SelectBase(c, value)
+	var sel ui.SelectParts[string]
+	var shell ui.Element
+	var st pixel.State
+	shell, _, st = pixel.Shell(c, func() ui.Element {
+		sel = ui.SelectBase(c, value)
+		return sel.Trigger.Label(label)
+	})
 	shown := textOf(*value)
-	sel.Trigger.Label(label).Height(k.D(pixel.LineHeight+4)).MinWidth(k.D(80)).Padding(k.D(2), k.D(4)).Draw(func(p *ui.Painter, r ui.Rect) {
+	shell.Height(k.D(pixel.LineHeight + 4)).Draw(func(p *ui.Painter, r ui.Rect) {
 		g := k.Canvas(p, r)
 		if g.W < 3 || g.H < 3 {
 			return
 		}
-		g.Frame(0, 0, g.W, g.H, pixel.Sunken, pixel.Well)
-	}).Children(func() {
-		ui.Text(c, shown).FontSize(13).TextColor(k.C(pixel.Ink)).MaxLines(1)
+		ink, dy := choiceFace(g, st, sel.Open())
+		g.Text(6, 2+dy, shown, ink, 1)
+		g.Sprite(g.W-10, (g.H-choiceDown.H)/2+dy, choiceDown, 0, ink, 1)
+		g.Finish(st)
 	})
 	sel.Popup(func(panel ui.Element) {
 		panel.Padding(k.D(3)).Draw(func(p *ui.Painter, r ui.Rect) {
@@ -381,24 +399,52 @@ func pixelChoice(c *ui.Context, label string, value *string, options []string, t
 			}
 			g.Frame(0, 0, g.W, g.H, pixel.Window, pixel.Face)
 		}).Children(func() {
-			ui.Column(c).Children(func() {
+			ui.Column(c).AlignItems(ui.Stretch).Children(func() {
 				for _, opt := range options {
 					opt := opt
-					item := sel.Item(opt).Label(textOf(opt)).Padding(k.D(2), k.D(4))
+					row := textOf(opt)
+					item := sel.Item(opt).Label(row).Height(k.D(pixel.LineHeight)).MinWidth(k.D(pixel.Measure(row) + 16))
 					lit := item.Highlighted()
+					chosen := opt == *value
 					item.Draw(func(p *ui.Painter, r ui.Rect) {
-						if !lit {
-							return
-						}
 						g := k.Canvas(p, r)
-						g.Rect(0, 0, g.W, g.H, pixel.Lit)
-					}).Children(func() {
-						ui.Text(c, textOf(opt)).FontSize(13).TextColor(k.C(pixel.Ink)).MaxLines(1)
+						ink := pixel.Ink
+						if chosen {
+							ink = pixel.Accent
+						}
+						if lit {
+							g.Rect(0, 0, g.W, g.H, pixel.Lit)
+							g.Sprite(1, (g.H-pixel.Hand.H)/2, pixel.Hand, 0, pixel.Edge, 1)
+						}
+						g.Text(13, 0, row, ink, 1)
 					})
 				}
 			})
 		})
 	})
+}
+
+// choiceFace paints the closed select the way the kit paints a normal control.
+func choiceFace(g pixel.Canvas, st pixel.State, on bool) (pixel.Slot, int) {
+	dy := 0
+	if st.Press || on {
+		dy = 1
+	}
+	fill := pixel.Face
+	if on {
+		fill = pixel.Shade
+	}
+	g.Frame(0, dy, g.W, g.H-dy, pixel.Notched, fill)
+	switch {
+	case on || st.Press:
+		g.HLine(1, dy+1, g.W-2, pixel.Edge)
+	default:
+		g.Bevel(1, 1, g.W-2, g.H-2, pixel.Lit, pixel.Shade)
+		if st.Hover {
+			g.Veil(2, 2, g.W-4, g.H-4, pixel.Lit, 4)
+		}
+	}
+	return pixel.Ink, dy
 }
 
 func (a *App) runningAppName(id string) string {

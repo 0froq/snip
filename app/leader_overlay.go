@@ -528,17 +528,22 @@ func (a *App) whichKeyView(c *ui.Context) {
 	if dark {
 		fill = t.Surface.Alpha(0.78)
 	}
-	ui.Column(c).Fill().Padding(10, 12).Gap(4).
-		Background(fill).
-		Radius(float32(macplace.WindowCornerRadius)).
+	radius := float32(macplace.WindowCornerRadius)
+	ui.Column(c).Fill().
+		Radius(radius).
 		Border(1, paperStroke(dark)).
 		Children(func() {
-			for _, item := range items {
-				key, name := item.Key, item.Name
-				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, key).Width(keyW).Font(font.Family).FontSize(font.Size).TextColor(t.Accent)
-					ui.Text(c, name).Font(font.Family).FontSize(font.Size).TextColor(paperInk(dark))
+			ui.Column(c).Fill().Padding(10, 12).Gap(4).
+				Background(fill).
+				Radius(radius - 1).
+				Children(func() {
+					for _, item := range items {
+						key, name := item.Key, item.Name
+						ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, key).Width(keyW).Font(font.Family).FontSize(font.Size).TextColor(t.Accent)
+							ui.Text(c, name).Font(font.Family).FontSize(font.Size).TextColor(paperInk(dark))
+						})
+					}
 				})
-			}
 		})
 }

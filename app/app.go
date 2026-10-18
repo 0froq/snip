@@ -541,7 +541,7 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	border := paperStroke(dark)
 	if host.selected || host.pulse {
 		surface = t.Surface.Mix(accent, 0.14)
-		border = accent
+		border = accent.Alpha(0.25)
 	}
 	cardCfg := cfg.Card
 	padX := float32(cardCfg.EffectivePaddingX())
@@ -550,32 +550,39 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	if cfg.Motion.Enabled {
 		motion.Enter = &ui.Motion{Opacity: 0, Scale: 0.96, Y: 8}
 	}
-	col := ui.Column(c).Fill().
-		Padding(padY, padX, padY, padX).
-		Background(surface).
-		Radius(float32(macplace.WindowCornerRadius)).
+	radius := float32(macplace.WindowCornerRadius)
+	// The stroke is its own layer. The paper fill sits inside it, so the
+	// 25% edge is over the desktop, not over the opaque surface.
+	shell := ui.Column(c).Fill().
+		Radius(radius).
 		Border(1, border).
 		FocusRing(false)
 	if cfg.Motion.Enabled {
-		col = col.Transition(motion)
+		shell = shell.Transition(motion)
 	}
-	col = cardPointerInput(a, host, host.win, col).Cursor(edgeCursor(host.hoverEdge))
+	shell = cardPointerInput(a, host, host.win, shell).Cursor(edgeCursor(host.hoverEdge))
 	if host.textHost != nil {
 		ink := paperInk(dark)
 		host.textHost.SetColor(ink.R, ink.G, ink.B)
 	}
-	col.Children(func() {
-		// macOS draws the string in the NSTextView. Other platforms scroll
-		// the full string in the toolkit; nothing is ellipsized.
-		if macplace.NativeCardText {
-			return
-		}
-		ui.Scroll(c).Fill().Children(func() {
-			ui.Text(c, host.display).
-				Font(font.Family).
-				FontSize(font.Size).
-				TextColor(paperInk(dark))
-		})
+	shell.Children(func() {
+		ui.Column(c).Fill().
+			Padding(padY, padX, padY, padX).
+			Background(surface).
+			Radius(radius - 1).
+			Children(func() {
+				// macOS draws the string in the NSTextView. Other platforms scroll
+				// the full string in the toolkit; nothing is ellipsized.
+				if macplace.NativeCardText {
+					return
+				}
+				ui.Scroll(c).Fill().Children(func() {
+					ui.Text(c, host.display).
+						Font(font.Family).
+						FontSize(font.Size).
+						TextColor(paperInk(dark))
+				})
+			})
 	})
 }
 

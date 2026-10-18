@@ -17,6 +17,10 @@ func paperEdge(dark bool) ui.Color {
 	return ui.Hex("#DFD3C3")
 }
 
+// paperStroke is the 1px outline at 25% opacity. Put it on an element that
+// has no fill: mygo composites a border over that element's own background,
+// so the same alpha on top of the opaque paper is only a few levels off
+// the surface.
 func paperStroke(dark bool) ui.Color {
 	return paperEdge(dark).Alpha(0.25)
 }

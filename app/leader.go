@@ -19,7 +19,7 @@ func registersGlobally(action string) bool {
 	switch action {
 	case "settings":
 		return false
-	case "toggle", "next", "prev", "paste", "delete", "pin", "leader":
+	case "toggle", "next", "prev", "paste", "delete", "clear_cards", "pin", "leader":
 		return true
 	default:
 		panic("snip: unknown shortcut action " + action)
@@ -50,6 +50,8 @@ func (a *App) perform(action string) {
 		a.pasteSelected()
 	case "delete":
 		a.deleteSelected()
+	case "clear_cards":
+		a.clearCards()
 	case "pin":
 		a.bringAllToFront()
 	case "settings":

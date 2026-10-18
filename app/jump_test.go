@@ -178,7 +178,7 @@ func TestWhichKeyItemsLanguage(t *testing.T) {
 	en := whichKeyItems(cfg)
 	cfg.Language = "zh"
 	zh := whichKeyItems(cfg)
-	if len(en) != 7 || len(zh) != 7 {
+	if len(en) != 8 || len(zh) != 8 {
 		t.Fatalf("en %d zh %d", len(en), len(zh))
 	}
 	var enPaste, zhPaste string

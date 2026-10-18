@@ -66,6 +66,11 @@ leader = "v"
 direct = "CmdOrCtrl+Shift+Backspace"
 leader = "d"
 
+[bindings.clear_cards]
+direct = "CmdOrCtrl+Shift+Option+Backspace"
+# Shift+D, not "D": a single letter is case-insensitive in the shortcut parser.
+leader = "Shift+D"
+
 [bindings.pin]
 direct = "CmdOrCtrl+Shift+F"
 leader = "p"

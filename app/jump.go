@@ -29,13 +29,14 @@ var jumpKeyPool = []string{
 }
 
 var hintKeys = map[string]string{
-	"toggle":   "hint_toggle",
-	"next":     "hint_next",
-	"prev":     "hint_prev",
-	"paste":    "hint_paste",
-	"delete":   "hint_delete",
-	"pin":      "hint_pin",
-	"settings": "hint_settings",
+	"toggle":      "hint_toggle",
+	"next":        "hint_next",
+	"prev":        "hint_prev",
+	"paste":       "hint_paste",
+	"delete":      "hint_delete",
+	"clear_cards": "hint_clear_cards",
+	"pin":         "hint_pin",
+	"settings":    "hint_settings",
 }
 
 type whichKeyItem struct {

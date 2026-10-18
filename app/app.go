@@ -36,6 +36,10 @@ type App struct {
 	mu               sync.Mutex
 	lastChange       int
 	ignoreNextChange bool
+	// heldText/heldCount is the pasteboard generation at the last delete.
+	// The same changeCount must not open a new card for that text.
+	heldText  string
+	heldCount int
 
 	sec secrets.Config
 
@@ -180,7 +184,7 @@ func (a *App) watchClipboard() {
 			continue
 		}
 		a.lastChange = count
-		if text == "" {
+		if text == "" || a.pasteboardHeld(count, text) {
 			continue
 		}
 		concealed := cfg.Pasteboard.ConcealedOnCard(markers)
@@ -852,7 +856,7 @@ func (a *App) cardMenuAction(host *cardUI, action macplace.CardMenuAction) {
 	case macplace.CardMenuCopy:
 		a.copyCard(host)
 	case macplace.CardMenuDelete:
-		a.removeCard(host.card.ID)
+		a.deleteCard(host.card.ID)
 	case macplace.CardMenuRestore:
 		a.restoreCard(host)
 	default:
@@ -951,7 +955,54 @@ func (a *App) deleteSelected() {
 	}
 	id := a.order[a.selected]
 	a.mu.Unlock()
+	a.deleteCard(id)
+}
+
+// clearCards closes every card window. The system pasteboard is left as it is.
+func (a *App) clearCards() {
+	a.mu.Lock()
+	ids := append([]string(nil), a.order...)
+	a.mu.Unlock()
+	if len(ids) == 0 {
+		return
+	}
+	a.holdPasteboard()
+	for _, id := range ids {
+		a.removeCard(id)
+	}
+}
+
+// deleteCard closes one card window and drops snip's in-memory record.
+// It does not write the system pasteboard.
+func (a *App) deleteCard(id string) {
+	a.holdPasteboard()
 	a.removeCard(id)
+}
+
+// holdPasteboard remembers the text currently on the pasteboard and pins the
+// watcher to that changeCount. Closing a card must not look like a new copy.
+func (a *App) holdPasteboard() {
+	count := macpaste.ChangeCount()
+	text := strings.TrimSpace(macpaste.ReadPlainText())
+	a.mu.Lock()
+	a.lastChange = count
+	if text != "" {
+		a.heldText = text
+		a.heldCount = count
+	}
+	a.mu.Unlock()
+}
+
+func (a *App) pasteboardHeld(count int, text string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return pasteboardHeld(a.heldText, a.heldCount, count, text)
+}
+
+// pasteboardHeld reports that this poll is still the pasteboard generation
+// that was current when a card was deleted.
+func pasteboardHeld(heldText string, heldCount, count int, text string) bool {
+	return heldText != "" && text == heldText && count == heldCount
 }
 
 func (a *App) removeCard(id string) {

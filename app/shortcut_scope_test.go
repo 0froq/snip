@@ -11,6 +11,9 @@ func TestSettingsShortcutIsMenuLocal(t *testing.T) {
 	if cfg.Bindings.Settings.Direct != "CmdOrCtrl+," {
 		t.Fatalf("settings shortcut %q", cfg.Bindings.Settings.Direct)
 	}
+	if cfg.Bindings.ClearCards.Direct != "CmdOrCtrl+Shift+Option+Backspace" || cfg.Bindings.ClearCards.Leader != "Shift+D" {
+		t.Fatalf("clear cards binding %+v", cfg.Bindings.ClearCards)
+	}
 	if cfg.Bindings.Toggle.Direct != "CmdOrCtrl+Shift+S" {
 		t.Fatalf("toggle shortcut %q", cfg.Bindings.Toggle.Direct)
 	}
@@ -20,7 +23,7 @@ func TestSettingsShortcutIsMenuLocal(t *testing.T) {
 	if registersGlobally("settings") {
 		t.Fatal("settings is registered as a global hotkey")
 	}
-	for _, action := range []string{"toggle", "next", "prev", "paste", "delete", "pin", "leader"} {
+	for _, action := range []string{"toggle", "next", "prev", "paste", "delete", "clear_cards", "pin", "leader"} {
 		if !registersGlobally(action) {
 			t.Fatalf("%s is not a global hotkey", action)
 		}

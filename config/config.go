@@ -60,13 +60,14 @@ type ActionBinding struct {
 
 // ActionBindings contains every command that can be bound.
 type ActionBindings struct {
-	Toggle   ActionBinding `toml:"toggle"`
-	Next     ActionBinding `toml:"next"`
-	Prev     ActionBinding `toml:"prev"`
-	Paste    ActionBinding `toml:"paste"`
-	Delete   ActionBinding `toml:"delete"`
-	Pin      ActionBinding `toml:"pin"`
-	Settings ActionBinding `toml:"settings"`
+	Toggle     ActionBinding `toml:"toggle"`
+	Next       ActionBinding `toml:"next"`
+	Prev       ActionBinding `toml:"prev"`
+	Paste      ActionBinding `toml:"paste"`
+	Delete     ActionBinding `toml:"delete"`
+	ClearCards ActionBinding `toml:"clear_cards"`
+	Pin        ActionBinding `toml:"pin"`
+	Settings   ActionBinding `toml:"settings"`
 }
 
 // NamedBindings returns bindings in stable UI order.
@@ -83,6 +84,7 @@ func (b *ActionBindings) NamedBindings() []struct {
 		{"prev", &b.Prev},
 		{"paste", &b.Paste},
 		{"delete", &b.Delete},
+		{"clear_cards", &b.ClearCards},
 		{"pin", &b.Pin},
 		{"settings", &b.Settings},
 	}
@@ -163,13 +165,14 @@ func Default() Config {
 			DoubleClickPaste: true,
 		},
 		Bindings: ActionBindings{
-			Toggle:   ActionBinding{Direct: "CmdOrCtrl+Shift+S", Leader: "s"},
-			Next:     ActionBinding{Direct: "CmdOrCtrl+Shift+]", Leader: "j", Sticky: true},
-			Prev:     ActionBinding{Direct: "CmdOrCtrl+Shift+[", Leader: "k", Sticky: true},
-			Paste:    ActionBinding{Direct: "CmdOrCtrl+Shift+V", Leader: "v"},
-			Delete:   ActionBinding{Direct: "CmdOrCtrl+Shift+Backspace", Leader: "d"},
-			Pin:      ActionBinding{Direct: "CmdOrCtrl+Shift+F", Leader: "p", Sticky: true},
-			Settings: ActionBinding{Direct: "CmdOrCtrl+,", Leader: ","},
+			Toggle:     ActionBinding{Direct: "CmdOrCtrl+Shift+S", Leader: "s"},
+			Next:       ActionBinding{Direct: "CmdOrCtrl+Shift+]", Leader: "j", Sticky: true},
+			Prev:       ActionBinding{Direct: "CmdOrCtrl+Shift+[", Leader: "k", Sticky: true},
+			Paste:      ActionBinding{Direct: "CmdOrCtrl+Shift+V", Leader: "v"},
+			Delete:     ActionBinding{Direct: "CmdOrCtrl+Shift+Backspace", Leader: "d"},
+			ClearCards: ActionBinding{Direct: "CmdOrCtrl+Shift+Option+Backspace", Leader: "Shift+D"},
+			Pin:        ActionBinding{Direct: "CmdOrCtrl+Shift+F", Leader: "p", Sticky: true},
+			Settings:   ActionBinding{Direct: "CmdOrCtrl+,", Leader: ","},
 		},
 		Leader: Leader{
 			Shortcut:       "CmdOrCtrl+Shift+Space",

@@ -658,9 +658,10 @@ func (h *CardText) ensureFadeMask() {
 		releaseLayer(bar)
 		return
 	}
-	// The scroll view layer is not flipped. geometryFlipped stays off so a
-	// sublayer's y is the bottom edge, and GradientAxis matches MaskStops:
-	// location 0 is the bottom, location 1 is the top.
+	// geometryFlipped stays off so the scroller patch keeps the scroll
+	// view's bottom-left frame. The gradient axis, not this flag, puts
+	// location 1 on the visual top. Turning the flag on would also flip
+	// that patch.
 	send(container, "setGeometryFlipped:", 0)
 	send(grad, "setGeometryFlipped:", 0)
 	sx, sy, ex, ey := GradientAxis()

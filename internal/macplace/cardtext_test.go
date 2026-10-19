@@ -111,20 +111,24 @@ func TestMaskFrameDropsTheScrolledOrigin(t *testing.T) {
 }
 
 func TestViewportFadeHandsTheLayerTheEndStops(t *testing.T) {
-	sx, sy, ex, ey := GradientAxis()
-	if sx != 0.5 || sy != 0 || ex != 0.5 || ey != 1 {
-		t.Fatalf("axis %v %v %v %v", sx, sy, ex, ey)
+	_, startY, _, endY := GradientAxis()
+	topLoc := LocationAlongAxis(startY, endY, visualTopY)
+	bottomLoc := LocationAlongAxis(startY, endY, visualBottomY)
+	if topLoc != 1 || bottomLoc != 0 {
+		t.Fatalf("visual top location %v, visual bottom location %v", topLoc, bottomLoc)
 	}
-	// Location 0 is the bottom edge of the unflipped layer. The alpha there
-	// is the CGColor alpha setColors: receives, paired with that location.
+	// The alpha at the visual top is the CGColor alpha paired with that location.
 	const (
 		docH = 500.0
 		visH = 200.0
 		maxY = docH - visH
 	)
 
-	// offset 0: top is opaque, bottom fades.
+	// offset 0: the visual top is opaque, the visual bottom fades.
 	locs, alphas := ViewportFade(0, docH, 0, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	if alphaAt(locs, alphas, topLoc) != 1 || alphaAt(locs, alphas, bottomLoc) != 0 {
+		t.Fatalf("at the top, visual top alpha %v visual bottom alpha %v (%v %v)", alphaAt(locs, alphas, topLoc), alphaAt(locs, alphas, bottomLoc), locs, alphas)
+	}
 	if !fadeEdges(locs, alphas, 0, 1) {
 		t.Fatalf("at the top %+v %+v", locs, alphas)
 	}
@@ -175,8 +179,17 @@ func TestViewportFadeHandsTheLayerTheEndStops(t *testing.T) {
 	}
 }
 
-// fadeEdges reports whether locations run from the bottom (0) to the top (1)
-// and the colors at those ends have the given alphas. A solid edge is 1.
+func alphaAt(locations, alphas []float64, location float64) float64 {
+	for i, loc := range locations {
+		if loc == location {
+			return alphas[i]
+		}
+	}
+	return -1
+}
+
+// fadeEdges reports whether locations run from the visual bottom (0) to the
+// visual top (1) and the colors at those ends have the given alphas.
 func fadeEdges(locations, alphas []float64, bottomAlpha, topAlpha float64) bool {
 	n := len(locations)
 	if n < 2 || n != len(alphas) || locations[0] != 0 || locations[n-1] != 1 {

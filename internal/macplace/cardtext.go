@@ -178,21 +178,39 @@ func MaskFrame(boundsX, boundsY, width, height float64) (x, y, w, h float64) {
 	return 0, 0, width, height
 }
 
-// MaskStop is one stop of the viewport's alpha mask. Location runs from
-// 0 at the bottom edge to 1 at the top. That is CAGradientLayer's unit
-// space on the scroll view's layer, which is not flipped: startPoint
-// (0.5, 0) is the bottom and endPoint (0.5, 1) is the top. Alpha 1 keeps
-// the text, and 0 lets the card behind it show through.
+// MaskStop is one stop of the viewport's alpha mask. Location 0 is the
+// start of GradientAxis and location 1 is the end. Alpha 1 keeps the text,
+// and 0 lets the card behind it show through.
 type MaskStop struct {
 	Location float64
 	Alpha    float64
 }
 
-// GradientAxis is the line the viewport mask draws along. Y is 0 at the
-// bottom because the scroll view's layer is not flipped. A flipped clip
-// view would swap the two Y values and move the bottom fade to the top.
+// The scroll view's layer keeps geometryFlipped off, so a sublayer's frame
+// still grows upward. AppKit composites that layer as a mask with unit y=0
+// at the top of the scroll view: a gradient that starts at (0.5, 0) draws
+// its first stop on the visual top. The axis therefore starts at unit y=1,
+// the visual bottom, and ends at unit y=0, the visual top. Location 1 is
+// the visual top, which is where the top alpha sits.
+const (
+	visualBottomY = 1.0
+	visualTopY    = 0.0
+)
+
+// GradientAxis is the line the viewport mask draws along, from the visual
+// bottom to the visual top.
 func GradientAxis() (startX, startY, endX, endY float64) {
-	return 0.5, 0, 0.5, 1
+	return 0.5, visualBottomY, 0.5, visualTopY
+}
+
+// LocationAlongAxis is the gradient location of a unit-space y. 0 is the
+// start of the axis and 1 is the end.
+func LocationAlongAxis(startY, endY, unitY float64) float64 {
+	span := endY - startY
+	if span == 0 {
+		return 0
+	}
+	return (unitY - startY) / span
 }
 
 // ViewportFade is the colors and locations handed to CAGradientLayer.
@@ -203,8 +221,8 @@ func GradientAxis() (startX, startY, endX, endY float64) {
 // docOrigin, not zero. A content inset that leaves the resting origin at
 // 12 is still the top. The bottom is the visible rect's far edge within
 // fadeEpsilon of the document's far edge, so a fraction of a point still
-// counts as the end. locations[0] is the bottom of the unflipped scroll
-// view layer. The alpha at that location is the CGColor alpha.
+// counts as the end. Location 1 is the visual top (GradientAxis's end).
+// The alpha at a location is the CGColor alpha.
 // Empty slices mean the layer gets no mask.
 func ViewportFade(docOrigin, docH, visOrigin, visH, maskH, fadeH, epsilon float64, flipped bool) (locations, alphas []float64) {
 	if maskH <= 0 {

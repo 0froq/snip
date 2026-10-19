@@ -224,16 +224,22 @@ func LocationAlongAxis(startY, endY, unitY float64) float64 {
 // counts as the end. Location 1 is the visual top (GradientAxis's end).
 // The alpha at a location is the CGColor alpha.
 // Empty slices mean the layer gets no mask.
+// documentOffset is how far the visible rect sits from the top of the
+// document. A flipped document view measures y from the top. A non-flipped
+// view's origin is the bottom edge, so the top is the space still above
+// the visible rect.
+func documentOffset(docOrigin, docH, visOrigin, visH float64, flipped bool) float64 {
+	if !flipped {
+		return (docOrigin + docH) - (visOrigin + visH)
+	}
+	return visOrigin - docOrigin
+}
+
 func ViewportFade(docOrigin, docH, visOrigin, visH, maskH, fadeH, epsilon float64, flipped bool) (locations, alphas []float64) {
 	if maskH <= 0 {
 		maskH = visH
 	}
-	offset := visOrigin - docOrigin
-	if !flipped {
-		// Non-flipped: the rect origin is the bottom edge. The distance
-		// from the top is whatever is still above the visible rect.
-		offset = (docOrigin + docH) - (visOrigin + visH)
-	}
+	offset := documentOffset(docOrigin, docH, visOrigin, visH, flipped)
 	top, bottom := ScrollFades(docH, visH, offset, epsilon)
 	stops := MaskStops(maskH, FadeBand(maskH, fadeH), top, bottom)
 	if len(stops) == 0 {
@@ -293,6 +299,60 @@ func MaskStops(viewH, fadeH float64, top, bottom bool) []MaskStop {
 		return []MaskStop{{0, 0}, {band, 1}, {1, 1}}
 	}
 	return []MaskStop{{0, 1}, {1 - band, 1}, {1, 0}}
+}
+
+// FadeOpacitySeconds is how long an edge fade takes to appear or disappear.
+// FadeOpacityTiming is the Core Animation curve for both directions.
+const (
+	FadeOpacitySeconds = 0.18
+	FadeOpacityTiming  = "kCAMediaTimingFunctionEaseInEaseOut"
+)
+
+// FadeCover is the solid layer over one end of the viewport gradient.
+// Opacity 0 shows that end's fade. Opacity 1 hides it, so the text stays
+// solid. Animating this opacity is what eases the fade in and out.
+type FadeCover struct {
+	X, Y, W, H float64
+	Opacity    float64
+}
+
+// FadeUnderlay is the gradient under the covers. Both edges stay clear so
+// changing a cover's opacity reveals one edge without rebuilding the stops.
+func FadeUnderlay(viewH, fadeH float64) []MaskStop {
+	return MaskStops(viewH, FadeBand(viewH, fadeH), true, true)
+}
+
+func fadeCoverOpacity(edgeFades bool) float64 {
+	if edgeFades {
+		return 0
+	}
+	return 1
+}
+
+// FadeCovers are the top and bottom covers in an unflipped mask. y grows
+// upward: the bottom cover sits on the low edge, the top cover on the high
+// edge, each one a fade band tall. A viewport too short for a band has none.
+func FadeCovers(gradX, gradY, gradW, gradH, fadeH float64, topFades, bottomFades bool) (top, bottom FadeCover, ok bool) {
+	band := FadeBand(gradH, fadeH)
+	if gradW <= 0 || band <= 0 {
+		return FadeCover{}, FadeCover{}, false
+	}
+	top = FadeCover{
+		X: gradX, Y: gradY + gradH - band, W: gradW, H: band,
+		Opacity: fadeCoverOpacity(topFades),
+	}
+	bottom = FadeCover{
+		X: gradX, Y: gradY, W: gradW, H: band,
+		Opacity: fadeCoverOpacity(bottomFades),
+	}
+	return top, bottom, true
+}
+
+// ScrollFadeCovers is the cover pair for a distance from the top of the
+// document. The gradient under them always clears both edges.
+func ScrollFadeCovers(contentH, viewH, offset, epsilon, gradX, gradY, gradW, gradH, fadeH float64) (top, bottom FadeCover, ok bool) {
+	topOn, bottomOn := ScrollFades(contentH, viewH, offset, epsilon)
+	return FadeCovers(gradX, gradY, gradW, gradH, fadeH, topOn, bottomOn)
 }
 
 // CardTextOptions describes the scroll view embedded in a card window.

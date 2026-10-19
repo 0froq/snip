@@ -223,6 +223,71 @@ func TestFadeRectKeepsTheTopStopInsideTheViewport(t *testing.T) {
 	}
 }
 
+func TestFadeCoversEaseWithTheScroll(t *testing.T) {
+	if FadeOpacitySeconds < 0.15 || FadeOpacitySeconds > 0.20 {
+		t.Fatalf("duration %v", FadeOpacitySeconds)
+	}
+	if FadeOpacityTiming != "kCAMediaTimingFunctionEaseInEaseOut" {
+		t.Fatalf("timing %s", FadeOpacityTiming)
+	}
+	const (
+		docH = 500.0
+		visH = 200.0
+		maxY = docH - visH
+	)
+	under := FadeUnderlay(visH, FadeHeightPt)
+	if len(under) != 4 || under[0] != (MaskStop{0, 0}) || under[3] != (MaskStop{1, 0}) {
+		t.Fatalf("underlay %+v", under)
+	}
+	assert := func(offset, topOpacity, bottomOpacity float64) {
+		t.Helper()
+		top, bottom, ok := ScrollFadeCovers(docH, visH, offset, fadeEpsilon, 0, 0, 300, visH, FadeHeightPt)
+		if !ok {
+			t.Fatalf("offset %v has no covers", offset)
+		}
+		if top.Opacity != topOpacity || bottom.Opacity != bottomOpacity {
+			t.Fatalf("offset %v cover opacity top %v bottom %v", offset, top.Opacity, bottom.Opacity)
+		}
+		if top.Y != visH-FadeHeightPt || top.H != FadeHeightPt || bottom.Y != 0 || bottom.H != FadeHeightPt {
+			t.Fatalf("offset %v frames top %+v bottom %+v", offset, top, bottom)
+		}
+		if top.Y+top.H != visH || bottom.Y+bottom.H != FadeHeightPt {
+			t.Fatalf("offset %v bands leave the viewport %+v %+v", offset, top, bottom)
+		}
+		locs, alphas := ViewportFade(0, docH, offset, visH, visH, FadeHeightPt, fadeEpsilon, true)
+		if alphaAt(locs, alphas, 1) != top.Opacity || alphaAt(locs, alphas, 0) != bottom.Opacity {
+			t.Fatalf("offset %v baked %+v %+v covers %v %v", offset, locs, alphas, top.Opacity, bottom.Opacity)
+		}
+	}
+	// At the top the top cover is solid (fade hidden) and the bottom cover
+	// is clear (fade shown). Leaving either edge clears that cover.
+	assert(0, 1, 0)
+	assert(0.4, 1, 0)
+	assert(150, 0, 0)
+	assert(maxY, 0, 1)
+	assert(maxY-0.4, 0, 1)
+	assert(maxY-1.5, 0, 0)
+
+	// Content that fits still has covers, both solid, so a later overflow
+	// can ease a fade in instead of attaching a mask already at full strength.
+	top, bottom, ok := ScrollFadeCovers(100, 200, 0, fadeEpsilon, 4, 6, 300, 200, FadeHeightPt)
+	if !ok || top.Opacity != 1 || bottom.Opacity != 1 {
+		t.Fatalf("content that fits %+v %+v ok=%v", top, bottom, ok)
+	}
+	if top.Y != 200-FadeHeightPt+6 || bottom.Y != 6 {
+		t.Fatalf("shifted bands %+v %+v", top, bottom)
+	}
+	if _, _, ok := ScrollFadeCovers(500, 200, 100, fadeEpsilon, 0, 0, 0, 200, FadeHeightPt); ok {
+		t.Fatal("a zero-width gradient has no covers")
+	}
+	if documentOffset(12, docH, 12, visH, true) != 0 {
+		t.Fatal("a resting inset is the top")
+	}
+	if documentOffset(0, docH, 0, visH, false) != maxY || documentOffset(0, docH, maxY, visH, false) != 0 {
+		t.Fatal("non-flipped offset is measured from the top")
+	}
+}
+
 func TestMaskStopsClearOnlyTheScrollingEdge(t *testing.T) {
 	if stops := MaskStops(200, 20, false, false); stops != nil {
 		t.Fatalf("a card that fits has no mask, got %+v", stops)

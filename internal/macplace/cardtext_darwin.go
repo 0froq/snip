@@ -59,11 +59,18 @@ type CardText struct {
 
 	// fadeMask is the scroll view's mask. Its origin stays at zero, so a
 	// clip-view bounds shift cannot carry it. fadeGrad is the text-area
-	// gradient inside it, and fadeBar keeps the scroller fully visible.
+	// gradient inside it (both edges clear). fadeTop and fadeBottom are
+	// solid covers whose opacity eases that edge's fade in and out.
+	// fadeBar keeps the scroller fully visible. fadeLive is set once the
+	// covers have been placed, so the first frame snaps and later edge
+	// changes animate.
 	fadeMask     id
 	fadeGrad     id
+	fadeTop      id
+	fadeBottom   id
 	fadeBar      id
 	fadeWatching bool
+	fadeLive     bool
 }
 
 var (
@@ -610,11 +617,20 @@ func (h *CardText) updateFades() {
 		clipFrame.origin.x, clipFrame.origin.y, clipFrame.size.width, clipFrame.size.height,
 	)
 	flipped := send(h.view, "isFlipped") != 0
-	locations, alphas := ViewportFade(
+	off := documentOffset(
 		document.origin.y, document.size.height,
 		visible.origin.y, visible.size.height,
-		gh, FadeHeightPt, fadeEpsilon, flipped,
+		flipped,
 	)
+	topCover, bottomCover, fadeOK := ScrollFadeCovers(
+		document.size.height, visible.size.height, off, fadeEpsilon,
+		gx, gy, gw, gh, FadeHeightPt,
+	)
+	locations, alphas := fadeStopArrays(FadeUnderlay(gh, FadeHeightPt))
+	if !fadeOK {
+		locations, alphas = nil, nil
+	}
+	installed := false
 	withoutFadeAnimation(func() {
 		send(h.scroll, "setWantsLayer:", 1)
 		host := send(h.scroll, "layer")
@@ -631,7 +647,7 @@ func (h *CardText) updateFades() {
 			return
 		}
 		h.ensureFadeMask()
-		if h.fadeMask == 0 || h.fadeGrad == 0 {
+		if h.fadeMask == 0 || h.fadeGrad == 0 || h.fadeTop == 0 || h.fadeBottom == 0 {
 			return
 		}
 		x, y, w, ht := MaskFrame(scrollBounds.origin.x, scrollBounds.origin.y, scrollBounds.size.width, scrollBounds.size.height)
@@ -640,9 +656,43 @@ func (h *CardText) updateFades() {
 		setViewFrame(h.fadeMask, sel("setBounds:"), box)
 		setViewFrame(h.fadeGrad, sel("setFrame:"), nsRect{origin: nsPoint{x: gx, y: gy}, size: nsSize{width: gw, height: gh}})
 		applyMaskStops(h.fadeGrad, locations, alphas)
+		h.placeFadeCover(h.fadeTop, topCover)
+		h.placeFadeCover(h.fadeBottom, bottomCover)
+		// The first placement snaps. Animating it would fade every edge
+		// in when the card opens, and this disabled transaction would
+		// swallow that animation.
+		if !h.fadeLive {
+			writeFadeOpacity(h.fadeTop, topCover.Opacity)
+			writeFadeOpacity(h.fadeBottom, bottomCover.Opacity)
+		}
 		h.placeFadeBar()
 		send(host, "setMask:", uintptr(h.fadeMask))
+		installed = true
 	})
+	if !installed {
+		return
+	}
+	if !h.fadeLive {
+		h.fadeLive = true
+		return
+	}
+	// Opacity is outside the disabled transaction, so leaving an edge
+	// eases the fade in and reaching one eases it back out.
+	h.animateFadeOpacity(h.fadeTop, topCover.Opacity)
+	h.animateFadeOpacity(h.fadeBottom, bottomCover.Opacity)
+}
+
+func fadeStopArrays(stops []MaskStop) (locations, alphas []float64) {
+	if len(stops) == 0 {
+		return nil, nil
+	}
+	locations = make([]float64, len(stops))
+	alphas = make([]float64, len(stops))
+	for i, stop := range stops {
+		locations[i] = stop.Location
+		alphas[i] = stop.Alpha
+	}
+	return locations, alphas
 }
 
 func (h *CardText) ensureFadeMask() {
@@ -651,10 +701,14 @@ func (h *CardText) ensureFadeMask() {
 	}
 	container := send(send(class("CALayer"), "alloc"), "init")
 	grad := send(send(class("CAGradientLayer"), "alloc"), "init")
+	top := send(send(class("CALayer"), "alloc"), "init")
+	bottom := send(send(class("CALayer"), "alloc"), "init")
 	bar := send(send(class("CALayer"), "alloc"), "init")
-	if container == 0 || grad == 0 || bar == 0 {
+	if container == 0 || grad == 0 || top == 0 || bottom == 0 || bar == 0 {
 		releaseLayer(container)
 		releaseLayer(grad)
+		releaseLayer(top)
+		releaseLayer(bottom)
 		releaseLayer(bar)
 		return
 	}
@@ -667,17 +721,68 @@ func (h *CardText) ensureFadeMask() {
 	sx, sy, ex, ey := GradientAxis()
 	setCGPoint(grad, sel("setStartPoint:"), nsPoint{x: sx, y: sy})
 	setCGPoint(grad, sel("setEndPoint:"), nsPoint{x: ex, y: ey})
-	if colorSRGB != nil {
-		opaque := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), 0, 0, 0, 1)
-		if cg := send(opaque, "CGColor"); cg != 0 {
-			send(bar, "setBackgroundColor:", uintptr(cg))
-		}
-	}
+	setOpaqueBlack(bar)
+	setOpaqueBlack(top)
+	setOpaqueBlack(bottom)
+	// Covers sit above the gradient and under the scroller patch.
+	// Opacity 1 (the layer default) hides an edge until the first snap.
 	send(container, "addSublayer:", uintptr(grad))
+	send(container, "addSublayer:", uintptr(bottom))
+	send(container, "addSublayer:", uintptr(top))
 	send(container, "addSublayer:", uintptr(bar))
 	h.fadeMask = container
 	h.fadeGrad = grad
+	h.fadeTop = top
+	h.fadeBottom = bottom
 	h.fadeBar = bar
+}
+
+func setOpaqueBlack(layer id) {
+	if layer == 0 || colorSRGB == nil {
+		return
+	}
+	opaque := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), 0, 0, 0, 1)
+	if cg := send(opaque, "CGColor"); cg != 0 {
+		send(layer, "setBackgroundColor:", uintptr(cg))
+	}
+}
+
+func (h *CardText) placeFadeCover(layer id, cover FadeCover) {
+	if layer == 0 {
+		return
+	}
+	setViewFrame(layer, sel("setFrame:"), nsRect{
+		origin: nsPoint{x: cover.X, y: cover.Y},
+		size:   nsSize{width: cover.W, height: cover.H},
+	})
+	send(layer, "setHidden:", 0)
+}
+
+func writeFadeOpacity(layer id, opacity float64) {
+	if layer == 0 {
+		return
+	}
+	setCGFloat(layer, sel("setOpacity:"), opacity)
+}
+
+// animateFadeOpacity eases one cover toward opacity. The model value is
+// already the last target, so a scroll frame that does not change the edge
+// does not restart the curve. A reversal starts from whatever is on screen.
+func (h *CardText) animateFadeOpacity(layer id, target float64) {
+	if layer == 0 || setCGFloat == nil {
+		return
+	}
+	if math.Abs(msgFloat(layer, sel("opacity"))-target) < 1e-3 {
+		return
+	}
+	send(class("CATransaction"), "begin")
+	send(class("CATransaction"), "setDisableActions:", 0)
+	setCGFloat(class("CATransaction"), sel("setAnimationDuration:"), FadeOpacitySeconds)
+	if timing := send(class("CAMediaTimingFunction"), "functionWithName:", uintptr(nsString(FadeOpacityTiming))); timing != 0 {
+		send(class("CATransaction"), "setAnimationTimingFunction:", uintptr(timing))
+	}
+	setCGFloat(layer, sel("setOpacity:"), target)
+	send(class("CATransaction"), "commit")
 }
 
 // placeFadeBar covers the vertical scroller in the mask so the bar stays
@@ -709,7 +814,8 @@ func releaseLayer(layer id) {
 
 // withoutFadeAnimation turns off Core Animation's implicit 0.25s frame
 // animation. A mask whose frame tracked the clip bounds was always mid-tween
-// during a scroll, so the fade lagged the viewport.
+// during a scroll, so the fade lagged the viewport. Edge opacity is animated
+// in its own transaction, outside this one.
 func withoutFadeAnimation(fn func()) {
 	send(class("CATransaction"), "begin")
 	send(class("CATransaction"), "setDisableActions:", 1)
@@ -779,9 +885,12 @@ func (h *CardText) removeFadeWatch() {
 		}
 	})
 	releaseLayer(h.fadeGrad)
+	releaseLayer(h.fadeTop)
+	releaseLayer(h.fadeBottom)
 	releaseLayer(h.fadeBar)
 	releaseLayer(h.fadeMask)
-	h.fadeGrad, h.fadeBar, h.fadeMask = 0, 0, 0
+	h.fadeGrad, h.fadeTop, h.fadeBottom, h.fadeBar, h.fadeMask = 0, 0, 0, 0, 0
+	h.fadeLive = false
 }
 
 func snipScrollHitTest(self id, _ objc.SEL, pt nsPoint) id {

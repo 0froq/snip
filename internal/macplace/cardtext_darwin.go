@@ -566,11 +566,19 @@ func (h *CardText) installFades() {
 	send(h.scroll, "setWantsLayer:", 1)
 	if h.delegate != 0 {
 		send(clip, "setPostsBoundsChangedNotifications:", 1)
-		send(send(class("NSNotificationCenter"), "defaultCenter"), "addObserver:selector:name:object:",
-			uintptr(h.delegate),
-			uintptr(sel("snipClipBoundsChanged:")),
-			uintptr(nsString("NSViewBoundsDidChangeNotification")),
-			uintptr(clip))
+		center := send(class("NSNotificationCenter"), "defaultCenter")
+		watch := func(name string, object id) {
+			send(center, "addObserver:selector:name:object:",
+				uintptr(h.delegate),
+				uintptr(sel("snipClipBoundsChanged:")),
+				uintptr(nsString(name)),
+				uintptr(object))
+		}
+		// Bounds can coalesce during a flick. The live-scroll notifications
+		// fire for the tracking and for the momentum settling on an end.
+		watch("NSViewBoundsDidChangeNotification", clip)
+		watch("NSScrollViewDidLiveScrollNotification", h.scroll)
+		watch("NSScrollViewDidEndLiveScrollNotification", h.scroll)
 		h.fadeWatching = true
 	}
 	h.updateFades()
@@ -586,37 +594,27 @@ func (h *CardText) updateFades() {
 	}
 	// A failed geometry read must not drop the mask. An empty rect from a
 	// bad HFA read used to clear both edges for a frame.
-	// documentVisibleRect is in the text view's flipped coordinates, so its
-	// origin is the distance from the top. The clip view's bounds origin is
-	// the same distance and is the value the scroll notification reports.
-	// The scroll view's own bounds origin stays 0, so it is not a scroll offset.
-	visible := layerRect(clip, "documentVisibleRect")
+	// Both rects come from the clip view, in the document view's coordinates.
+	// Mixing in the text view's bounds made the document taller than the
+	// scroller's travel, and the max of the two origins kept a resting
+	// inset above the 1pt slop, so neither end ever looked finished.
 	document := layerRect(clip, "documentRect")
-	textBounds := layerRect(h.view, "bounds")
-	clipBounds := layerRect(clip, "bounds")
+	visible := layerRect(clip, "documentVisibleRect")
 	clipFrame := layerRect(clip, "frame")
 	scrollBounds := layerRect(h.scroll, "bounds")
-	if scrollBounds.size.width <= 0 || scrollBounds.size.height <= 0 {
-		return
-	}
-	contentH := document.size.height
-	if textBounds.size.height > contentH {
-		contentH = textBounds.size.height
-	}
-	if contentH <= 0 {
+	if scrollBounds.size.width <= 0 || scrollBounds.size.height <= 0 || document.size.height <= 0 || visible.size.height <= 0 {
 		return
 	}
 	gx, gy, gw, gh := FadeRect(
 		scrollBounds.size.width, scrollBounds.size.height,
 		clipFrame.origin.x, clipFrame.origin.y, clipFrame.size.width, clipFrame.size.height,
 	)
-	viewH := clipBounds.size.height
-	if viewH <= 0 {
-		viewH = gh
-	}
-	offset := ScrollDistance(true, visible.origin.y, clipBounds.origin.y, contentH, viewH)
-	top, bottom := ScrollFades(contentH, viewH, offset, fadeEpsilon)
-	stops := MaskStops(gh, FadeBand(gh, FadeHeightPt), top, bottom)
+	flipped := send(h.view, "isFlipped") != 0
+	locations, alphas := ViewportFade(
+		document.origin.y, document.size.height,
+		visible.origin.y, visible.size.height,
+		gh, FadeHeightPt, fadeEpsilon, flipped,
+	)
 	withoutFadeAnimation(func() {
 		send(h.scroll, "setWantsLayer:", 1)
 		host := send(h.scroll, "layer")
@@ -628,7 +626,7 @@ func (h *CardText) updateFades() {
 		if clipLayer := send(clip, "layer"); clipLayer != 0 {
 			send(clipLayer, "setMask:", 0)
 		}
-		if len(stops) == 0 {
+		if len(locations) == 0 {
 			send(host, "setMask:", 0)
 			return
 		}
@@ -641,7 +639,7 @@ func (h *CardText) updateFades() {
 		setViewFrame(h.fadeMask, sel("setFrame:"), box)
 		setViewFrame(h.fadeMask, sel("setBounds:"), box)
 		setViewFrame(h.fadeGrad, sel("setFrame:"), nsRect{origin: nsPoint{x: gx, y: gy}, size: nsSize{width: gw, height: gh}})
-		applyMaskStops(h.fadeGrad, stops)
+		applyMaskStops(h.fadeGrad, locations, alphas)
 		h.placeFadeBar()
 		send(host, "setMask:", uintptr(h.fadeMask))
 	})
@@ -732,15 +730,17 @@ func layerRect(obj id, selector string) nsRect {
 	return readRect(obj, sel(selector))
 }
 
-func applyMaskStops(layer id, stops []MaskStop) {
-	if layer == 0 || colorSRGB == nil || numDouble == nil || len(stops) == 0 {
+func applyMaskStops(layer id, locations, alphas []float64) {
+	if layer == 0 || colorSRGB == nil || numDouble == nil || len(locations) == 0 || len(locations) != len(alphas) {
 		return
 	}
 	colors := send(send(class("NSMutableArray"), "alloc"), "init")
 	locs := send(send(class("NSMutableArray"), "alloc"), "init")
-	for _, stop := range stops {
-		c := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), 0, 0, 0, stop.Alpha)
-		n := numDouble(class("NSNumber"), sel("numberWithDouble:"), stop.Location)
+	for i, location := range locations {
+		// A missing color or number drops the pair. Skipping only one of
+		// them would slide the remaining alphas onto the wrong locations.
+		c := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), 0, 0, 0, alphas[i])
+		n := numDouble(class("NSNumber"), sel("numberWithDouble:"), location)
 		if c == 0 || n == 0 {
 			continue
 		}

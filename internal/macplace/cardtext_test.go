@@ -110,41 +110,87 @@ func TestMaskFrameDropsTheScrolledOrigin(t *testing.T) {
 	}
 }
 
-func TestMidScrollFadesBothEdges(t *testing.T) {
-	// 150pt down a 500pt document in a 200pt viewport. The visible rect
-	// staying at 0 must not hide the top fade once the clip bounds have moved.
-	offset := ScrollDistance(true, 0, 150, 500, 200)
-	top, bottom := ScrollFades(500, 200, offset, fadeEpsilon)
-	if !top || !bottom {
-		t.Fatalf("mid-scroll edges %v %v (offset %v)", top, bottom, offset)
-	}
-	stops := MaskStops(200, FadeBand(200, FadeHeightPt), top, bottom)
+func TestViewportFadeHandsTheLayerTheEndStops(t *testing.T) {
 	sx, sy, ex, ey := GradientAxis()
 	if sx != 0.5 || sy != 0 || ex != 0.5 || ey != 1 {
 		t.Fatalf("axis %v %v %v %v", sx, sy, ex, ey)
 	}
-	// Location 0 is the bottom of the unflipped layer, location 1 the top.
-	if len(stops) != 4 || stops[0] != (MaskStop{0, 0}) || stops[3] != (MaskStop{1, 0}) {
-		t.Fatalf("both edges %+v", stops)
-	}
-	if stops[1].Alpha != 1 || stops[2].Alpha != 1 || stops[1].Location >= stops[2].Location {
-		t.Fatalf("middle %+v", stops)
+	// Location 0 is the bottom edge of the unflipped layer. The alpha there
+	// is the CGColor alpha setColors: receives, paired with that location.
+	const (
+		docH = 500.0
+		visH = 200.0
+		maxY = docH - visH
+	)
+
+	// offset 0: top is opaque, bottom fades.
+	locs, alphas := ViewportFade(0, docH, 0, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	if !fadeEdges(locs, alphas, 0, 1) {
+		t.Fatalf("at the top %+v %+v", locs, alphas)
 	}
 
-	end := ScrollDistance(true, 300, 300, 500, 200)
-	top, bottom = ScrollFades(500, 200, end, fadeEpsilon)
-	stops = MaskStops(200, FadeBand(200, FadeHeightPt), top, bottom)
-	if !top || bottom || len(stops) != 3 || stops[0].Alpha != 1 || stops[2] != (MaskStop{1, 0}) {
-		t.Fatalf("at the bottom the top fades and the bottom stays opaque: %v %v %+v", top, bottom, stops)
+	// A resting origin of 12 (content inset) is still the top.
+	locs, alphas = ViewportFade(12, docH, 12, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	if !fadeEdges(locs, alphas, 0, 1) {
+		t.Fatalf("inset top %+v %+v", locs, alphas)
 	}
 
-	// A non-flipped document reports a large y at the top. That is not a scroll.
-	if d := ScrollDistance(false, 300, 300, 500, 200); d != 0 {
-		t.Fatalf("non-flipped top %v", d)
+	// offset = max: bottom is opaque, top fades.
+	locs, alphas = ViewportFade(0, docH, maxY, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	if !fadeEdges(locs, alphas, 1, 0) {
+		t.Fatalf("at the bottom %+v %+v", locs, alphas)
 	}
-	if d := ScrollDistance(false, 0, 0, 500, 200); d != 300 {
-		t.Fatalf("non-flipped bottom %v", d)
+
+	// A fraction of a point short of the end still counts as the end.
+	locs, alphas = ViewportFade(0, docH, maxY-0.4, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	if !fadeEdges(locs, alphas, 1, 0) {
+		t.Fatalf("near the bottom %+v %+v", locs, alphas)
 	}
+
+	// Past the 1pt slop, the bottom still fades.
+	locs, alphas = ViewportFade(0, docH, maxY-1.5, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	if !fadeEdges(locs, alphas, 0, 0) {
+		t.Fatalf("short of the bottom %+v %+v", locs, alphas)
+	}
+
+	// Middle: both edges are clear.
+	locs, alphas = ViewportFade(0, docH, 150, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	if !fadeEdges(locs, alphas, 0, 0) {
+		t.Fatalf("middle %+v %+v", locs, alphas)
+	}
+
+	// Non-flipped: y is the bottom of the visible rect. Origin 0 is the
+	// bottom of the document, so the bottom stop is opaque.
+	locs, alphas = ViewportFade(0, docH, 0, visH, visH, FadeHeightPt, fadeEpsilon, false)
+	if !fadeEdges(locs, alphas, 1, 0) {
+		t.Fatalf("non-flipped bottom %+v %+v", locs, alphas)
+	}
+	locs, alphas = ViewportFade(0, docH, maxY, visH, visH, FadeHeightPt, fadeEpsilon, false)
+	if !fadeEdges(locs, alphas, 0, 1) {
+		t.Fatalf("non-flipped top %+v %+v", locs, alphas)
+	}
+
+	if locs, alphas := ViewportFade(0, 100, 0, 200, 200, FadeHeightPt, fadeEpsilon, true); locs != nil || alphas != nil {
+		t.Fatalf("content that fits %+v %+v", locs, alphas)
+	}
+}
+
+// fadeEdges reports whether locations run from the bottom (0) to the top (1)
+// and the colors at those ends have the given alphas. A solid edge is 1.
+func fadeEdges(locations, alphas []float64, bottomAlpha, topAlpha float64) bool {
+	n := len(locations)
+	if n < 2 || n != len(alphas) || locations[0] != 0 || locations[n-1] != 1 {
+		return false
+	}
+	if alphas[0] != bottomAlpha || alphas[n-1] != topAlpha {
+		return false
+	}
+	for i := 1; i < n; i++ {
+		if locations[i] <= locations[i-1] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestFadeRectKeepsTheTopStopInsideTheViewport(t *testing.T) {

@@ -195,31 +195,39 @@ func GradientAxis() (startX, startY, endX, endY float64) {
 	return 0.5, 0, 0.5, 1
 }
 
-// ScrollDistance is how far the viewport has moved from the top of the
-// document. visibleY comes from the clip view's documentVisibleRect and
-// boundsY from its bounds, which is what a bounds-change notification
-// reports. NSTextView is flipped, and the clip view copies that, so both
-// are distances from the top when flipped is set. A visible rect that
-// stays at 0 while the clip bounds move must not leave the top fade off.
-// A non-flipped document measures y from the bottom; flipped false turns
-// that into the same top distance.
-func ScrollDistance(flipped bool, visibleY, boundsY, contentH, viewH float64) float64 {
-	from := func(y float64) float64 {
-		if flipped {
-			return y
-		}
-		span := contentH - viewH
-		if span < 0 {
-			span = 0
-		}
-		return span - y
+// ViewportFade is the colors and locations handed to CAGradientLayer.
+// docOrigin/docH is the clip view's documentRect, visOrigin/visH its
+// documentVisibleRect, both in the document view's coordinates. maskH is
+// the gradient's pixel height. flipped is the document view: a flipped
+// NSTextView measures y from the top, so the top of the document is
+// docOrigin, not zero. A content inset that leaves the resting origin at
+// 12 is still the top. The bottom is the visible rect's far edge within
+// fadeEpsilon of the document's far edge, so a fraction of a point still
+// counts as the end. locations[0] is the bottom of the unflipped scroll
+// view layer. The alpha at that location is the CGColor alpha.
+// Empty slices mean the layer gets no mask.
+func ViewportFade(docOrigin, docH, visOrigin, visH, maskH, fadeH, epsilon float64, flipped bool) (locations, alphas []float64) {
+	if maskH <= 0 {
+		maskH = visH
 	}
-	visible := from(visibleY)
-	bounds := from(boundsY)
-	if bounds > visible {
-		return bounds
+	offset := visOrigin - docOrigin
+	if !flipped {
+		// Non-flipped: the rect origin is the bottom edge. The distance
+		// from the top is whatever is still above the visible rect.
+		offset = (docOrigin + docH) - (visOrigin + visH)
 	}
-	return visible
+	top, bottom := ScrollFades(docH, visH, offset, epsilon)
+	stops := MaskStops(maskH, FadeBand(maskH, fadeH), top, bottom)
+	if len(stops) == 0 {
+		return nil, nil
+	}
+	locations = make([]float64, len(stops))
+	alphas = make([]float64, len(stops))
+	for i, stop := range stops {
+		locations[i] = stop.Location
+		alphas[i] = stop.Alpha
+	}
+	return locations, alphas
 }
 
 // FadeRect is the gradient's frame inside an unflipped scroll-view mask.

@@ -305,7 +305,7 @@ func MaskStops(viewH, fadeH float64, top, bottom bool) []MaskStop {
 // FadeOpacityTiming is the Core Animation curve for both directions.
 const (
 	FadeOpacitySeconds = 0.18
-	FadeOpacityTiming  = "kCAMediaTimingFunctionEaseInEaseOut"
+	FadeOpacityTiming  = "easeInEaseOut"
 )
 
 // FadeCover is the solid layer over one end of the viewport gradient.

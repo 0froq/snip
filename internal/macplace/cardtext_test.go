@@ -227,7 +227,7 @@ func TestFadeCoversEaseWithTheScroll(t *testing.T) {
 	if FadeOpacitySeconds < 0.15 || FadeOpacitySeconds > 0.20 {
 		t.Fatalf("duration %v", FadeOpacitySeconds)
 	}
-	if FadeOpacityTiming != "kCAMediaTimingFunctionEaseInEaseOut" {
+	if FadeOpacityTiming != "easeInEaseOut" {
 		t.Fatalf("timing %s", FadeOpacityTiming)
 	}
 	const (

@@ -53,9 +53,11 @@ func (c Card) FrameInsetY() int {
 }
 
 // TextFrameInsets is the scroll view's distance from each window edge.
-// Left, right, and bottom are the pixel frame plus padding, and at least
-// the resize band. Top is that same band, or the title strip when the
-// close control is taller, so the line starts below the button.
+// Left and right are the pixel frame plus padding, and at least the resize
+// band. Top is that same floor, or the title strip when the close control
+// is taller, so the first line starts below the button. Bottom then matches
+// top, so the inset under the last line equals the inset above the first.
+// The top is never shrunk.
 func TextFrameInsets(padX, padY, border, resizeMargin, topExtra int) (left, top, right, bottom int) {
 	left = padX + border
 	bottom = padY + border
@@ -69,6 +71,9 @@ func TextFrameInsets(padX, padY, border, resizeMargin, topExtra int) (left, top,
 	top = bottom
 	if topExtra > top {
 		top = topExtra
+	}
+	if top > bottom {
+		bottom = top
 	}
 	return left, top, right, bottom
 }

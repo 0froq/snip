@@ -8,6 +8,24 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestTextFrameInsetsMatchTopAndBottom(t *testing.T) {
+	c := Default().Card
+	if c.TopInset() != c.FrameInsetY() || c.TopInset() < CardTitleStripPx {
+		t.Fatalf("top %d bottom %d", c.TopInset(), c.FrameInsetY())
+	}
+	// No title strip: both edges stay on the resize/padding floor.
+	left, top, right, bottom := TextFrameInsets(10, 6, 1, 10, 0)
+	if left != 11 || right != 11 || top != 10 || bottom != 10 {
+		t.Fatalf("no title strip LTRB %d %d %d %d", left, top, right, bottom)
+	}
+	// The title strip raises the top, and the bottom follows. The top
+	// stays clear of the close control.
+	left, top, right, bottom = TextFrameInsets(10, 6, 6, 10, CardTitleStripPx)
+	if top != CardTitleStripPx || bottom != top || left != right {
+		t.Fatalf("title strip LTRB %d %d %d %d", left, top, right, bottom)
+	}
+}
+
 func TestEstimateSizeOneLine(t *testing.T) {
 	c := Default().Card
 	layout := c.Layout("hi", 0, 0)
@@ -63,7 +81,7 @@ func TestSingleAndMultiLineViewports(t *testing.T) {
 		t.Fatalf("single: %+v", one)
 	}
 	left, top, right, bottom := c.edgeInsets()
-	if top < CardTitleStripPx || bottom < cardBorderPx || left < cardBorderPx || right != left {
+	if top != bottom || top < CardTitleStripPx || left < cardBorderPx || right != left {
 		t.Fatalf("chrome LTRB %d %d %d %d", left, top, right, bottom)
 	}
 	viewH := one.Height - top - bottom

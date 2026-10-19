@@ -75,6 +75,8 @@ func (a *App) openSettings() {
 	form := config.FormFrom(a.config())
 	a.settingsApps = macpaste.RunningApps()
 	a.settingsForm = &form
+	a.settingsScroll = ui.ScrollState{}
+	a.settingsScrollTab = form.SettingsTab
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:           "Settings",
 		Width:           640,
@@ -160,11 +162,7 @@ func (a *App) settingsView(c *ui.Context) {
 			// The scroll keeps its content height, and shrinks only when the
 			// page is taller than the window. Leftover space sits below Save,
 			// so a short page is not a box with a hole under the last control.
-			ui.Scroll(c).Shrink(1).MinHeight(0).Children(func() {
-				ui.Column(c).Shrink(0).Gap(k.D(6)).Children(func() {
-					a.settingsPage(c, f, lang)
-				})
-			})
+			a.settingsBody(c, f, lang)
 			if f.Message != "" {
 				text.Paragraph(c, f.Message, text.ParagraphOptions{MaxLines: 3, Slot: pixel.Faint})
 			}
@@ -267,19 +265,31 @@ func (a *App) settingsPage(c *ui.Context, f *config.Form, lang string) {
 	}
 }
 
-func (a *App) settingsGeneral(c *ui.Context, f *config.Form, lang string) {
+func (a *App) settingsBody(c *ui.Context, f *config.Form, lang string) {
+	if a.settingsScrollTab != f.SettingsTab {
+		a.settingsScroll = ui.ScrollState{}
+		a.settingsScrollTab = f.SettingsTab
+	}
 	k := pixel.K(c)
+	layout.ScrollArea(c, &a.settingsScroll, layout.ScrollAreaOptions{Label: tr(lang, "settings")}, func() {
+		ui.Column(c).Shrink(0).Gap(k.D(6)).Children(func() {
+			a.settingsPage(c, f, lang)
+		})
+	}).Element.Shrink(1).MinHeight(0)
+}
+
+func (a *App) settingsGeneral(c *ui.Context, f *config.Form, lang string) {
 	a.settingsSection(c, tr(lang, "language"), func() {
-		input.Select(c, tr(lang, "language"), &f.Language, []string{"en", "zh"}, input.SelectOptions{})
+		pixelChoice(c, tr(lang, "language"), &f.Language, []string{"en", "zh"}, func(id string) string { return id })
 	})
 	a.settingsSection(c, tr(lang, "clipboard"), func() {
 		labeledInput(c, tr(lang, "poll"), &f.ClipboardPollMs)
 		labeledInput(c, tr(lang, "max_cards"), &f.MaxCards)
 		text.Paragraph(c, tr(lang, "placement"), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Ink})
-		input.Select(c, tr(lang, "placement"), &f.Placement, []string{"near-selection", "near-cursor", "fixed"}, input.SelectOptions{})
+		pixelChoice(c, tr(lang, "placement"), &f.Placement, []string{"near-selection", "near-cursor", "fixed"}, func(id string) string { return id })
 	})
 	a.settingsSection(c, tr(lang, "config_path"), func() {
-		ui.Text(c, a.configPath).FontSize(13).TextColor(k.C(pixel.Faint)).MaxLines(3)
+		text.Paragraph(c, a.configPath, text.ParagraphOptions{MaxLines: 3, Slot: pixel.Faint})
 	})
 }
 
@@ -573,8 +583,8 @@ func (a *App) captureList(c *ui.Context, f *config.Form, lang string) {
 		i, id := i, id
 		ui.Row(c).Gap(k.D(4)).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).Gap(k.D(1)).Children(func() {
-				ui.Text(c, a.runningAppName(id)).FontSize(13).TextColor(k.C(pixel.Ink)).MaxLines(1)
-				ui.Text(c, id).FontSize(11).TextColor(k.C(pixel.Faint)).MaxLines(1)
+				text.Paragraph(c, a.runningAppName(id), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Ink})
+				text.Paragraph(c, id, text.ParagraphOptions{MaxLines: 1, Slot: pixel.Faint})
 			})
 			if input.Button(c, tr(lang, "capture_remove"), input.ButtonOptions{}).Clicked {
 				removeAt = i

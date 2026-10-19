@@ -40,25 +40,27 @@ type App struct {
 
 	sec secrets.Config
 
-	cardPositions map[string]cardPosition
-	configPath    string
-	pollReset     chan struct{}
-	settingsWin   *mygo.Window
-	settingsForm  *config.Form
-	settingsApps  []macpaste.RunningApp
-	rec           config.Recorder
-	bindNotes     map[int]bindNote
-	claimShortcut func(string) error
-	leaderOn      bool
-	leaderGen     int
-	leaderKeys    []string
-	jumpLabels    map[string]string
-	jumpPrefix    string
-	twoKeyJumps   bool
-	whichItems    []whichKeyItem
-	whichWin      *mygo.Window
-	taps          tapGate
-	tray          *mygo.Tray
+	cardPositions     map[string]cardPosition
+	configPath        string
+	pollReset         chan struct{}
+	settingsWin       *mygo.Window
+	settingsForm      *config.Form
+	settingsApps      []macpaste.RunningApp
+	settingsScroll    ui.ScrollState
+	settingsScrollTab int
+	rec               config.Recorder
+	bindNotes         map[int]bindNote
+	claimShortcut     func(string) error
+	leaderOn          bool
+	leaderGen         int
+	leaderKeys        []string
+	jumpLabels        map[string]string
+	jumpPrefix        string
+	twoKeyJumps       bool
+	whichItems        []whichKeyItem
+	whichWin          *mygo.Window
+	taps              tapGate
+	tray              *mygo.Tray
 }
 
 type cardPosition struct {

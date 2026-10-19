@@ -12,6 +12,7 @@ import (
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/text"
 	"github.com/0froq/snip/config"
+	"github.com/0froq/snip/internal/macpaste"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -118,6 +119,30 @@ func TestSelectedTabMeetsTheDivider(t *testing.T) {
 		next := img.RGBAAt(end, y)
 		if next.R == face.R && next.G == face.G && next.B == face.B {
 			t.Fatalf("tab %d highlight ends on Face at %d,%d", tab, end, y)
+		}
+	}
+}
+
+func TestSettingsPathAndCaptureUsePixelText(t *testing.T) {
+	const path = "/tmp/snip/config.toml"
+	a := New(config.Default(), path)
+	form := config.FormFrom(a.config())
+	form.SettingsTab = int(settingsGeneral)
+	a.settingsForm = &form
+	tt := ui.NewTester(func(c *ui.Context) { a.settingsView(c) }, 640, 720)
+	for _, s := range []string{path, "SCROLL UP", "SCROLL DOWN"} {
+		if !tt.HasText(s) {
+			t.Fatalf("missing %q in %v", s, tt.Texts())
+		}
+	}
+	form.SettingsTab = int(settingsCapture)
+	form.CaptureMode = config.CaptureBlocklist
+	form.Blocklist = []string{"com.example.App"}
+	a.settingsApps = []macpaste.RunningApp{{Name: "Example", BundleID: "com.example.App"}}
+	tt = ui.NewTester(func(c *ui.Context) { a.settingsView(c) }, 640, 720)
+	for _, s := range []string{"Example", "com.example.App"} {
+		if !tt.HasText(s) {
+			t.Fatalf("missing %q in %v", s, tt.Texts())
 		}
 	}
 }

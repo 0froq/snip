@@ -64,6 +64,24 @@ func TestShortcutIssuesAreInline(t *testing.T) {
 	}
 }
 
+func TestCardFontChoiceIsPixel(t *testing.T) {
+	a := New(config.Default(), "")
+	form := config.FormFrom(a.config())
+	form.SettingsTab = int(settingsCards)
+	a.settingsForm = &form
+	tt := ui.NewTester(func(c *ui.Context) { a.settingsView(c) }, 640, 720)
+	if !tt.HasText("Card font") {
+		t.Fatalf("missing card font control in %v", tt.Texts())
+	}
+	for _, key := range []string{"card_font", "card_font_system", "card_font_pixel"} {
+		for _, r := range tr("zh", key) {
+			if r > 127 && !pixel.Has(r) {
+				t.Fatalf("%s missing glyph %q", key, string(r))
+			}
+		}
+	}
+}
+
 func TestShortcutGroupsCoverActions(t *testing.T) {
 	cfg := config.Default()
 	seen := map[string]int{}

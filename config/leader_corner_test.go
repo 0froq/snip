@@ -99,8 +99,11 @@ func TestFontFamilyDefaultAndForm(t *testing.T) {
 		t.Fatalf("fallback %q %d", blank.EffectiveFontFamily(), blank.EffectiveFontSize())
 	}
 	f := FormFrom(d)
-	if f.FontFamily != DefaultFontFamily || f.FontSize != "14" {
-		t.Fatalf("form %q %q", f.FontFamily, f.FontSize)
+	if d.Card.EffectiveCardFont() != CardFontSystem || d.Card.PixelFont() {
+		t.Fatalf("default card font %q", d.Card.FontKind)
+	}
+	if f.FontFamily != DefaultFontFamily || f.FontSize != "14" || f.CardFont != CardFontSystem {
+		t.Fatalf("form %q %q %q", f.FontFamily, f.FontSize, f.CardFont)
 	}
 	f.FontFamily = "  Helvetica Neue, PingFang SC  "
 	f.FontSize = "16"

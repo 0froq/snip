@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
 	"github.com/BurntSushi/toml"
 )
 
@@ -36,8 +37,11 @@ type Card struct {
 	PaddingY    int    `toml:"padding_y"`
 	// FontFamily is a comma-separated list. The first face that exists is
 	// the UI font; later faces (PingFang SC) cover glyphs it lacks.
-	FontFamily     string `toml:"font_family"`
-	FontSize       int    `toml:"font_size"`
+	FontFamily string `toml:"font_family"`
+	FontSize   int    `toml:"font_size"`
+	// FontKind is "pixel" for the bundled bitmap face, or "system".
+	// Empty means system, so a config written before this field still loads.
+	FontKind       string `toml:"card_font,omitempty"`
 	CharWidth      int    `toml:"char_width"`
 	CascadeStepX   int    `toml:"cascade_step_x"`
 	CascadeStepY   int    `toml:"cascade_step_y"`
@@ -276,6 +280,54 @@ func (c Card) EffectiveFontSize() int {
 		return DefaultFontSize
 	}
 	return c.FontSize
+}
+
+const (
+	// CardFontSystem draws cards with the system face named by font_family.
+	CardFontSystem = "system"
+	// CardFontPixel draws cards with the bundled 8-bit face.
+	CardFontPixel = "pixel"
+	// PixelDot is DIPs per bitmap dot, the same step the card chrome uses.
+	PixelDot = 2
+)
+
+// EffectiveCardFont is system or pixel. Anything else, including an empty
+// value, is system so an older file keeps its current cards.
+func (c Card) EffectiveCardFont() string {
+	switch strings.ToLower(strings.TrimSpace(c.FontKind)) {
+	case CardFontPixel:
+		return CardFontPixel
+	case CardFontSystem, "":
+		return CardFontSystem
+	default:
+		return CardFontSystem
+	}
+}
+
+// PixelFont reports whether the card draws the bundled bitmap face.
+func (c Card) PixelFont() bool {
+	return c.EffectiveCardFont() == CardFontPixel
+}
+
+// PixelScale is how many times the bitmap is drawn for the configured
+// point size. The face is pixel.LineHeight dots and each dot is PixelDot
+// DIPs, so scale 1 is a 32-DIP line and scale 2 is 64. The kit's dot stops
+// at 4, which is scale 2, so a larger point size stays there. A size
+// below one line stays at 1: the bitmap has no smaller step.
+func (c Card) PixelScale() int {
+	return PixelScale(c.EffectiveFontSize())
+}
+
+// PixelScale maps a point size onto the bitmap step. See Card.PixelScale.
+func PixelScale(fontSize int) int {
+	if fontSize <= 0 {
+		fontSize = DefaultFontSize
+	}
+	line := pixel.LineHeight * PixelDot
+	if fontSize >= line+line/2 {
+		return 2
+	}
+	return 1
 }
 
 func (c Card) EffectiveCharWidth() int {

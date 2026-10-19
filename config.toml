@@ -22,6 +22,9 @@ padding_y = 6
 # font_family: system sans, then a CJK sans for glyphs it lacks
 font_family = "-apple-system, PingFang SC, Hiragino Sans GB, sans-serif"
 font_size = 14
+# card_font: system (default) or pixel. pixel draws the bundled 8-bit face
+# at font_size. Leave it unset to keep the system font.
+# card_font = "system"
 cascade_origin_x = 24
 cascade_origin_y = 24
 cascade_step_x = 12

@@ -102,6 +102,11 @@ type cardUI struct {
 	badge       *mygo.Window
 	textHost    *macplace.CardText
 	closingEdit bool
+	// pixelEdit is a draft drawn with the bundled face. pixelDraft is that
+	// draft, and pixelScroll is its vertical offset.
+	pixelEdit   bool
+	pixelDraft  string
+	pixelScroll ui.ScrollState
 }
 
 // New creates the application state.
@@ -564,8 +569,14 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	shell := ui.Column(c).Fill().FocusRing(false)
 	shell = cardPointerInput(a, host, host.win, shell).Cursor(edgeCursor(host.hoverEdge))
 	cardHot := shell.Hovered()
-	editing := host.textHost != nil && host.textHost.Editing()
+	pixelFont := cardCfg.PixelFont()
+	editing := host.pixelEdit || (host.textHost != nil && host.textHost.Editing())
 	if host.textHost != nil {
+		if pixelFont && host.textHost.Editing() {
+			host.textHost.CancelEdit()
+			editing = host.pixelEdit
+		}
+		host.textHost.SetVisible(!pixelFont)
 		host.textHost.SetColor(ink.R, ink.G, ink.B)
 		// The text view is clear, so the fade has to match the chrome
 		// behind it: the face, or the sunk well while editing.
@@ -583,9 +594,13 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 			ui.Column(c).Fill().
 				Padding(float32(cardCfg.TopInset()), float32(cardCfg.FrameInsetX()), float32(cardCfg.FrameInsetY()), float32(cardCfg.FrameInsetX())).
 				Children(func() {
-					// macOS draws the string in the NSTextView, in the
-					// configured face so code and CJK stay sharp. Other
-					// platforms scroll the same face in the toolkit.
+					// A pixel card draws the bundled face here, in both
+					// display and edit. The system face stays in the
+					// NSTextView on macOS, and in the toolkit elsewhere.
+					if pixelFont {
+						a.cardPixelBody(c, host, cardCfg.PixelScale())
+						return
+					}
 					if macplace.NativeCardText {
 						return
 					}
@@ -600,6 +615,59 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		if cardHot || host.closePress {
 			cardCloseButton(c, host.closeHot)
 		}
+	})
+}
+
+// cardPixelBody draws the bundled face. Edit uses the same face and the
+// same scale the card was measured with.
+func (a *App) cardPixelBody(c *ui.Context, host *cardUI, scale int) {
+	if host.pixelEdit && a.canEditCard(host.card) {
+		a.cardPixelEditor(c, host, scale)
+		return
+	}
+	host.pixelEdit = false
+	// The scroller overlays: a bar that took width would wrap a line the
+	// card measured to fit.
+	ui.Scroll(c).Fill().TrackScroll(&host.pixelScroll).FocusRing(false).Children(func() {
+		pixel.Text(c, host.display, pixel.TextOptions{Slot: pixel.Ink, Scale: scale, Wrap: true})
+	})
+}
+
+func (a *App) cardPixelEditor(c *ui.Context, host *cardUI, scale int) {
+	if c.Shortcut(0, ui.KeyEscape) {
+		a.commitCardEdit(host, host.pixelDraft)
+		return
+	}
+	dot := config.PixelDot * scale
+	if dot < 1 {
+		dot = 1
+	}
+	if dot > 4 {
+		dot = 4
+	}
+	tuned := pixel.Current(c)
+	tuned.Dot = dot
+	pixel.Scope(c, tuned, func() {
+		// Empty space in the text band keeps the click, so the card
+		// shell does not start a drag or end the draft.
+		ui.Column(c).Fill().HandleInput(func(ev ui.InputEvent) bool {
+			switch ev.Kind {
+			case ui.InputPointerDown, ui.InputPointerUp, ui.InputPointerMove, ui.InputScroll:
+				return true
+			case ui.InputKeyDown, ui.InputKeyUp, ui.InputText, ui.InputCompose, ui.InputCommand, ui.InputSelect:
+				return false
+			default:
+				panic("snip: unhandled card input")
+			}
+		}).Children(func() {
+			ui.Scroll(c).Fill().TrackScroll(&host.pixelScroll).FocusRing(false).Children(func() {
+				ed := pixel.Editor(c, &host.pixelDraft, pixel.EditorOptions{Multiline: true, Label: "card"})
+				ed.Input.AutoFocus()
+				if ed.Submitted {
+					a.commitCardEdit(host, host.pixelDraft)
+				}
+			})
+		})
 	})
 }
 
@@ -850,6 +918,7 @@ func (a *App) syncCardText(host *cardUI) {
 	w, h := host.win.Size()
 	host.textHost.SetTitles(a.cardMenuTitles())
 	host.textHost.SetCanEdit(a.canEditCard(host.card))
+	host.textHost.SetVisible(!cfg.PixelFont())
 	host.textHost.SetFont(cfg.EffectiveFontFamily(), float64(cfg.EffectiveFontSize()))
 	host.textHost.Layout(w, h, cfg.EffectivePaddingX(), cfg.EffectivePaddingY(), config.CardBorderPx(), nativeResizeMargin, config.CardTitleStripPx)
 	if !host.textHost.Editing() {
@@ -899,7 +968,15 @@ func (a *App) cardMenuAction(host *cardUI, action macplace.CardMenuAction) {
 }
 
 func (a *App) beginCardEdit(host *cardUI) {
-	if host == nil || host.textHost == nil || !a.canEditCard(host.card) {
+	if host == nil || !a.canEditCard(host.card) {
+		return
+	}
+	if a.config().Card.PixelFont() {
+		host.pixelDraft = host.card.Text
+		host.pixelEdit = true
+		return
+	}
+	if host.textHost == nil {
 		return
 	}
 	host.textHost.BeginEdit(host.card.Text)
@@ -915,6 +992,7 @@ func (a *App) commitCardEdit(host *cardUI, text string) {
 	if !ok {
 		return
 	}
+	host.pixelEdit = false
 	host.card = updated
 	host.display = a.cardDisplay(updated)
 	a.reflowCard(host)
@@ -925,7 +1003,9 @@ func (a *App) copyCard(host *cardUI) {
 		return
 	}
 	text := host.card.Text
-	if host.textHost != nil && host.textHost.Editing() {
+	if host.pixelEdit {
+		text = host.pixelDraft
+	} else if host.textHost != nil && host.textHost.Editing() {
 		text = host.textHost.Text()
 	}
 	a.mu.Lock()
@@ -937,6 +1017,9 @@ func (a *App) copyCard(host *cardUI) {
 func (a *App) restoreCard(host *cardUI) {
 	if host == nil {
 		return
+	}
+	if host.pixelEdit {
+		host.pixelEdit = false
 	}
 	if host.textHost != nil && host.textHost.Editing() {
 		host.textHost.CancelEdit()
@@ -1086,7 +1169,31 @@ func (a *App) cardDisplay(card store.Card) string {
 	return secrets.DisplayText(card.Text, a.secrets(), card.Concealed)
 }
 
+// finishOpenEdits writes any open draft before a new config rebuilds the cards.
+func (a *App) finishOpenEdits() {
+	a.mu.Lock()
+	ids := append([]string(nil), a.order...)
+	a.mu.Unlock()
+	for _, id := range ids {
+		a.mu.Lock()
+		h := a.cards[id]
+		a.mu.Unlock()
+		if h == nil {
+			continue
+		}
+		if h.pixelEdit {
+			a.commitCardEdit(h, h.pixelDraft)
+		}
+		if h.textHost != nil && h.textHost.Editing() {
+			text := h.textHost.Text()
+			h.textHost.CancelEdit()
+			a.commitCardEdit(h, text)
+		}
+	}
+}
+
 func (a *App) applyConfig(next config.Config) {
+	a.finishOpenEdits()
 	a.mu.Lock()
 	prev := a.cfg
 	a.cfg = next

@@ -247,6 +247,19 @@ func (h *CardText) SetColor(r, g, b uint8) {
 	h.applyColor()
 }
 
+// SetVisible shows or hides the scroll view. A pixel-font card hides it
+// so the bitmap text underneath receives the clicks.
+func (h *CardText) SetVisible(on bool) {
+	if h == nil || h.closing || h.scroll == 0 {
+		return
+	}
+	hidden := uintptr(1)
+	if on {
+		hidden = 0
+	}
+	send(h.scroll, "setHidden:", hidden)
+}
+
 // SetBackground is the card chrome behind the clear text view, in sRGB
 // bytes. The edge fades blend into it.
 func (h *CardText) SetBackground(r, g, b uint8) {

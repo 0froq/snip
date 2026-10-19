@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -117,12 +118,69 @@ func (c Card) textWidthForSlip(slipWidth int) float32 {
 }
 
 func (c Card) lineBox() float32 {
+	if c.PixelFont() {
+		return float32(c.pixelLinePx())
+	}
 	m := c.cardFont().Metrics()
 	h := m.Ascent + m.Descent + m.LineGap
 	if h < 1 {
 		return float32(c.EffectiveLineHeight())
 	}
 	return h
+}
+
+// pixelLinePx is one bitmap line in DIPs at the card's scale.
+func (c Card) pixelLinePx() int {
+	return pixel.LineHeight * c.pixelUnit()
+}
+
+// pixelUnit is DIPs per font dot. Scale 2 doubles the face and the measure.
+func (c Card) pixelUnit() int {
+	unit := c.PixelScale() * PixelDot
+	if unit < 1 {
+		return 1
+	}
+	return unit
+}
+
+// pixelWrapDots is the width the bitmap wraps at, in font dots.
+func (c Card) pixelWrapDots(slipWidth int) int {
+	left, _, right, _ := c.edgeInsets()
+	inner := slipWidth - left - right
+	if inner < 1 {
+		return 1
+	}
+	dots := inner / c.pixelUnit()
+	if dots < 1 {
+		return 1
+	}
+	return dots
+}
+
+func (c Card) pixelLineCount(text string, width int) int {
+	if text == "" {
+		return 1
+	}
+	n := len(pixel.Lines(text, c.pixelWrapDots(width)))
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+func (c Card) pixelSlipWidth(display string) int {
+	maxW := 0
+	for _, line := range pixel.Lines(display, 0) {
+		if w := pixel.Measure(line); w > maxW {
+			maxW = w
+		}
+	}
+	left, _, right, _ := c.edgeInsets()
+	est := maxW*c.pixelUnit() + left + right
+	if est < 1 {
+		return 1
+	}
+	return est
 }
 
 // CardLayout is the exact text and geometry drawn inside a card.
@@ -142,6 +200,9 @@ type CardLayout struct {
 // caret rows. Dividing the height by the Latin line box overcounts lines
 // that use a taller CJK fallback font.
 func (c Card) linesForText(text string, width int) int {
+	if c.PixelFont() {
+		return c.pixelLineCount(text, width)
+	}
 	if text == "" {
 		return 1
 	}
@@ -172,6 +233,10 @@ func (c Card) linesForText(text string, width int) int {
 func (c Card) measureBox(display string, width int) (lines, height int) {
 	if strings.TrimSpace(display) == "" {
 		display = " "
+	}
+	if c.PixelFont() {
+		lines = c.pixelLineCount(display, width)
+		return lines, c.windowHeight(c.textBlockPx(lines, float32(lines*c.pixelLinePx())))
 	}
 	lines = c.linesForText(display, width)
 	if lines < 1 {
@@ -303,6 +368,9 @@ func (c Card) shapedHeight(display string, slipWidth int) (lines int, heightPx i
 }
 
 func (c Card) naturalSlipWidth(display string) int {
+	if c.PixelFont() {
+		return c.pixelSlipWidth(display)
+	}
 	// Width and height share cardFont and edgeInsets. Width 0 is ui.Text's
 	// max-content measure: break only at newlines and use the ink width.
 	// A huge wrap width is not the same number, and min_width is a resize

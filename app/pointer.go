@@ -58,6 +58,12 @@ func edgeCursor(e int) ui.Cursor {
 	return ui.CursorDefault
 }
 
+// cardTextBand is the padded text area, in window-local top-left coordinates.
+func cardTextBand(c config.Card, x, y, width, height int) bool {
+	return x >= c.FrameInsetX() && y >= c.TopInset() &&
+		x < width-c.FrameInsetX() && y < height-c.FrameInsetY()
+}
+
 func cardMoveInterior(x, y, width, height int) bool {
 	return x >= nativeResizeMargin && y >= nativeResizeMargin &&
 		x < width-nativeResizeMargin && y < height-nativeResizeMargin
@@ -120,6 +126,14 @@ func cardPointerInput(a *App, host *cardUI, win *mygo.Window, col ui.Element) ui
 	return col.HandleInput(func(ev ui.InputEvent) bool {
 		switch ev.Kind {
 		case ui.InputPointerDown:
+			if host.pixelEdit && ev.Button == 0 {
+				sp := mygo.Screen.CursorScreenPoint()
+				wx, wy := win.Position()
+				ww, wh := win.Size()
+				if !cardTextBand(a.config().Card, sp.X-wx, sp.Y-wy, ww, wh) {
+					a.commitCardEdit(host, host.pixelDraft)
+				}
+			}
 			if ev.Button == 1 {
 				if host.resizeEdge == 0 {
 					a.openCardMenu(host, win)

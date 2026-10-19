@@ -314,6 +314,10 @@ func (a *App) settingsCards(c *ui.Context, f *config.Form, lang string) {
 		labeledInput(c, tr(lang, "pad_y"), &f.PaddingY)
 		labeledInput(c, tr(lang, "font_family"), &f.FontFamily)
 		labeledInput(c, tr(lang, "font"), &f.FontSize)
+		text.Paragraph(c, tr(lang, "card_font"), text.ParagraphOptions{MaxLines: 1, Slot: pixel.Ink})
+		pixelChoice(c, tr(lang, "card_font"), &f.CardFont, []string{config.CardFontSystem, config.CardFontPixel}, func(id string) string {
+			return tr(lang, "card_font_"+id)
+		})
 		input.Checkbox(c, tr(lang, "double_click_paste"), &f.DoubleClickPaste, input.CheckboxOptions{})
 		labeledInput(c, "Cascade origin x", &f.CascadeOriginX)
 		labeledInput(c, "Cascade origin y", &f.CascadeOriginY)

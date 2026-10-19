@@ -178,12 +178,67 @@ func MaskFrame(boundsX, boundsY, width, height float64) (x, y, w, h float64) {
 	return 0, 0, width, height
 }
 
-// MaskStop is one stop of the clip view's alpha mask. Location runs from
-// 0 at the bottom edge to 1 at the top, which is CAGradientLayer's unit
-// space. Alpha 1 keeps the text, and 0 lets the card behind it show through.
+// MaskStop is one stop of the viewport's alpha mask. Location runs from
+// 0 at the bottom edge to 1 at the top. That is CAGradientLayer's unit
+// space on the scroll view's layer, which is not flipped: startPoint
+// (0.5, 0) is the bottom and endPoint (0.5, 1) is the top. Alpha 1 keeps
+// the text, and 0 lets the card behind it show through.
 type MaskStop struct {
 	Location float64
 	Alpha    float64
+}
+
+// GradientAxis is the line the viewport mask draws along. Y is 0 at the
+// bottom because the scroll view's layer is not flipped. A flipped clip
+// view would swap the two Y values and move the bottom fade to the top.
+func GradientAxis() (startX, startY, endX, endY float64) {
+	return 0.5, 0, 0.5, 1
+}
+
+// ScrollDistance is how far the viewport has moved from the top of the
+// document. visibleY comes from the clip view's documentVisibleRect and
+// boundsY from its bounds, which is what a bounds-change notification
+// reports. NSTextView is flipped, and the clip view copies that, so both
+// are distances from the top when flipped is set. A visible rect that
+// stays at 0 while the clip bounds move must not leave the top fade off.
+// A non-flipped document measures y from the bottom; flipped false turns
+// that into the same top distance.
+func ScrollDistance(flipped bool, visibleY, boundsY, contentH, viewH float64) float64 {
+	from := func(y float64) float64 {
+		if flipped {
+			return y
+		}
+		span := contentH - viewH
+		if span < 0 {
+			span = 0
+		}
+		return span - y
+	}
+	visible := from(visibleY)
+	bounds := from(boundsY)
+	if bounds > visible {
+		return bounds
+	}
+	return visible
+}
+
+// FadeRect is the gradient's frame inside an unflipped scroll-view mask.
+// The clip view's frame is in that same space only while it sits inside
+// the scroll view. A taller frame (the document height) or one shifted up
+// by a scroll offset draws the clear top stop above the mask, and the
+// bottom stop still lands on the bottom edge.
+func FadeRect(scrollW, scrollH, clipX, clipY, clipW, clipH float64) (x, y, w, h float64) {
+	if scrollW < 0 {
+		scrollW = 0
+	}
+	if scrollH < 0 {
+		scrollH = 0
+	}
+	if clipW <= 0 || clipH <= 0 || clipX < 0 || clipY < 0 ||
+		clipX+clipW > scrollW+0.5 || clipY+clipH > scrollH+0.5 {
+		return 0, 0, scrollW, scrollH
+	}
+	return clipX, clipY, clipW, clipH
 }
 
 // MaskStops is the vertical alpha mask for a viewport viewH points tall.

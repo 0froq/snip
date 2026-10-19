@@ -586,19 +586,37 @@ func (h *CardText) updateFades() {
 	}
 	// A failed geometry read must not drop the mask. An empty rect from a
 	// bad HFA read used to clear both edges for a frame.
-	vis := layerRect(h.view, "documentVisibleRect")
-	doc := layerRect(h.view, "bounds")
+	// documentVisibleRect is in the text view's flipped coordinates, so its
+	// origin is the distance from the top. The clip view's bounds origin is
+	// the same distance and is the value the scroll notification reports.
+	// The scroll view's own bounds origin stays 0, so it is not a scroll offset.
+	visible := layerRect(clip, "documentVisibleRect")
+	document := layerRect(clip, "documentRect")
+	textBounds := layerRect(h.view, "bounds")
+	clipBounds := layerRect(clip, "bounds")
+	clipFrame := layerRect(clip, "frame")
 	scrollBounds := layerRect(h.scroll, "bounds")
-	if vis.size.height <= 0 || doc.size.height <= 0 || scrollBounds.size.height <= 0 {
+	if scrollBounds.size.width <= 0 || scrollBounds.size.height <= 0 {
 		return
 	}
-	top, bottom := ScrollFades(doc.size.height, vis.size.height, vis.origin.y, fadeEpsilon)
-	clipFrame := layerRect(clip, "frame")
-	viewH := clipFrame.size.height
-	if viewH <= 0 {
-		viewH = scrollBounds.size.height
+	contentH := document.size.height
+	if textBounds.size.height > contentH {
+		contentH = textBounds.size.height
 	}
-	stops := MaskStops(viewH, FadeBand(viewH, FadeHeightPt), top, bottom)
+	if contentH <= 0 {
+		return
+	}
+	gx, gy, gw, gh := FadeRect(
+		scrollBounds.size.width, scrollBounds.size.height,
+		clipFrame.origin.x, clipFrame.origin.y, clipFrame.size.width, clipFrame.size.height,
+	)
+	viewH := clipBounds.size.height
+	if viewH <= 0 {
+		viewH = gh
+	}
+	offset := ScrollDistance(true, visible.origin.y, clipBounds.origin.y, contentH, viewH)
+	top, bottom := ScrollFades(contentH, viewH, offset, fadeEpsilon)
+	stops := MaskStops(gh, FadeBand(gh, FadeHeightPt), top, bottom)
 	withoutFadeAnimation(func() {
 		send(h.scroll, "setWantsLayer:", 1)
 		host := send(h.scroll, "layer")
@@ -622,10 +640,7 @@ func (h *CardText) updateFades() {
 		box := nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}}
 		setViewFrame(h.fadeMask, sel("setFrame:"), box)
 		setViewFrame(h.fadeMask, sel("setBounds:"), box)
-		if clipFrame.size.width <= 0 || clipFrame.size.height <= 0 {
-			clipFrame = box
-		}
-		setViewFrame(h.fadeGrad, sel("setFrame:"), clipFrame)
+		setViewFrame(h.fadeGrad, sel("setFrame:"), nsRect{origin: nsPoint{x: gx, y: gy}, size: nsSize{width: gw, height: gh}})
 		applyMaskStops(h.fadeGrad, stops)
 		h.placeFadeBar()
 		send(host, "setMask:", uintptr(h.fadeMask))
@@ -645,9 +660,14 @@ func (h *CardText) ensureFadeMask() {
 		releaseLayer(bar)
 		return
 	}
-	// Location 0 is the bottom edge, matching MaskStops.
-	setCGPoint(grad, sel("setStartPoint:"), nsPoint{x: 0.5, y: 0})
-	setCGPoint(grad, sel("setEndPoint:"), nsPoint{x: 0.5, y: 1})
+	// The scroll view layer is not flipped. geometryFlipped stays off so a
+	// sublayer's y is the bottom edge, and GradientAxis matches MaskStops:
+	// location 0 is the bottom, location 1 is the top.
+	send(container, "setGeometryFlipped:", 0)
+	send(grad, "setGeometryFlipped:", 0)
+	sx, sy, ex, ey := GradientAxis()
+	setCGPoint(grad, sel("setStartPoint:"), nsPoint{x: sx, y: sy})
+	setCGPoint(grad, sel("setEndPoint:"), nsPoint{x: ex, y: ey})
 	if colorSRGB != nil {
 		opaque := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), 0, 0, 0, 1)
 		if cg := send(opaque, "CGColor"); cg != 0 {

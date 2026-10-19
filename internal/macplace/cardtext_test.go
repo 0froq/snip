@@ -110,6 +110,60 @@ func TestMaskFrameDropsTheScrolledOrigin(t *testing.T) {
 	}
 }
 
+func TestMidScrollFadesBothEdges(t *testing.T) {
+	// 150pt down a 500pt document in a 200pt viewport. The visible rect
+	// staying at 0 must not hide the top fade once the clip bounds have moved.
+	offset := ScrollDistance(true, 0, 150, 500, 200)
+	top, bottom := ScrollFades(500, 200, offset, fadeEpsilon)
+	if !top || !bottom {
+		t.Fatalf("mid-scroll edges %v %v (offset %v)", top, bottom, offset)
+	}
+	stops := MaskStops(200, FadeBand(200, FadeHeightPt), top, bottom)
+	sx, sy, ex, ey := GradientAxis()
+	if sx != 0.5 || sy != 0 || ex != 0.5 || ey != 1 {
+		t.Fatalf("axis %v %v %v %v", sx, sy, ex, ey)
+	}
+	// Location 0 is the bottom of the unflipped layer, location 1 the top.
+	if len(stops) != 4 || stops[0] != (MaskStop{0, 0}) || stops[3] != (MaskStop{1, 0}) {
+		t.Fatalf("both edges %+v", stops)
+	}
+	if stops[1].Alpha != 1 || stops[2].Alpha != 1 || stops[1].Location >= stops[2].Location {
+		t.Fatalf("middle %+v", stops)
+	}
+
+	end := ScrollDistance(true, 300, 300, 500, 200)
+	top, bottom = ScrollFades(500, 200, end, fadeEpsilon)
+	stops = MaskStops(200, FadeBand(200, FadeHeightPt), top, bottom)
+	if !top || bottom || len(stops) != 3 || stops[0].Alpha != 1 || stops[2] != (MaskStop{1, 0}) {
+		t.Fatalf("at the bottom the top fades and the bottom stays opaque: %v %v %+v", top, bottom, stops)
+	}
+
+	// A non-flipped document reports a large y at the top. That is not a scroll.
+	if d := ScrollDistance(false, 300, 300, 500, 200); d != 0 {
+		t.Fatalf("non-flipped top %v", d)
+	}
+	if d := ScrollDistance(false, 0, 0, 500, 200); d != 300 {
+		t.Fatalf("non-flipped bottom %v", d)
+	}
+}
+
+func TestFadeRectKeepsTheTopStopInsideTheViewport(t *testing.T) {
+	x, y, w, h := FadeRect(300, 200, 0, 0, 300, 200)
+	if x != 0 || y != 0 || w != 300 || h != 200 {
+		t.Fatalf("viewport %v %v %v %v", x, y, w, h)
+	}
+	// Document height, bottom-aligned: the clear top stop would sit above the mask.
+	x, y, w, h = FadeRect(300, 200, 0, 0, 300, 2000)
+	if x != 0 || y != 0 || w != 300 || h != 200 {
+		t.Fatalf("tall clip %v %v %v %v", x, y, w, h)
+	}
+	// Shifted up by a scroll offset: the top band leaves and the bottom band moves.
+	x, y, w, h = FadeRect(300, 200, 0, 80, 300, 200)
+	if x != 0 || y != 0 || w != 300 || h != 200 {
+		t.Fatalf("shifted clip %v %v %v %v", x, y, w, h)
+	}
+}
+
 func TestMaskStopsClearOnlyTheScrollingEdge(t *testing.T) {
 	if stops := MaskStops(200, 20, false, false); stops != nil {
 		t.Fatalf("a card that fits has no mask, got %+v", stops)

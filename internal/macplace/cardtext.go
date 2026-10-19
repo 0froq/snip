@@ -118,6 +118,51 @@ func FontFace(family string) (name string, system bool) {
 	return config.ResolveFont(family)
 }
 
+const (
+	// FadeHeightPt is the scroll-edge gradient, in points.
+	FadeHeightPt = 20
+	// fadeEpsilon absorbs a fractional scroll offset so the fade does not flicker.
+	fadeEpsilon = 1
+)
+
+// ScrollFades reports which edges of a vertical scroller should fade.
+// contentH is the document height, viewH the visible height, and offset
+// the distance from the top of the document. A card that fits has neither
+// fade. The top fade appears once the document has moved down, and the
+// bottom fade stays until the document's end is in view.
+func ScrollFades(contentH, viewH, offset, epsilon float64) (top, bottom bool) {
+	if contentH <= 0 || viewH <= 0 {
+		return false, false
+	}
+	if epsilon < 0 {
+		epsilon = 0
+	}
+	if contentH <= viewH+epsilon {
+		return false, false
+	}
+	maxOff := contentH - viewH
+	if offset > epsilon {
+		top = true
+	}
+	if offset < maxOff-epsilon {
+		bottom = true
+	}
+	return top, bottom
+}
+
+// FadeBand is the gradient height that fits in the visible area. It is
+// capped at half the view so the two edges never cross.
+func FadeBand(viewH, want float64) float64 {
+	if viewH <= 0 || want <= 0 {
+		return 0
+	}
+	half := viewH / 2
+	if want > half {
+		return half
+	}
+	return want
+}
+
 // CardTextOptions describes the scroll view embedded in a card window.
 type CardTextOptions struct {
 	Text               string

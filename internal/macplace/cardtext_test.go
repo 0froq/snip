@@ -63,6 +63,42 @@ func TestTextContentFrameClearsTheResizeBand(t *testing.T) {
 	}
 }
 
+func TestScrollFadesFollowTheEdges(t *testing.T) {
+	if top, bottom := ScrollFades(100, 100, 0, fadeEpsilon); top || bottom {
+		t.Fatalf("a card that fits has no fade, got %v %v", top, bottom)
+	}
+	if top, bottom := ScrollFades(200, 80, 0, fadeEpsilon); top || !bottom {
+		t.Fatalf("at the top only the bottom fades, got %v %v", top, bottom)
+	}
+	if top, bottom := ScrollFades(200, 80, 40, fadeEpsilon); !top || !bottom {
+		t.Fatalf("mid-scroll fades both edges, got %v %v", top, bottom)
+	}
+	if top, bottom := ScrollFades(200, 80, 120, fadeEpsilon); !top || bottom {
+		t.Fatalf("at the bottom only the top fades, got %v %v", top, bottom)
+	}
+	if top, bottom := ScrollFades(200, 80, 0.4, fadeEpsilon); top || !bottom {
+		t.Fatalf("a fraction of a point at the top stays hidden, got %v %v", top, bottom)
+	}
+	if top, bottom := ScrollFades(0, 80, 0, fadeEpsilon); top || bottom {
+		t.Fatalf("empty content has no fade, got %v %v", top, bottom)
+	}
+}
+
+func TestFadeBandStaysInsideTheView(t *testing.T) {
+	if band := FadeBand(400, FadeHeightPt); band != FadeHeightPt {
+		t.Fatalf("band %v", band)
+	}
+	if band := FadeBand(30, FadeHeightPt); band != 15 {
+		t.Fatalf("band %v", band)
+	}
+	if band := FadeBand(0, FadeHeightPt); band != 0 {
+		t.Fatalf("band %v", band)
+	}
+	if FadeHeightPt < 16 || FadeHeightPt > 24 {
+		t.Fatalf("fade height %v", FadeHeightPt)
+	}
+}
+
 func TestFontFaceSkipsGenerics(t *testing.T) {
 	name, system := FontFace("-apple-system, PingFang SC, Hiragino Sans GB, sans-serif")
 	if !system || name != "" {

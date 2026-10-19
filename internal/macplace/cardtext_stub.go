@@ -24,6 +24,9 @@ func (t *CardText) SetFont(string, float64) {}
 // SetColor is a no-op off macOS.
 func (t *CardText) SetColor(uint8, uint8, uint8) {}
 
+// SetBackground is a no-op off macOS.
+func (t *CardText) SetBackground(uint8, uint8, uint8) {}
+
 // SetCanEdit is a no-op off macOS.
 func (t *CardText) SetCanEdit(bool) {}
 

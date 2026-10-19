@@ -564,11 +564,18 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 	shell := ui.Column(c).Fill().FocusRing(false)
 	shell = cardPointerInput(a, host, host.win, shell).Cursor(edgeCursor(host.hoverEdge))
 	cardHot := shell.Hovered()
+	editing := host.textHost != nil && host.textHost.Editing()
 	if host.textHost != nil {
 		host.textHost.SetColor(ink.R, ink.G, ink.B)
+		// The text view is clear, so the fade has to match the chrome
+		// behind it: the face, or the sunk well while editing.
+		bg := k.C(pixel.Face)
+		if editing {
+			bg = k.C(pixel.Well)
+		}
+		host.textHost.SetBackground(bg.R, bg.G, bg.B)
 	}
 	active := host.selected || host.pulse
-	editing := host.textHost != nil && host.textHost.Editing()
 	shell.Children(func() {
 		ui.Column(c).Fill().FocusRing(false).Draw(func(p *ui.Painter, r ui.Rect) {
 			drawCardChrome(k.Canvas(p, r), active, editing)

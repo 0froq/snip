@@ -20,9 +20,6 @@ const NativeCardText = true
 
 const (
 	nsViewWidthSizable     = 2
-	nsViewMinYMargin       = 8
-	nsViewMaxYMargin       = 32
-	nsWindowAbove          = 1
 	nsEventModifierCommand = 1 << 20
 	nsScrollerStyleOverlay = 1
 	// Left, right, and other mouse-down. A global monitor only sees events
@@ -57,17 +54,11 @@ type CardText struct {
 	green       uint8
 	blue        uint8
 	colorSet    bool
-	bgRed       uint8
-	bgGreen     uint8
-	bgBlue      uint8
-	bgSet       bool
 	haveText    bool
 	text        string
 
-	fadeTop      id
-	fadeBottom   id
-	fadeTopLayer id
-	fadeBotLayer id
+	// fadeMask is the clip view's alpha mask. Nil while the text fits.
+	fadeMask     id
 	fadeWatching bool
 }
 
@@ -83,6 +74,7 @@ var (
 	fontSystem   func(id, objc.SEL, float64) id
 	colorRGBA    func(id, objc.SEL, float64, float64, float64, float64) id
 	colorSRGB    func(id, objc.SEL, float64, float64, float64, float64) id
+	numDouble    func(id, objc.SEL, float64) id
 	setNSSize    func(id, objc.SEL, nsSize)
 	setCGFloat   func(id, objc.SEL, float64)
 	setCGPoint   func(id, objc.SEL, nsPoint)
@@ -258,20 +250,6 @@ func (h *CardText) SetVisible(on bool) {
 		hidden = 0
 	}
 	send(h.scroll, "setHidden:", hidden)
-}
-
-// SetBackground is the card chrome behind the clear text view, in sRGB
-// bytes. The edge fades blend into it.
-func (h *CardText) SetBackground(r, g, b uint8) {
-	if h == nil || h.closing {
-		return
-	}
-	if h.bgSet && h.bgRed == r && h.bgGreen == g && h.bgBlue == b {
-		return
-	}
-	h.bgRed, h.bgGreen, h.bgBlue = r, g, b
-	h.bgSet = true
-	h.applyFadeColor()
 }
 
 // SetCanEdit hides Edit on the next menu when the card is sensitive.
@@ -510,7 +488,6 @@ func (h *CardText) onMouse(event id, global bool) {
 var (
 	scrollClass   objc.Class
 	delegateClass objc.Class
-	fadeClass     objc.Class
 )
 
 func ensureCardText() {
@@ -526,6 +503,7 @@ func ensureCardText() {
 		purego.RegisterFunc(&fontSystem, msgSendAddr)
 		purego.RegisterFunc(&colorRGBA, msgSendAddr)
 		purego.RegisterFunc(&colorSRGB, msgSendAddr)
+		purego.RegisterFunc(&numDouble, msgSendAddr)
 		purego.RegisterFunc(&setNSSize, msgSendAddr)
 		purego.RegisterFunc(&setCGPoint, msgSendAddr)
 		purego.RegisterFunc(&setCGFloat, msgSendAddr)
@@ -555,20 +533,7 @@ func ensureCardText() {
 		if err != nil {
 			panic("macplace: " + err.Error())
 		}
-		fadeClass, err = objc.RegisterClass("SnipCardFadeView", objc.GetClass("NSView"), nil, nil, []objc.MethodDef{{
-			Cmd: objc.RegisterName("hitTest:"),
-			Fn:  fadeHitTest,
-		}})
-		if err != nil {
-			panic("macplace: " + err.Error())
-		}
 	})
-}
-
-// fadeHitTest returns nil so a scroll-edge gradient never takes a click,
-// a drag, or a selection. The scroll view keeps looking underneath it.
-func fadeHitTest(_ id, _ objc.SEL, _ nsPoint) id {
-	return 0
 }
 
 func cardTextDidChange(self id, _ objc.SEL, _ id) {
@@ -584,18 +549,18 @@ func cardClipBoundsChanged(self id, _ objc.SEL, _ id) {
 }
 
 func (h *CardText) installFades() {
-	if h == nil || h.scroll == 0 || h.fadeTop != 0 {
+	if h == nil || h.scroll == 0 || h.fadeWatching {
 		return
 	}
-	h.fadeTop, h.fadeTopLayer = newFadeView(true)
-	h.fadeBottom, h.fadeBotLayer = newFadeView(false)
-	if h.fadeTop == 0 || h.fadeBottom == 0 {
-		return
-	}
-	h.addFade(h.fadeTop)
-	h.addFade(h.fadeBottom)
 	clip := send(h.scroll, "contentView")
-	if clip != 0 && h.delegate != 0 {
+	if clip == 0 {
+		return
+	}
+	// The mask sits on the clip view, which is the text viewport. The
+	// scroller is a sibling, and the card frame is drawn outside this view.
+	send(clip, "setDrawsBackground:", 0)
+	send(clip, "setWantsLayer:", 1)
+	if h.delegate != 0 {
 		send(clip, "setPostsBoundsChangedNotifications:", 1)
 		send(send(class("NSNotificationCenter"), "defaultCenter"), "addObserver:selector:name:object:",
 			uintptr(h.delegate),
@@ -604,109 +569,103 @@ func (h *CardText) installFades() {
 			uintptr(clip))
 		h.fadeWatching = true
 	}
-	h.applyFadeColor()
 	h.updateFades()
 }
 
-func (h *CardText) addFade(view id) {
-	send(h.scroll, "addSubview:", uintptr(view))
-	if scroller := send(h.scroll, "verticalScroller"); scroller != 0 {
-		send(h.scroll, "addSubview:positioned:relativeTo:", uintptr(scroller), uintptr(nsWindowAbove), uintptr(view))
-	}
-}
-
-func newFadeView(top bool) (view, layer id) {
-	view = initFrame(send(id(fadeClass), "alloc"), sel("initWithFrame:"), nsRect{})
-	if view == 0 {
-		return 0, 0
-	}
-	mask := uintptr(nsViewWidthSizable | nsViewMaxYMargin)
-	if top {
-		mask = nsViewWidthSizable | nsViewMinYMargin
-	}
-	send(view, "setAutoresizingMask:", mask)
-	send(view, "setWantsLayer:", 1)
-	layer = send(class("CAGradientLayer"), "layer")
-	if layer == 0 {
-		return view, 0
-	}
-	send(view, "setLayer:", uintptr(layer))
-	send(layer, "setOpaque:", 0)
-	start := nsPoint{x: 0.5, y: 0}
-	end := nsPoint{x: 0.5, y: 1}
-	if top {
-		start = nsPoint{x: 0.5, y: 1}
-		end = nsPoint{x: 0.5, y: 0}
-	}
-	setCGPoint(layer, sel("setStartPoint:"), start)
-	setCGPoint(layer, sel("setEndPoint:"), end)
-	send(view, "setHidden:", 1)
-	return view, layer
-}
-
-func (h *CardText) applyFadeColor() {
-	if h == nil || !h.bgSet {
-		return
-	}
-	paintGradient(h.fadeTopLayer, h.bgRed, h.bgGreen, h.bgBlue)
-	paintGradient(h.fadeBotLayer, h.bgRed, h.bgGreen, h.bgBlue)
-}
-
-func paintGradient(layer id, r, g, b uint8) {
-	if layer == 0 || colorSRGB == nil {
-		return
-	}
-	opaque := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), float64(r)/255, float64(g)/255, float64(b)/255, 1)
-	clear := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), float64(r)/255, float64(g)/255, float64(b)/255, 0)
-	if opaque == 0 || clear == 0 {
-		return
-	}
-	cg1 := send(opaque, "CGColor")
-	cg2 := send(clear, "CGColor")
-	if cg1 == 0 || cg2 == 0 {
-		return
-	}
-	arr := send(send(class("NSMutableArray"), "alloc"), "init")
-	send(arr, "addObject:", uintptr(cg1))
-	send(arr, "addObject:", uintptr(cg2))
-	send(layer, "setColors:", uintptr(arr))
-	send(arr, "release")
-}
-
 func (h *CardText) updateFades() {
-	if h == nil || h.closing || h.scroll == 0 || h.view == 0 || h.fadeTop == 0 || h.fadeBottom == 0 {
+	if h == nil || h.closing || h.scroll == 0 || h.view == 0 {
 		return
 	}
-	bounds := msgRect(h.scroll, sel("bounds"))
-	band := FadeBand(bounds.size.height, FadeHeightPt)
+	clip := send(h.scroll, "contentView")
+	if clip == 0 {
+		return
+	}
+	send(clip, "setWantsLayer:", 1)
+	host := send(clip, "layer")
+	if host == 0 {
+		return
+	}
+	bounds := msgRect(host, sel("bounds"))
+	if bounds.size.width <= 0 || bounds.size.height <= 0 {
+		bounds = msgRect(clip, sel("bounds"))
+	}
 	vis := msgRect(h.view, sel("documentVisibleRect"))
 	doc := msgRect(h.view, sel("bounds"))
 	top, bottom := ScrollFades(doc.size.height, vis.size.height, vis.origin.y, fadeEpsilon)
-	if band <= 0 {
-		top, bottom = false, false
-	}
-	placeFade(h.fadeTop, 0, bounds.size.height-band, bounds.size.width, band, top)
-	placeFade(h.fadeBottom, 0, 0, bounds.size.width, band, bottom)
-}
-
-func placeFade(view id, x, y, w, ht float64, show bool) {
-	if view == 0 {
+	band := FadeBand(bounds.size.height, FadeHeightPt)
+	stops := MaskStops(bounds.size.height, band, top, bottom)
+	if len(stops) == 0 {
+		send(host, "setMask:", 0)
 		return
 	}
-	setViewFrame(view, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}})
-	hidden := uintptr(1)
-	if show {
-		hidden = 0
+	if h.fadeMask == 0 {
+		h.fadeMask = newFadeMask()
 	}
-	send(view, "setHidden:", hidden)
+	if h.fadeMask == 0 {
+		return
+	}
+	// bounds origin tracks the scroll, so the mask stays on the viewport
+	// through a scroll and a live resize.
+	setViewFrame(h.fadeMask, sel("setFrame:"), bounds)
+	applyMaskStops(h.fadeMask, stops)
+	send(host, "setMask:", uintptr(h.fadeMask))
+}
+
+func newFadeMask() id {
+	layer := send(send(class("CAGradientLayer"), "alloc"), "init")
+	if layer == 0 {
+		return 0
+	}
+	// Location 0 is the bottom edge, matching MaskStops.
+	setCGPoint(layer, sel("setStartPoint:"), nsPoint{x: 0.5, y: 0})
+	setCGPoint(layer, sel("setEndPoint:"), nsPoint{x: 0.5, y: 1})
+	return layer
+}
+
+func applyMaskStops(layer id, stops []MaskStop) {
+	if layer == 0 || colorSRGB == nil || numDouble == nil || len(stops) == 0 {
+		return
+	}
+	colors := send(send(class("NSMutableArray"), "alloc"), "init")
+	locs := send(send(class("NSMutableArray"), "alloc"), "init")
+	for _, stop := range stops {
+		c := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), 0, 0, 0, stop.Alpha)
+		n := numDouble(class("NSNumber"), sel("numberWithDouble:"), stop.Location)
+		if c == 0 || n == 0 {
+			continue
+		}
+		cg := send(c, "CGColor")
+		if cg == 0 {
+			continue
+		}
+		send(colors, "addObject:", uintptr(cg))
+		send(locs, "addObject:", uintptr(n))
+	}
+	send(layer, "setColors:", uintptr(colors))
+	send(layer, "setLocations:", uintptr(locs))
+	send(colors, "release")
+	send(locs, "release")
 }
 
 func (h *CardText) removeFadeWatch() {
-	if h == nil || !h.fadeWatching || h.delegate == 0 {
+	if h == nil {
 		return
 	}
-	send(send(class("NSNotificationCenter"), "defaultCenter"), "removeObserver:", uintptr(h.delegate))
-	h.fadeWatching = false
+	if h.fadeWatching && h.delegate != 0 {
+		send(send(class("NSNotificationCenter"), "defaultCenter"), "removeObserver:", uintptr(h.delegate))
+		h.fadeWatching = false
+	}
+	if h.scroll != 0 {
+		if clip := send(h.scroll, "contentView"); clip != 0 {
+			if host := send(clip, "layer"); host != 0 {
+				send(host, "setMask:", 0)
+			}
+		}
+	}
+	if h.fadeMask != 0 {
+		send(h.fadeMask, "release")
+		h.fadeMask = 0
+	}
 }
 
 func snipScrollHitTest(self id, _ objc.SEL, pt nsPoint) id {

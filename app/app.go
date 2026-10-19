@@ -578,13 +578,6 @@ func (a *App) cardView(c *ui.Context, host *cardUI) {
 		}
 		host.textHost.SetVisible(!pixelFont)
 		host.textHost.SetColor(ink.R, ink.G, ink.B)
-		// The text view is clear, so the fade has to match the chrome
-		// behind it: the face, or the sunk well while editing.
-		bg := k.C(pixel.Face)
-		if editing {
-			bg = k.C(pixel.Well)
-		}
-		host.textHost.SetBackground(bg.R, bg.G, bg.B)
 	}
 	active := host.selected || host.pulse
 	shell.Children(func() {

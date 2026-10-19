@@ -99,6 +99,32 @@ func TestFadeBandStaysInsideTheView(t *testing.T) {
 	}
 }
 
+func TestMaskStopsClearOnlyTheScrollingEdge(t *testing.T) {
+	if stops := MaskStops(200, 20, false, false); stops != nil {
+		t.Fatalf("a card that fits has no mask, got %+v", stops)
+	}
+	if stops := MaskStops(0, 20, true, true); stops != nil {
+		t.Fatalf("empty view %+v", stops)
+	}
+	bottom := MaskStops(200, 20, false, true)
+	if len(bottom) != 3 || bottom[0] != (MaskStop{0, 0}) || bottom[1] != (MaskStop{20.0 / 200.0, 1}) || bottom[2] != (MaskStop{1, 1}) {
+		t.Fatalf("bottom %+v", bottom)
+	}
+	top := MaskStops(200, 20, true, false)
+	if len(top) != 3 || top[0] != (MaskStop{0, 1}) || top[1] != (MaskStop{1 - 20.0/200.0, 1}) || top[2] != (MaskStop{1, 0}) {
+		t.Fatalf("top %+v", top)
+	}
+	both := MaskStops(200, 20, true, true)
+	if len(both) != 4 || both[0].Alpha != 0 || both[1] != (MaskStop{20.0 / 200.0, 1}) || both[2] != (MaskStop{1 - 20.0/200.0, 1}) || both[3].Alpha != 0 {
+		t.Fatalf("both %+v", both)
+	}
+	// A band taller than the view still meets in the middle, clear at both edges.
+	tight := MaskStops(30, 40, true, true)
+	if len(tight) != 4 || tight[0].Alpha != 0 || tight[1].Location != 0.5 || tight[3].Alpha != 0 {
+		t.Fatalf("tight %+v", tight)
+	}
+}
+
 func TestFontFaceSkipsGenerics(t *testing.T) {
 	name, system := FontFace("-apple-system, PingFang SC, Hiragino Sans GB, sans-serif")
 	if !system || name != "" {

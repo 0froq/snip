@@ -163,6 +163,42 @@ func FadeBand(viewH, want float64) float64 {
 	return want
 }
 
+// MaskStop is one stop of the clip view's alpha mask. Location runs from
+// 0 at the bottom edge to 1 at the top, which is CAGradientLayer's unit
+// space. Alpha 1 keeps the text, and 0 lets the card behind it show through.
+type MaskStop struct {
+	Location float64
+	Alpha    float64
+}
+
+// MaskStops is the vertical alpha mask for a viewport viewH points tall.
+// fadeH is the band at an edge. top and bottom are the edges that still
+// have more text past the viewport. No edge returns no stops, so the
+// clip view keeps no mask. Each fading edge goes from opaque on the
+// inside of the band to clear at the viewport edge.
+func MaskStops(viewH, fadeH float64, top, bottom bool) []MaskStop {
+	if viewH <= 0 || (!top && !bottom) {
+		return nil
+	}
+	if fadeH < 0 {
+		fadeH = 0
+	}
+	if fadeH > viewH/2 {
+		fadeH = viewH / 2
+	}
+	if fadeH <= 0 {
+		return nil
+	}
+	band := fadeH / viewH
+	if top && bottom {
+		return []MaskStop{{0, 0}, {band, 1}, {1 - band, 1}, {1, 0}}
+	}
+	if bottom {
+		return []MaskStop{{0, 0}, {band, 1}, {1, 1}}
+	}
+	return []MaskStop{{0, 1}, {1 - band, 1}, {1, 0}}
+}
+
 // CardTextOptions describes the scroll view embedded in a card window.
 type CardTextOptions struct {
 	Text               string

@@ -27,9 +27,6 @@ func (t *CardText) SetColor(uint8, uint8, uint8) {}
 // SetVisible is a no-op off macOS.
 func (t *CardText) SetVisible(bool) {}
 
-// SetBackground is a no-op off macOS.
-func (t *CardText) SetBackground(uint8, uint8, uint8) {}
-
 // SetCanEdit is a no-op off macOS.
 func (t *CardText) SetCanEdit(bool) {}
 

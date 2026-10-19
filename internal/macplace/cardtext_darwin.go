@@ -57,8 +57,12 @@ type CardText struct {
 	haveText    bool
 	text        string
 
-	// fadeMask is the clip view's alpha mask. Nil while the text fits.
+	// fadeMask is the scroll view's mask. Its origin stays at zero, so a
+	// clip-view bounds shift cannot carry it. fadeGrad is the text-area
+	// gradient inside it, and fadeBar keeps the scroller fully visible.
 	fadeMask     id
+	fadeGrad     id
+	fadeBar      id
 	fadeWatching bool
 }
 
@@ -556,10 +560,10 @@ func (h *CardText) installFades() {
 	if clip == 0 {
 		return
 	}
-	// The mask sits on the clip view, which is the text viewport. The
-	// scroller is a sibling, and the card frame is drawn outside this view.
 	send(clip, "setDrawsBackground:", 0)
-	send(clip, "setWantsLayer:", 1)
+	// The scroll view's bounds origin does not move when the document
+	// scrolls. The clip view's does, which is why the mask cannot live there.
+	send(h.scroll, "setWantsLayer:", 1)
 	if h.delegate != 0 {
 		send(clip, "setPostsBoundsChangedNotifications:", 1)
 		send(send(class("NSNotificationCenter"), "defaultCenter"), "addObserver:selector:name:object:",
@@ -580,46 +584,132 @@ func (h *CardText) updateFades() {
 	if clip == 0 {
 		return
 	}
-	send(clip, "setWantsLayer:", 1)
-	host := send(clip, "layer")
-	if host == 0 {
+	// A failed geometry read must not drop the mask. An empty rect from a
+	// bad HFA read used to clear both edges for a frame.
+	vis := layerRect(h.view, "documentVisibleRect")
+	doc := layerRect(h.view, "bounds")
+	scrollBounds := layerRect(h.scroll, "bounds")
+	if vis.size.height <= 0 || doc.size.height <= 0 || scrollBounds.size.height <= 0 {
 		return
 	}
-	bounds := msgRect(host, sel("bounds"))
-	if bounds.size.width <= 0 || bounds.size.height <= 0 {
-		bounds = msgRect(clip, sel("bounds"))
-	}
-	vis := msgRect(h.view, sel("documentVisibleRect"))
-	doc := msgRect(h.view, sel("bounds"))
 	top, bottom := ScrollFades(doc.size.height, vis.size.height, vis.origin.y, fadeEpsilon)
-	band := FadeBand(bounds.size.height, FadeHeightPt)
-	stops := MaskStops(bounds.size.height, band, top, bottom)
-	if len(stops) == 0 {
-		send(host, "setMask:", 0)
-		return
+	clipFrame := layerRect(clip, "frame")
+	viewH := clipFrame.size.height
+	if viewH <= 0 {
+		viewH = scrollBounds.size.height
 	}
-	if h.fadeMask == 0 {
-		h.fadeMask = newFadeMask()
-	}
-	if h.fadeMask == 0 {
-		return
-	}
-	// bounds origin tracks the scroll, so the mask stays on the viewport
-	// through a scroll and a live resize.
-	setViewFrame(h.fadeMask, sel("setFrame:"), bounds)
-	applyMaskStops(h.fadeMask, stops)
-	send(host, "setMask:", uintptr(h.fadeMask))
+	stops := MaskStops(viewH, FadeBand(viewH, FadeHeightPt), top, bottom)
+	withoutFadeAnimation(func() {
+		send(h.scroll, "setWantsLayer:", 1)
+		host := send(h.scroll, "layer")
+		if host == 0 {
+			return
+		}
+		// Leave the clip view unmasked. Its bounds origin is the scroll
+		// offset, and a mask framed there rides along with the text.
+		if clipLayer := send(clip, "layer"); clipLayer != 0 {
+			send(clipLayer, "setMask:", 0)
+		}
+		if len(stops) == 0 {
+			send(host, "setMask:", 0)
+			return
+		}
+		h.ensureFadeMask()
+		if h.fadeMask == 0 || h.fadeGrad == 0 {
+			return
+		}
+		x, y, w, ht := MaskFrame(scrollBounds.origin.x, scrollBounds.origin.y, scrollBounds.size.width, scrollBounds.size.height)
+		box := nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}}
+		setViewFrame(h.fadeMask, sel("setFrame:"), box)
+		setViewFrame(h.fadeMask, sel("setBounds:"), box)
+		if clipFrame.size.width <= 0 || clipFrame.size.height <= 0 {
+			clipFrame = box
+		}
+		setViewFrame(h.fadeGrad, sel("setFrame:"), clipFrame)
+		applyMaskStops(h.fadeGrad, stops)
+		h.placeFadeBar()
+		send(host, "setMask:", uintptr(h.fadeMask))
+	})
 }
 
-func newFadeMask() id {
-	layer := send(send(class("CAGradientLayer"), "alloc"), "init")
-	if layer == 0 {
-		return 0
+func (h *CardText) ensureFadeMask() {
+	if h.fadeMask != 0 {
+		return
+	}
+	container := send(send(class("CALayer"), "alloc"), "init")
+	grad := send(send(class("CAGradientLayer"), "alloc"), "init")
+	bar := send(send(class("CALayer"), "alloc"), "init")
+	if container == 0 || grad == 0 || bar == 0 {
+		releaseLayer(container)
+		releaseLayer(grad)
+		releaseLayer(bar)
+		return
 	}
 	// Location 0 is the bottom edge, matching MaskStops.
-	setCGPoint(layer, sel("setStartPoint:"), nsPoint{x: 0.5, y: 0})
-	setCGPoint(layer, sel("setEndPoint:"), nsPoint{x: 0.5, y: 1})
-	return layer
+	setCGPoint(grad, sel("setStartPoint:"), nsPoint{x: 0.5, y: 0})
+	setCGPoint(grad, sel("setEndPoint:"), nsPoint{x: 0.5, y: 1})
+	if colorSRGB != nil {
+		opaque := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), 0, 0, 0, 1)
+		if cg := send(opaque, "CGColor"); cg != 0 {
+			send(bar, "setBackgroundColor:", uintptr(cg))
+		}
+	}
+	send(container, "addSublayer:", uintptr(grad))
+	send(container, "addSublayer:", uintptr(bar))
+	h.fadeMask = container
+	h.fadeGrad = grad
+	h.fadeBar = bar
+}
+
+// placeFadeBar covers the vertical scroller in the mask so the bar stays
+// solid. The gradient is only the clip view, which does not include it,
+// and this layer fills the overlap of an overlay scroller.
+func (h *CardText) placeFadeBar() {
+	if h.fadeBar == 0 {
+		return
+	}
+	scroller := send(h.scroll, "verticalScroller")
+	if scroller == 0 || send(scroller, "isHidden") != 0 {
+		send(h.fadeBar, "setHidden:", 1)
+		return
+	}
+	frame := layerRect(scroller, "frame")
+	if frame.size.width <= 0 || frame.size.height <= 0 {
+		send(h.fadeBar, "setHidden:", 1)
+		return
+	}
+	setViewFrame(h.fadeBar, sel("setFrame:"), frame)
+	send(h.fadeBar, "setHidden:", 0)
+}
+
+func releaseLayer(layer id) {
+	if layer != 0 {
+		send(layer, "release")
+	}
+}
+
+// withoutFadeAnimation turns off Core Animation's implicit 0.25s frame
+// animation. A mask whose frame tracked the clip bounds was always mid-tween
+// during a scroll, so the fade lagged the viewport.
+func withoutFadeAnimation(fn func()) {
+	send(class("CATransaction"), "begin")
+	send(class("CATransaction"), "setDisableActions:", 1)
+	fn()
+	send(class("CATransaction"), "commit")
+}
+
+// layerRect reads an NSRect with the HFA return only. msgRect also accepts
+// an arm64 out-pointer result, which is the wrong register and can look
+// like a real rect.
+func layerRect(obj id, selector string) nsRect {
+	if obj == 0 {
+		return nsRect{}
+	}
+	load()
+	rectOnce.Do(func() {
+		purego.RegisterFunc(&readRect, structReturnSend())
+	})
+	return readRect(obj, sel(selector))
 }
 
 func applyMaskStops(layer id, stops []MaskStop) {
@@ -655,17 +745,22 @@ func (h *CardText) removeFadeWatch() {
 		send(send(class("NSNotificationCenter"), "defaultCenter"), "removeObserver:", uintptr(h.delegate))
 		h.fadeWatching = false
 	}
-	if h.scroll != 0 {
-		if clip := send(h.scroll, "contentView"); clip != 0 {
-			if host := send(clip, "layer"); host != 0 {
+	withoutFadeAnimation(func() {
+		if h.scroll != 0 {
+			if host := send(h.scroll, "layer"); host != 0 {
 				send(host, "setMask:", 0)
 			}
+			if clip := send(h.scroll, "contentView"); clip != 0 {
+				if host := send(clip, "layer"); host != 0 {
+					send(host, "setMask:", 0)
+				}
+			}
 		}
-	}
-	if h.fadeMask != 0 {
-		send(h.fadeMask, "release")
-		h.fadeMask = 0
-	}
+	})
+	releaseLayer(h.fadeGrad)
+	releaseLayer(h.fadeBar)
+	releaseLayer(h.fadeMask)
+	h.fadeGrad, h.fadeBar, h.fadeMask = 0, 0, 0
 }
 
 func snipScrollHitTest(self id, _ objc.SEL, pt nsPoint) id {

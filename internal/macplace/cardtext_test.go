@@ -99,6 +99,17 @@ func TestFadeBandStaysInsideTheView(t *testing.T) {
 	}
 }
 
+func TestMaskFrameDropsTheScrolledOrigin(t *testing.T) {
+	x, y, w, h := MaskFrame(0, 180, 420, 200)
+	if x != 0 || y != 0 || w != 420 || h != 200 {
+		t.Fatalf("frame %v %v %v %v", x, y, w, h)
+	}
+	x, y, w, h = MaskFrame(-40, -10, -1, 30)
+	if x != 0 || y != 0 || w != 0 || h != 30 {
+		t.Fatalf("frame %v %v %v %v", x, y, w, h)
+	}
+}
+
 func TestMaskStopsClearOnlyTheScrollingEdge(t *testing.T) {
 	if stops := MaskStops(200, 20, false, false); stops != nil {
 		t.Fatalf("a card that fits has no mask, got %+v", stops)

@@ -163,6 +163,21 @@ func FadeBand(viewH, want float64) float64 {
 	return want
 }
 
+// MaskFrame is the fade's rectangle in a layer that does not scroll.
+// A clip-view bounds origin moves with the document; using it as the mask
+// origin carries the fade along. The viewport mask always starts at zero
+// and only takes the visible width and height.
+func MaskFrame(boundsX, boundsY, width, height float64) (x, y, w, h float64) {
+	_, _ = boundsX, boundsY
+	if width < 0 {
+		width = 0
+	}
+	if height < 0 {
+		height = 0
+	}
+	return 0, 0, width, height
+}
+
 // MaskStop is one stop of the clip view's alpha mask. Location runs from
 // 0 at the bottom edge to 1 at the top, which is CAGradientLayer's unit
 // space. Alpha 1 keeps the text, and 0 lets the card behind it show through.

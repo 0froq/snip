@@ -241,17 +241,18 @@ func TestFadeCoversEaseWithTheScroll(t *testing.T) {
 	}
 	assert := func(offset, topOpacity, bottomOpacity float64) {
 		t.Helper()
-		top, bottom, ok := ScrollFadeCovers(docH, visH, offset, fadeEpsilon, 0, 0, 300, visH, FadeHeightPt)
+		top, bottom, ok := ScrollFadeCovers(docH, visH, offset, fadeEpsilon, 0, 0, 300, visH, FadeHeightPt, FadeContainerFlipped)
 		if !ok {
 			t.Fatalf("offset %v has no covers", offset)
 		}
 		if top.Opacity != topOpacity || bottom.Opacity != bottomOpacity {
 			t.Fatalf("offset %v cover opacity top %v bottom %v", offset, top.Opacity, bottom.Opacity)
 		}
-		if top.Y != visH-FadeHeightPt || top.H != FadeHeightPt || bottom.Y != 0 || bottom.H != FadeHeightPt {
+		// FadeContainerFlipped is off, so the low band is the visual top.
+		if top.Y != 0 || top.H != FadeHeightPt || bottom.Y != visH-FadeHeightPt || bottom.H != FadeHeightPt {
 			t.Fatalf("offset %v frames top %+v bottom %+v", offset, top, bottom)
 		}
-		if top.Y+top.H != visH || bottom.Y+bottom.H != FadeHeightPt {
+		if top.Y+top.H != FadeHeightPt || bottom.Y+bottom.H != visH {
 			t.Fatalf("offset %v bands leave the viewport %+v %+v", offset, top, bottom)
 		}
 		locs, alphas := ViewportFade(0, docH, offset, visH, visH, FadeHeightPt, fadeEpsilon, true)
@@ -270,14 +271,14 @@ func TestFadeCoversEaseWithTheScroll(t *testing.T) {
 
 	// Content that fits still has covers, both solid, so a later overflow
 	// can ease a fade in instead of attaching a mask already at full strength.
-	top, bottom, ok := ScrollFadeCovers(100, 200, 0, fadeEpsilon, 4, 6, 300, 200, FadeHeightPt)
+	top, bottom, ok := ScrollFadeCovers(100, 200, 0, fadeEpsilon, 4, 6, 300, 200, FadeHeightPt, FadeContainerFlipped)
 	if !ok || top.Opacity != 1 || bottom.Opacity != 1 {
 		t.Fatalf("content that fits %+v %+v ok=%v", top, bottom, ok)
 	}
-	if top.Y != 200-FadeHeightPt+6 || bottom.Y != 6 {
+	if top.Y != 6 || bottom.Y != 200-FadeHeightPt+6 {
 		t.Fatalf("shifted bands %+v %+v", top, bottom)
 	}
-	if _, _, ok := ScrollFadeCovers(500, 200, 100, fadeEpsilon, 0, 0, 0, 200, FadeHeightPt); ok {
+	if _, _, ok := ScrollFadeCovers(500, 200, 100, fadeEpsilon, 0, 0, 0, 200, FadeHeightPt, FadeContainerFlipped); ok {
 		t.Fatal("a zero-width gradient has no covers")
 	}
 	if documentOffset(12, docH, 12, visH, true) != 0 {
@@ -285,6 +286,39 @@ func TestFadeCoversEaseWithTheScroll(t *testing.T) {
 	}
 	if documentOffset(0, docH, 0, visH, false) != maxY || documentOffset(0, docH, maxY, visH, false) != 0 {
 		t.Fatal("non-flipped offset is measured from the top")
+	}
+}
+
+func TestFadeCoversPinTheVisualEdge(t *testing.T) {
+	const gradH = 200.0
+	// geometryFlipped off: the mask shows the low band on the visual top
+	// and the high band on the visual bottom.
+	top, bottom, ok := FadeCovers(0, 0, 300, gradH, FadeHeightPt, false, false, false)
+	if !ok || top.Y != 0 || bottom.Y != gradH-FadeHeightPt {
+		t.Fatalf("unflipped covers top %+v bottom %+v", top, bottom)
+	}
+	if top.Y+top.H != FadeHeightPt || bottom.Y+bottom.H != gradH {
+		t.Fatalf("unflipped bands top %+v bottom %+v", top, bottom)
+	}
+	// geometryFlipped on cancels that composite, so the bands swap.
+	top, bottom, ok = FadeCovers(0, 0, 300, gradH, FadeHeightPt, false, false, true)
+	if !ok || top.Y != gradH-FadeHeightPt || bottom.Y != 0 {
+		t.Fatalf("flipped covers top %+v bottom %+v", top, bottom)
+	}
+
+	// Scrolled to the bottom: the visual bottom cover is solid (fade
+	// hidden) and the visual top cover is clear (fade shown).
+	top, bottom, ok = ScrollFadeCovers(500, gradH, 500-gradH, fadeEpsilon, 0, 0, 300, gradH, FadeHeightPt, false)
+	if !ok || top.Opacity != 0 || bottom.Opacity != 1 || top.Y != 0 || bottom.Y != gradH-FadeHeightPt {
+		t.Fatalf("at the bottom top %+v bottom %+v", top, bottom)
+	}
+	// Scrolled to the top: the visual top cover is solid.
+	top, bottom, ok = ScrollFadeCovers(500, gradH, 0, fadeEpsilon, 0, 0, 300, gradH, FadeHeightPt, false)
+	if !ok || top.Opacity != 1 || bottom.Opacity != 0 || top.Y != 0 || bottom.Y != gradH-FadeHeightPt {
+		t.Fatalf("at the top top %+v bottom %+v", top, bottom)
+	}
+	if FadeContainerFlipped {
+		t.Fatal("the container is unflipped; the low band is the visual top")
 	}
 }
 

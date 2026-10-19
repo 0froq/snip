@@ -302,10 +302,15 @@ func MaskStops(viewH, fadeH float64, top, bottom bool) []MaskStop {
 }
 
 // FadeOpacitySeconds is how long an edge fade takes to appear or disappear.
-// FadeOpacityTiming is the Core Animation curve for both directions.
+// FadeOpacityTiming is the Core Animation curve name for both directions.
+// FadeContainerFlipped is written to the mask container's geometryFlipped.
+// It stays off so the scroller frame and the gradient axis keep their
+// current space. In that space the mask is composited with the container's
+// low y on the visual top, and cover frames are computed to match.
 const (
-	FadeOpacitySeconds = 0.18
-	FadeOpacityTiming  = "easeInEaseOut"
+	FadeOpacitySeconds   = 0.18
+	FadeOpacityTiming    = "easeInEaseOut"
+	FadeContainerFlipped = false
 )
 
 // FadeCover is the solid layer over one end of the viewport gradient.
@@ -329,20 +334,29 @@ func fadeCoverOpacity(edgeFades bool) float64 {
 	return 1
 }
 
-// FadeCovers are the top and bottom covers in an unflipped mask. y grows
-// upward: the bottom cover sits on the low edge, the top cover on the high
-// edge, each one a fade band tall. A viewport too short for a band has none.
-func FadeCovers(gradX, gradY, gradW, gradH, fadeH float64, topFades, bottomFades bool) (top, bottom FadeCover, ok bool) {
+// FadeCovers are the solid covers for the visual top and visual bottom.
+// geometryFlipped is the mask container's geometryFlipped. With it off, y
+// grows upward and AppKit still composites the mask so the low edge is the
+// visual top: the top cover is that low band and the bottom cover is the
+// high band. With it on, the container's own flip cancels that composite,
+// so the low edge is the visual bottom and the bands swap. A viewport too
+// short for a band has none.
+func FadeCovers(gradX, gradY, gradW, gradH, fadeH float64, topFades, bottomFades, geometryFlipped bool) (top, bottom FadeCover, ok bool) {
 	band := FadeBand(gradH, fadeH)
 	if gradW <= 0 || band <= 0 {
 		return FadeCover{}, FadeCover{}, false
 	}
+	topY := gradY
+	bottomY := gradY + gradH - band
+	if geometryFlipped {
+		topY, bottomY = bottomY, topY
+	}
 	top = FadeCover{
-		X: gradX, Y: gradY + gradH - band, W: gradW, H: band,
+		X: gradX, Y: topY, W: gradW, H: band,
 		Opacity: fadeCoverOpacity(topFades),
 	}
 	bottom = FadeCover{
-		X: gradX, Y: gradY, W: gradW, H: band,
+		X: gradX, Y: bottomY, W: gradW, H: band,
 		Opacity: fadeCoverOpacity(bottomFades),
 	}
 	return top, bottom, true
@@ -350,9 +364,9 @@ func FadeCovers(gradX, gradY, gradW, gradH, fadeH float64, topFades, bottomFades
 
 // ScrollFadeCovers is the cover pair for a distance from the top of the
 // document. The gradient under them always clears both edges.
-func ScrollFadeCovers(contentH, viewH, offset, epsilon, gradX, gradY, gradW, gradH, fadeH float64) (top, bottom FadeCover, ok bool) {
+func ScrollFadeCovers(contentH, viewH, offset, epsilon, gradX, gradY, gradW, gradH, fadeH float64, geometryFlipped bool) (top, bottom FadeCover, ok bool) {
 	topOn, bottomOn := ScrollFades(contentH, viewH, offset, epsilon)
-	return FadeCovers(gradX, gradY, gradW, gradH, fadeH, topOn, bottomOn)
+	return FadeCovers(gradX, gradY, gradW, gradH, fadeH, topOn, bottomOn, geometryFlipped)
 }
 
 // CardTextOptions describes the scroll view embedded in a card window.

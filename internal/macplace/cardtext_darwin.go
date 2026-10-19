@@ -624,7 +624,7 @@ func (h *CardText) updateFades() {
 	)
 	topCover, bottomCover, fadeOK := ScrollFadeCovers(
 		document.size.height, visible.size.height, off, fadeEpsilon,
-		gx, gy, gw, gh, FadeHeightPt,
+		gx, gy, gw, gh, FadeHeightPt, FadeContainerFlipped,
 	)
 	locations, alphas := fadeStopArrays(FadeUnderlay(gh, FadeHeightPt))
 	if !fadeOK {
@@ -712,11 +712,17 @@ func (h *CardText) ensureFadeMask() {
 		releaseLayer(bar)
 		return
 	}
-	// geometryFlipped stays off so the scroller patch keeps the scroll
-	// view's bottom-left frame. The gradient axis, not this flag, puts
-	// location 1 on the visual top. Turning the flag on would also flip
-	// that patch.
-	send(container, "setGeometryFlipped:", 0)
+	// The container's geometryFlipped matches FadeContainerFlipped, which
+	// is what FadeCovers uses for the cover bands. Off keeps the scroller
+	// patch in the scroll view's bottom-left frame. The mask is still
+	// composited with low y on the visual top, so the top cover is the
+	// low band. The gradient's own flag stays off: its axis, not this
+	// flag, puts location 1 on the visual top.
+	if FadeContainerFlipped {
+		send(container, "setGeometryFlipped:", 1)
+	} else {
+		send(container, "setGeometryFlipped:", 0)
+	}
 	send(grad, "setGeometryFlipped:", 0)
 	sx, sy, ex, ey := GradientAxis()
 	setCGPoint(grad, sel("setStartPoint:"), nsPoint{x: sx, y: sy})

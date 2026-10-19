@@ -118,297 +118,84 @@ func FontFace(family string) (name string, system bool) {
 	return config.ResolveFont(family)
 }
 
-const (
-	// fadeLineFraction is the fade band as a share of one line. Half a line
-	// is the most the gradient may cover, so it never hides a whole line.
-	fadeLineFraction = 0.5
-	// fadeEpsilon absorbs a fractional scroll offset so the fade does not flicker.
-	fadeEpsilon = 1
-)
+// fadeEdgeSlop is how far the clip may sit from an edge before that edge fades.
+// Half a point absorbs a fractional scroll offset without keeping a fade on
+// at the resting top or bottom.
+const fadeEdgeSlop = 0.5
 
-// FadeHeightForLine is the gradient band for one line of text. It is half
-// the line at most, and zero when the line height is unknown.
-func FadeHeightForLine(lineH float64) float64 {
-	if lineH <= 0 {
-		return 0
-	}
-	h := lineH * fadeLineFraction
-	if h > lineH*0.5 {
-		h = lineH * 0.5
-	}
-	return h
+// FadeMask is the alpha mask for one clip view. Locations is nil when the
+// text needs no mask. Location 0 is the visual bottom and location 1 is the
+// visual top: the scroll view's mask is composited with unit y=0 at the top,
+// so the gradient axis runs from (0.5, 1) to (0.5, 0). Alpha 1 keeps the
+// text. Band is the fade height in points, at most half a line.
+type FadeMask struct {
+	Band      float64
+	Locations []float64
+	Alphas    []float64
 }
 
-// ScrollFades reports which edges of a vertical scroller should fade.
-// contentH is the document height, viewH the visible height, and offset
-// the distance from the top of the document. A card that fits has neither
-// fade. The top fade appears once the document has moved down, and the
-// bottom fade stays until the document's end is in view.
-func ScrollFades(contentH, viewH, offset, epsilon float64) (top, bottom bool) {
-	if contentH <= 0 || viewH <= 0 {
-		return false, false
+// updateFade is the mask for a clip view. clipY is the clip bounds origin
+// (the scroll offset from the top), clipH the viewport, docH the document
+// height, and lineHeight one line. The same inputs always give the same
+// mask: nothing is remembered from an earlier scroll, resize, or edit.
+// Text that fits has no fade. The top fades only once the clip has left
+// the top, and the bottom fades only while the clip's far edge is short of
+// the document. The band is half a line, and at most half the viewport.
+func updateFade(clipY, clipH, docH, lineHeight float64) FadeMask {
+	if clipH <= 0 || docH <= clipH {
+		return FadeMask{}
 	}
-	if epsilon < 0 {
-		epsilon = 0
+	top := clipY > fadeEdgeSlop
+	bottom := clipY+clipH < docH-fadeEdgeSlop
+	if !top && !bottom {
+		return FadeMask{}
 	}
-	if contentH <= viewH+epsilon {
-		return false, false
+	band := 0.5 * lineHeight
+	if band > 0.5*clipH {
+		band = 0.5 * clipH
 	}
-	maxOff := contentH - viewH
-	if offset > epsilon {
-		top = true
+	if band <= 0 {
+		return FadeMask{}
 	}
-	if offset < maxOff-epsilon {
-		bottom = true
+	frac := band / clipH
+	var locations, alphas []float64
+	switch {
+	case top && bottom:
+		if frac >= 0.5 {
+			locations = []float64{0, 0.5, 1}
+			alphas = []float64{0, 1, 0}
+		} else {
+			locations = []float64{0, frac, 1 - frac, 1}
+			alphas = []float64{0, 1, 1, 0}
+		}
+	case bottom:
+		locations = []float64{0, frac, 1}
+		alphas = []float64{0, 1, 1}
+	case top:
+		locations = []float64{0, 1 - frac, 1}
+		alphas = []float64{1, 1, 0}
+	default:
+		return FadeMask{}
 	}
-	return top, bottom
+	return FadeMask{Band: band, Locations: locations, Alphas: alphas}
 }
 
-// FadeEdges is which edges fade, from the clip view's bounds and the
-// document rect only. boundsY/boundsH is the clip bounds: the scroll offset
-// and the viewport. docOrigin/docH is the document. flipped is the document
-// view. The same inputs always give the same answer, on the first layout,
-// after a resize, and after an edit. Offset 0 has no top fade. A document
-// that fits in the clip has no fade. The bottom fade is absent when the
-// clip's far edge reaches the document.
-func FadeEdges(docOrigin, docH, boundsY, boundsH, epsilon float64, flipped bool) (top, bottom bool) {
-	offset := documentOffset(docOrigin, docH, boundsY, boundsH, flipped)
-	return ScrollFades(docH, boundsH, offset, epsilon)
-}
-
-// FadeBand is the gradient height that fits in the visible area. It is
-// capped at half the view so the two edges never cross.
-func FadeBand(viewH, want float64) float64 {
-	if viewH <= 0 || want <= 0 {
-		return 0
+// clampClipOrigin keeps a clip-view bounds origin inside the document.
+// The range is [0, max(0, docH-clipH)]. Content that fits, or a clip
+// already at the top, stays at 0, so a resize cannot leave the first line
+// above the top inset.
+func clampClipOrigin(origin, docH, clipH float64) float64 {
+	if origin < 0 {
+		origin = 0
 	}
-	half := viewH / 2
-	if want > half {
-		return half
+	maxOrigin := docH - clipH
+	if maxOrigin < 0 {
+		maxOrigin = 0
 	}
-	return want
-}
-
-// MaskFrame is the fade's rectangle in a layer that does not scroll.
-// A clip-view bounds origin moves with the document; using it as the mask
-// origin carries the fade along. The viewport mask always starts at zero
-// and only takes the visible width and height.
-func MaskFrame(boundsX, boundsY, width, height float64) (x, y, w, h float64) {
-	_, _ = boundsX, boundsY
-	if width < 0 {
-		width = 0
+	if origin > maxOrigin {
+		return maxOrigin
 	}
-	if height < 0 {
-		height = 0
-	}
-	return 0, 0, width, height
-}
-
-// MaskStop is one stop of the viewport's alpha mask. Location 0 is the
-// start of GradientAxis and location 1 is the end. Alpha 1 keeps the text,
-// and 0 lets the card behind it show through.
-type MaskStop struct {
-	Location float64
-	Alpha    float64
-}
-
-// The scroll view's layer keeps geometryFlipped off, so a sublayer's frame
-// still grows upward. AppKit composites that layer as a mask with unit y=0
-// at the top of the scroll view: a gradient that starts at (0.5, 0) draws
-// its first stop on the visual top. The axis therefore starts at unit y=1,
-// the visual bottom, and ends at unit y=0, the visual top. Location 1 is
-// the visual top, which is where the top alpha sits.
-const (
-	visualBottomY = 1.0
-	visualTopY    = 0.0
-)
-
-// GradientAxis is the line the viewport mask draws along, from the visual
-// bottom to the visual top.
-func GradientAxis() (startX, startY, endX, endY float64) {
-	return 0.5, visualBottomY, 0.5, visualTopY
-}
-
-// LocationAlongAxis is the gradient location of a unit-space y. 0 is the
-// start of the axis and 1 is the end.
-func LocationAlongAxis(startY, endY, unitY float64) float64 {
-	span := endY - startY
-	if span == 0 {
-		return 0
-	}
-	return (unitY - startY) / span
-}
-
-// ViewportFade is the colors and locations handed to CAGradientLayer.
-// docOrigin/docH is the clip view's documentRect, visOrigin/visH its
-// documentVisibleRect, both in the document view's coordinates. maskH is
-// the gradient's pixel height. flipped is the document view: a flipped
-// NSTextView measures y from the top, so the top of the document is
-// docOrigin, not zero. A content inset that leaves the resting origin at
-// 12 is still the top. The bottom is the visible rect's far edge within
-// fadeEpsilon of the document's far edge, so a fraction of a point still
-// counts as the end. Location 1 is the visual top (GradientAxis's end).
-// The alpha at a location is the CGColor alpha.
-// Empty slices mean the layer gets no mask.
-// documentOffset is how far the visible rect sits from the top of the
-// document. A flipped document view measures y from the top. A non-flipped
-// view's origin is the bottom edge, so the top is the space still above
-// the visible rect.
-func documentOffset(docOrigin, docH, visOrigin, visH float64, flipped bool) float64 {
-	if !flipped {
-		return (docOrigin + docH) - (visOrigin + visH)
-	}
-	return visOrigin - docOrigin
-}
-
-func ViewportFade(docOrigin, docH, visOrigin, visH, maskH, fadeH, epsilon float64, flipped bool) (locations, alphas []float64) {
-	if maskH <= 0 {
-		maskH = visH
-	}
-	offset := documentOffset(docOrigin, docH, visOrigin, visH, flipped)
-	top, bottom := ScrollFades(docH, visH, offset, epsilon)
-	stops := MaskStops(maskH, FadeBand(maskH, fadeH), top, bottom)
-	if len(stops) == 0 {
-		return nil, nil
-	}
-	locations = make([]float64, len(stops))
-	alphas = make([]float64, len(stops))
-	for i, stop := range stops {
-		locations[i] = stop.Location
-		alphas[i] = stop.Alpha
-	}
-	return locations, alphas
-}
-
-// FadeRect is the gradient's frame inside the scroll-view mask. It is the
-// whole scroll view, not the clip view. An overlay scroller does not inset
-// the clip, so a gradient only as wide as a gutter-clipped frame leaves the
-// last glyphs outside the fade. A document-tall or y-shifted clip frame
-// would also park the clear top stop above the mask.
-func FadeRect(scrollW, scrollH, clipX, clipY, clipW, clipH float64) (x, y, w, h float64) {
-	_, _, _, _ = clipX, clipY, clipW, clipH
-	if scrollW < 0 {
-		scrollW = 0
-	}
-	if scrollH < 0 {
-		scrollH = 0
-	}
-	return 0, 0, scrollW, scrollH
-}
-
-// KnobFrame is the scroller knob in the scroll view's coordinates. The
-// solid mask patch is this rectangle and nothing else, so the fade still
-// covers the text under the track. A hidden scroller or an empty knob
-// returns ok false.
-// knobX/knobY are in the scroller's bounds, with the bounds origin removed.
-// scrollFlipped and scrollerFlipped are the two views' isFlipped.
-func KnobFrame(visible, scrollFlipped, scrollerFlipped bool, scrollerX, scrollerY, scrollerH, knobX, knobY, knobW, knobH float64) (x, y, w, h float64, ok bool) {
-	if !visible || scrollerH <= 0 || knobW <= 0 || knobH <= 0 {
-		return 0, 0, 0, 0, false
-	}
-	x = scrollerX + knobX
-	if scrollFlipped == scrollerFlipped {
-		y = scrollerY + knobY
-	} else {
-		y = scrollerY + (scrollerH - knobY - knobH)
-	}
-	return x, y, knobW, knobH, true
-}
-
-// MaskStops is the vertical alpha mask for a viewport viewH points tall.
-// fadeH is the band at an edge. top and bottom are the edges that still
-// have more text past the viewport. No edge returns no stops, so the
-// clip view keeps no mask. Each fading edge goes from opaque on the
-// inside of the band to clear at the viewport edge.
-func MaskStops(viewH, fadeH float64, top, bottom bool) []MaskStop {
-	if viewH <= 0 || (!top && !bottom) {
-		return nil
-	}
-	if fadeH < 0 {
-		fadeH = 0
-	}
-	if fadeH > viewH/2 {
-		fadeH = viewH / 2
-	}
-	if fadeH <= 0 {
-		return nil
-	}
-	band := fadeH / viewH
-	if top && bottom {
-		return []MaskStop{{0, 0}, {band, 1}, {1 - band, 1}, {1, 0}}
-	}
-	if bottom {
-		return []MaskStop{{0, 0}, {band, 1}, {1, 1}}
-	}
-	return []MaskStop{{0, 1}, {1 - band, 1}, {1, 0}}
-}
-
-// FadeOpacitySeconds is how long an edge fade takes to appear or disappear.
-// FadeOpacityTiming is the Core Animation curve name for both directions.
-// FadeContainerFlipped is written to the mask container's geometryFlipped.
-// It stays off so the scroller frame and the gradient axis keep their
-// current space. In that space the mask is composited with the container's
-// low y on the visual top, and cover frames are computed to match.
-const (
-	FadeOpacitySeconds   = 0.18
-	FadeOpacityTiming    = "easeInEaseOut"
-	FadeContainerFlipped = false
-)
-
-// FadeCover is the solid layer over one end of the viewport gradient.
-// Opacity 0 shows that end's fade. Opacity 1 hides it, so the text stays
-// solid. Animating this opacity is what eases the fade in and out.
-type FadeCover struct {
-	X, Y, W, H float64
-	Opacity    float64
-}
-
-// FadeUnderlay is the gradient under the covers. Both edges stay clear so
-// changing a cover's opacity reveals one edge without rebuilding the stops.
-func FadeUnderlay(viewH, fadeH float64) []MaskStop {
-	return MaskStops(viewH, FadeBand(viewH, fadeH), true, true)
-}
-
-func fadeCoverOpacity(edgeFades bool) float64 {
-	if edgeFades {
-		return 0
-	}
-	return 1
-}
-
-// FadeCovers are the solid covers for the visual top and visual bottom.
-// geometryFlipped is the mask container's geometryFlipped. With it off, y
-// grows upward and AppKit still composites the mask so the low edge is the
-// visual top: the top cover is that low band and the bottom cover is the
-// high band. With it on, the container's own flip cancels that composite,
-// so the low edge is the visual bottom and the bands swap. A viewport too
-// short for a band has none.
-func FadeCovers(gradX, gradY, gradW, gradH, fadeH float64, topFades, bottomFades, geometryFlipped bool) (top, bottom FadeCover, ok bool) {
-	band := FadeBand(gradH, fadeH)
-	if gradW <= 0 || band <= 0 {
-		return FadeCover{}, FadeCover{}, false
-	}
-	topY := gradY
-	bottomY := gradY + gradH - band
-	if geometryFlipped {
-		topY, bottomY = bottomY, topY
-	}
-	top = FadeCover{
-		X: gradX, Y: topY, W: gradW, H: band,
-		Opacity: fadeCoverOpacity(topFades),
-	}
-	bottom = FadeCover{
-		X: gradX, Y: bottomY, W: gradW, H: band,
-		Opacity: fadeCoverOpacity(bottomFades),
-	}
-	return top, bottom, true
-}
-
-// ScrollFadeCovers is the cover pair for a distance from the top of the
-// document. The gradient under them always clears both edges.
-func ScrollFadeCovers(contentH, viewH, offset, epsilon, gradX, gradY, gradW, gradH, fadeH float64, geometryFlipped bool) (top, bottom FadeCover, ok bool) {
-	topOn, bottomOn := ScrollFades(contentH, viewH, offset, epsilon)
-	return FadeCovers(gradX, gradY, gradW, gradH, fadeH, topOn, bottomOn, geometryFlipped)
+	return origin
 }
 
 // CardTextOptions describes the scroll view embedded in a card window.

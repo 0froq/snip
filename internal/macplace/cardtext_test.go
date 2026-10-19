@@ -63,209 +63,85 @@ func TestTextContentFrameClearsTheResizeBand(t *testing.T) {
 	}
 }
 
-func TestScrollFadesFollowTheEdges(t *testing.T) {
-	if top, bottom := ScrollFades(100, 100, 0, fadeEpsilon); top || bottom {
-		t.Fatalf("a card that fits has no fade, got %v %v", top, bottom)
-	}
-	if top, bottom := ScrollFades(200, 80, 0, fadeEpsilon); top || !bottom {
-		t.Fatalf("at the top only the bottom fades, got %v %v", top, bottom)
-	}
-	if top, bottom := ScrollFades(200, 80, 40, fadeEpsilon); !top || !bottom {
-		t.Fatalf("mid-scroll fades both edges, got %v %v", top, bottom)
-	}
-	if top, bottom := ScrollFades(200, 80, 120, fadeEpsilon); !top || bottom {
-		t.Fatalf("at the bottom only the top fades, got %v %v", top, bottom)
-	}
-	if top, bottom := ScrollFades(200, 80, 0.4, fadeEpsilon); top || !bottom {
-		t.Fatalf("a fraction of a point at the top stays hidden, got %v %v", top, bottom)
-	}
-	if top, bottom := ScrollFades(0, 80, 0, fadeEpsilon); top || bottom {
-		t.Fatalf("empty content has no fade, got %v %v", top, bottom)
-	}
-}
-
-func TestFadeVisibilityFollowsClipBounds(t *testing.T) {
+func TestUpdateFadeFollowsTheClip(t *testing.T) {
 	const (
-		docH   = 500.0
-		viewH  = 200.0
-		line   = 18.0
-		maxOff = docH - viewH
+		docH  = 500.0
+		clipH = 200.0
+		line  = 18.0
+		maxY  = docH - clipH
 	)
-	fadeH := FadeHeightForLine(line)
-	if fadeH <= 0 || fadeH > line*0.5 {
-		t.Fatalf("fade height %v for line %v", fadeH, line)
+	// A previous offset must not stick. The function has no memory.
+	_ = updateFade(150, clipH, docH, line)
+	atTop := updateFade(0, clipH, docH, line)
+	if !fadeEdges(atTop, 0, 1) || atTop.Band != line/2 {
+		t.Fatalf("at the top %+v", atTop)
 	}
-	// Each call is only the clip bounds and the document. A previous
-	// offset must not stick: the top is absent again at offset 0.
-	_, _ = FadeEdges(0, docH, 120, viewH, fadeEpsilon, true)
-	top, bottom := FadeEdges(0, docH, 0, viewH, fadeEpsilon, true)
-	if top || !bottom {
-		t.Fatalf("at the top, top %v bottom %v", top, bottom)
+	if atTop.Locations[1]*clipH > line*0.5+1e-9 {
+		t.Fatalf("band covers a line %+v", atTop)
 	}
-	locs, alphas := ViewportFade(0, docH, 0, viewH, viewH, fadeH, fadeEpsilon, true)
-	if alphaAt(locs, alphas, 1) != 1 || alphaAt(locs, alphas, 0) != 0 {
-		t.Fatalf("at the top the fade is still drawn %+v %+v", locs, alphas)
+	// Half a point is still the top.
+	if mask := updateFade(fadeEdgeSlop, clipH, docH, line); !fadeEdges(mask, 0, 1) {
+		t.Fatalf("resting top %+v", mask)
 	}
-	// A fraction of a point is still the top, including after a resize
-	// that leaves the clip origin at the document origin.
-	top, bottom = FadeEdges(12, docH, 12.4, viewH, fadeEpsilon, true)
-	if top || !bottom {
-		t.Fatalf("resting inset %+v %+v", top, bottom)
-	}
-	locs, alphas = ViewportFade(12, docH, 12.4, viewH, viewH, fadeH, fadeEpsilon, true)
-	if alphaAt(locs, alphas, 1) != 1 {
-		t.Fatalf("inset top still fades %+v", alphas)
+	if mask := updateFade(fadeEdgeSlop+0.01, clipH, docH, line); !fadeEdges(mask, 0, 0) {
+		t.Fatalf("just off the top %+v", mask)
 	}
 
-	top, bottom = FadeEdges(0, docH, 150, viewH, fadeEpsilon, true)
-	if !top || !bottom {
-		t.Fatalf("middle top %v bottom %v", top, bottom)
+	if mask := updateFade(150, clipH, docH, line); !fadeEdges(mask, 0, 0) {
+		t.Fatalf("middle %+v", mask)
 	}
-	locs, alphas = ViewportFade(0, docH, 150, viewH, viewH, fadeH, fadeEpsilon, true)
-	if alphaAt(locs, alphas, 1) != 0 || alphaAt(locs, alphas, 0) != 0 {
-		t.Fatalf("middle %+v %+v", locs, alphas)
+	if mask := updateFade(maxY, clipH, docH, line); !fadeEdges(mask, 1, 0) {
+		t.Fatalf("at the bottom %+v", mask)
 	}
-
-	top, bottom = FadeEdges(0, docH, maxOff, viewH, fadeEpsilon, true)
-	if !top || bottom {
-		t.Fatalf("at the bottom, top %v bottom %v", top, bottom)
+	// The far edge within half a point of the document is the bottom.
+	if mask := updateFade(maxY-fadeEdgeSlop, clipH, docH, line); !fadeEdges(mask, 1, 0) {
+		t.Fatalf("near the bottom %+v", mask)
 	}
-	locs, alphas = ViewportFade(0, docH, maxOff, viewH, viewH, fadeH, fadeEpsilon, true)
-	if alphaAt(locs, alphas, 0) != 1 || alphaAt(locs, alphas, 1) != 0 {
-		t.Fatalf("bottom fade still drawn %+v %+v", locs, alphas)
-	}
-	// Just short of the end still counts as the end.
-	top, bottom = FadeEdges(0, docH, maxOff-0.4, viewH, fadeEpsilon, true)
-	if bottom {
-		t.Fatalf("near the end still fades the bottom")
+	if mask := updateFade(maxY-fadeEdgeSlop-0.01, clipH, docH, line); !fadeEdges(mask, 0, 0) {
+		t.Fatalf("short of the bottom %+v", mask)
 	}
 
-	top, bottom = FadeEdges(0, 180, 0, viewH, fadeEpsilon, true)
-	if top || bottom {
-		t.Fatalf("content that fits top %v bottom %v", top, bottom)
+	if mask := updateFade(40, clipH, 180, line); mask.Locations != nil || mask.Band != 0 {
+		t.Fatalf("content that fits %+v", mask)
 	}
-	if locs, alphas = ViewportFade(0, 180, 0, viewH, viewH, fadeH, fadeEpsilon, true); locs != nil || alphas != nil {
-		t.Fatalf("content that fits still has a mask %+v %+v", locs, alphas)
+	if mask := updateFade(0, clipH, clipH, line); mask.Locations != nil {
+		t.Fatalf("exact fit %+v", mask)
 	}
-	// The clear band of a real fade is half a line, not the whole line.
-	stops := MaskStops(viewH, fadeH, false, true)
-	if len(stops) < 2 || stops[1].Location*viewH > line*0.5+1e-9 {
-		t.Fatalf("band covers a line %+v", stops)
+	if mask := updateFade(0, 0, docH, line); mask.Locations != nil {
+		t.Fatalf("empty clip %+v", mask)
+	}
+	if mask := updateFade(0, clipH, docH, 0); mask.Locations != nil || mask.Band != 0 {
+		t.Fatalf("unknown line %+v", mask)
+	}
+	// A short viewport caps the band at half the clip.
+	if mask := updateFade(0, 10, docH, line); mask.Band != 5 {
+		t.Fatalf("capped band %+v", mask)
 	}
 }
 
-func TestFadeBandStaysInsideTheView(t *testing.T) {
-	const line = 18.0
-	fade := FadeHeightForLine(line)
-	if fade != line/2 || fade >= line {
-		t.Fatalf("fade %v hides a line of %v", fade, line)
+func TestClampClipOriginWhenContentFits(t *testing.T) {
+	// Scrolled down in a tall card. After the resize the text fits, so the
+	// origin has to come back to 0. Leaving it above 0 clips the first line
+	// above the top inset.
+	if got := clampClipOrigin(80, 120, 200); got != 0 {
+		t.Fatalf("fitted content origin %v", got)
 	}
-	if FadeHeightForLine(0) != 0 || FadeHeightForLine(-3) != 0 {
-		t.Fatal("an unknown line has no fade band")
+	if got := clampClipOrigin(0, 120, 200); got != 0 {
+		t.Fatalf("already at the top %v", got)
 	}
-	if band := FadeBand(400, fade); band != fade {
-		t.Fatalf("band %v", band)
+	if got := clampClipOrigin(-12, 500, 200); got != 0 {
+		t.Fatalf("above the top %v", got)
 	}
-	if band := FadeBand(10, fade); band != 5 {
-		t.Fatalf("band %v", band)
+	if got := clampClipOrigin(40, 500, 200); got != 40 {
+		t.Fatalf("in range %v", got)
 	}
-	if band := FadeBand(0, fade); band != 0 {
-		t.Fatalf("band %v", band)
-	}
-}
-
-func TestMaskFrameDropsTheScrolledOrigin(t *testing.T) {
-	x, y, w, h := MaskFrame(0, 180, 420, 200)
-	if x != 0 || y != 0 || w != 420 || h != 200 {
-		t.Fatalf("frame %v %v %v %v", x, y, w, h)
-	}
-	x, y, w, h = MaskFrame(-40, -10, -1, 30)
-	if x != 0 || y != 0 || w != 0 || h != 30 {
-		t.Fatalf("frame %v %v %v %v", x, y, w, h)
+	if got := clampClipOrigin(400, 500, 200); got != 300 {
+		t.Fatalf("past the end %v", got)
 	}
 }
 
-func TestViewportFadeHandsTheLayerTheEndStops(t *testing.T) {
-	_, startY, _, endY := GradientAxis()
-	topLoc := LocationAlongAxis(startY, endY, visualTopY)
-	bottomLoc := LocationAlongAxis(startY, endY, visualBottomY)
-	if topLoc != 1 || bottomLoc != 0 {
-		t.Fatalf("visual top location %v, visual bottom location %v", topLoc, bottomLoc)
-	}
-	// The alpha at the visual top is the CGColor alpha paired with that location.
-	const (
-		docH = 500.0
-		visH = 200.0
-		maxY = docH - visH
-	)
-
-	// offset 0: the visual top is opaque, the visual bottom fades.
-	locs, alphas := ViewportFade(0, docH, 0, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
-	if alphaAt(locs, alphas, topLoc) != 1 || alphaAt(locs, alphas, bottomLoc) != 0 {
-		t.Fatalf("at the top, visual top alpha %v visual bottom alpha %v (%v %v)", alphaAt(locs, alphas, topLoc), alphaAt(locs, alphas, bottomLoc), locs, alphas)
-	}
-	if !fadeEdges(locs, alphas, 0, 1) {
-		t.Fatalf("at the top %+v %+v", locs, alphas)
-	}
-
-	// A resting origin of 12 (content inset) is still the top.
-	locs, alphas = ViewportFade(12, docH, 12, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
-	if !fadeEdges(locs, alphas, 0, 1) {
-		t.Fatalf("inset top %+v %+v", locs, alphas)
-	}
-
-	// offset = max: bottom is opaque, top fades.
-	locs, alphas = ViewportFade(0, docH, maxY, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
-	if !fadeEdges(locs, alphas, 1, 0) {
-		t.Fatalf("at the bottom %+v %+v", locs, alphas)
-	}
-
-	// A fraction of a point short of the end still counts as the end.
-	locs, alphas = ViewportFade(0, docH, maxY-0.4, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
-	if !fadeEdges(locs, alphas, 1, 0) {
-		t.Fatalf("near the bottom %+v %+v", locs, alphas)
-	}
-
-	// Past the 1pt slop, the bottom still fades.
-	locs, alphas = ViewportFade(0, docH, maxY-1.5, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
-	if !fadeEdges(locs, alphas, 0, 0) {
-		t.Fatalf("short of the bottom %+v %+v", locs, alphas)
-	}
-
-	// Middle: both edges are clear.
-	locs, alphas = ViewportFade(0, docH, 150, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
-	if !fadeEdges(locs, alphas, 0, 0) {
-		t.Fatalf("middle %+v %+v", locs, alphas)
-	}
-
-	// Non-flipped: y is the bottom of the visible rect. Origin 0 is the
-	// bottom of the document, so the bottom stop is opaque.
-	locs, alphas = ViewportFade(0, docH, 0, visH, visH, FadeHeightForLine(20), fadeEpsilon, false)
-	if !fadeEdges(locs, alphas, 1, 0) {
-		t.Fatalf("non-flipped bottom %+v %+v", locs, alphas)
-	}
-	locs, alphas = ViewportFade(0, docH, maxY, visH, visH, FadeHeightForLine(20), fadeEpsilon, false)
-	if !fadeEdges(locs, alphas, 0, 1) {
-		t.Fatalf("non-flipped top %+v %+v", locs, alphas)
-	}
-
-	if locs, alphas := ViewportFade(0, 100, 0, 200, 200, FadeHeightForLine(20), fadeEpsilon, true); locs != nil || alphas != nil {
-		t.Fatalf("content that fits %+v %+v", locs, alphas)
-	}
-}
-
-func alphaAt(locations, alphas []float64, location float64) float64 {
-	for i, loc := range locations {
-		if loc == location {
-			return alphas[i]
-		}
-	}
-	return -1
-}
-
-// fadeEdges reports whether locations run from the visual bottom (0) to the
-// visual top (1) and the colors at those ends have the given alphas.
-func fadeEdges(locations, alphas []float64, bottomAlpha, topAlpha float64) bool {
+func fadeEdges(mask FadeMask, bottomAlpha, topAlpha float64) bool {
+	locations, alphas := mask.Locations, mask.Alphas
 	n := len(locations)
 	if n < 2 || n != len(alphas) || locations[0] != 0 || locations[n-1] != 1 {
 		return false
@@ -279,178 +155,6 @@ func fadeEdges(locations, alphas []float64, bottomAlpha, topAlpha float64) bool 
 		}
 	}
 	return true
-}
-
-func TestFadeRectKeepsTheTopStopInsideTheViewport(t *testing.T) {
-	x, y, w, h := FadeRect(300, 200, 0, 0, 300, 200)
-	if x != 0 || y != 0 || w != 300 || h != 200 {
-		t.Fatalf("viewport %v %v %v %v", x, y, w, h)
-	}
-	// Document height, bottom-aligned: the clear top stop would sit above the mask.
-	x, y, w, h = FadeRect(300, 200, 0, 0, 300, 2000)
-	if x != 0 || y != 0 || w != 300 || h != 200 {
-		t.Fatalf("tall clip %v %v %v %v", x, y, w, h)
-	}
-	// Shifted up by a scroll offset: the top band leaves and the bottom band moves.
-	x, y, w, h = FadeRect(300, 200, 0, 80, 300, 200)
-	if x != 0 || y != 0 || w != 300 || h != 200 {
-		t.Fatalf("shifted clip %v %v %v %v", x, y, w, h)
-	}
-	// Overlay track: the clip is the full width, but a gutter-narrow clip
-	// must not stop the fade short of the last glyphs.
-	x, y, w, h = FadeRect(320, 200, 0, 0, 306, 200)
-	if x != 0 || y != 0 || w != 320 || h != 200 {
-		t.Fatalf("narrow clip %v %v %v %v", x, y, w, h)
-	}
-}
-
-func TestFadeBarIsOnlyTheVisibleKnob(t *testing.T) {
-	// Same y direction: the knob sits inside the scroller frame, not across the track.
-	x, y, w, h, ok := KnobFrame(true, false, false, 300, 0, 200, 2, 40, 8, 36)
-	if !ok || x != 302 || y != 40 || w != 8 || h != 36 {
-		t.Fatalf("knob %+v %v %v %v ok=%v", x, y, w, h, ok)
-	}
-	// A flipped scroller reports the knob from its top. The scroll view does not.
-	x, y, w, h, ok = KnobFrame(true, false, true, 300, 0, 200, 2, 40, 8, 36)
-	if !ok || x != 302 || y != 200-40-36 || w != 8 || h != 36 {
-		t.Fatalf("flipped knob %v %v %v %v ok=%v", x, y, w, h, ok)
-	}
-	if _, _, _, _, ok := KnobFrame(false, false, false, 300, 0, 200, 2, 40, 8, 36); ok {
-		t.Fatal("a hidden scroller has no solid patch")
-	}
-	if _, _, _, _, ok := KnobFrame(true, false, false, 300, 0, 200, 2, 0, 14, 0); ok {
-		t.Fatal("an empty knob must not cover the track")
-	}
-	// The gradient beside that knob still spans the scroll view, past the track.
-	gx, _, gw, _ := FadeRect(320, 200, 0, 0, 306, 200)
-	if gx != 0 || gw != 320 || gx+gw < x+w {
-		t.Fatalf("gradient %v %v does not reach past the knob", gx, gw)
-	}
-}
-
-func TestFadeCoversEaseWithTheScroll(t *testing.T) {
-	if FadeOpacitySeconds < 0.15 || FadeOpacitySeconds > 0.20 {
-		t.Fatalf("duration %v", FadeOpacitySeconds)
-	}
-	if FadeOpacityTiming != "easeInEaseOut" {
-		t.Fatalf("timing %s", FadeOpacityTiming)
-	}
-	const (
-		docH = 500.0
-		visH = 200.0
-		maxY = docH - visH
-	)
-	under := FadeUnderlay(visH, FadeHeightForLine(20))
-	if len(under) != 4 || under[0] != (MaskStop{0, 0}) || under[3] != (MaskStop{1, 0}) {
-		t.Fatalf("underlay %+v", under)
-	}
-	assert := func(offset, topOpacity, bottomOpacity float64) {
-		t.Helper()
-		top, bottom, ok := ScrollFadeCovers(docH, visH, offset, fadeEpsilon, 0, 0, 300, visH, FadeHeightForLine(20), FadeContainerFlipped)
-		if !ok {
-			t.Fatalf("offset %v has no covers", offset)
-		}
-		if top.Opacity != topOpacity || bottom.Opacity != bottomOpacity {
-			t.Fatalf("offset %v cover opacity top %v bottom %v", offset, top.Opacity, bottom.Opacity)
-		}
-		// FadeContainerFlipped is off, so the low band is the visual top.
-		if top.Y != 0 || top.H != FadeHeightForLine(20) || bottom.Y != visH-FadeHeightForLine(20) || bottom.H != FadeHeightForLine(20) {
-			t.Fatalf("offset %v frames top %+v bottom %+v", offset, top, bottom)
-		}
-		if top.Y+top.H != FadeHeightForLine(20) || bottom.Y+bottom.H != visH {
-			t.Fatalf("offset %v bands leave the viewport %+v %+v", offset, top, bottom)
-		}
-		locs, alphas := ViewportFade(0, docH, offset, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
-		if alphaAt(locs, alphas, 1) != top.Opacity || alphaAt(locs, alphas, 0) != bottom.Opacity {
-			t.Fatalf("offset %v baked %+v %+v covers %v %v", offset, locs, alphas, top.Opacity, bottom.Opacity)
-		}
-	}
-	// At the top the top cover is solid (fade hidden) and the bottom cover
-	// is clear (fade shown). Leaving either edge clears that cover.
-	assert(0, 1, 0)
-	assert(0.4, 1, 0)
-	assert(150, 0, 0)
-	assert(maxY, 0, 1)
-	assert(maxY-0.4, 0, 1)
-	assert(maxY-1.5, 0, 0)
-
-	// Content that fits still has covers, both solid, so a later overflow
-	// can ease a fade in instead of attaching a mask already at full strength.
-	top, bottom, ok := ScrollFadeCovers(100, 200, 0, fadeEpsilon, 4, 6, 300, 200, FadeHeightForLine(20), FadeContainerFlipped)
-	if !ok || top.Opacity != 1 || bottom.Opacity != 1 {
-		t.Fatalf("content that fits %+v %+v ok=%v", top, bottom, ok)
-	}
-	if top.Y != 6 || bottom.Y != 200-FadeHeightForLine(20)+6 {
-		t.Fatalf("shifted bands %+v %+v", top, bottom)
-	}
-	if _, _, ok := ScrollFadeCovers(500, 200, 100, fadeEpsilon, 0, 0, 0, 200, FadeHeightForLine(20), FadeContainerFlipped); ok {
-		t.Fatal("a zero-width gradient has no covers")
-	}
-	if documentOffset(12, docH, 12, visH, true) != 0 {
-		t.Fatal("a resting inset is the top")
-	}
-	if documentOffset(0, docH, 0, visH, false) != maxY || documentOffset(0, docH, maxY, visH, false) != 0 {
-		t.Fatal("non-flipped offset is measured from the top")
-	}
-}
-
-func TestFadeCoversPinTheVisualEdge(t *testing.T) {
-	const gradH = 200.0
-	// geometryFlipped off: the mask shows the low band on the visual top
-	// and the high band on the visual bottom.
-	top, bottom, ok := FadeCovers(0, 0, 300, gradH, FadeHeightForLine(20), false, false, false)
-	if !ok || top.Y != 0 || bottom.Y != gradH-FadeHeightForLine(20) {
-		t.Fatalf("unflipped covers top %+v bottom %+v", top, bottom)
-	}
-	if top.Y+top.H != FadeHeightForLine(20) || bottom.Y+bottom.H != gradH {
-		t.Fatalf("unflipped bands top %+v bottom %+v", top, bottom)
-	}
-	// geometryFlipped on cancels that composite, so the bands swap.
-	top, bottom, ok = FadeCovers(0, 0, 300, gradH, FadeHeightForLine(20), false, false, true)
-	if !ok || top.Y != gradH-FadeHeightForLine(20) || bottom.Y != 0 {
-		t.Fatalf("flipped covers top %+v bottom %+v", top, bottom)
-	}
-
-	// Scrolled to the bottom: the visual bottom cover is solid (fade
-	// hidden) and the visual top cover is clear (fade shown).
-	top, bottom, ok = ScrollFadeCovers(500, gradH, 500-gradH, fadeEpsilon, 0, 0, 300, gradH, FadeHeightForLine(20), false)
-	if !ok || top.Opacity != 0 || bottom.Opacity != 1 || top.Y != 0 || bottom.Y != gradH-FadeHeightForLine(20) {
-		t.Fatalf("at the bottom top %+v bottom %+v", top, bottom)
-	}
-	// Scrolled to the top: the visual top cover is solid.
-	top, bottom, ok = ScrollFadeCovers(500, gradH, 0, fadeEpsilon, 0, 0, 300, gradH, FadeHeightForLine(20), false)
-	if !ok || top.Opacity != 1 || bottom.Opacity != 0 || top.Y != 0 || bottom.Y != gradH-FadeHeightForLine(20) {
-		t.Fatalf("at the top top %+v bottom %+v", top, bottom)
-	}
-	if FadeContainerFlipped {
-		t.Fatal("the container is unflipped; the low band is the visual top")
-	}
-}
-
-func TestMaskStopsClearOnlyTheScrollingEdge(t *testing.T) {
-	if stops := MaskStops(200, 20, false, false); stops != nil {
-		t.Fatalf("a card that fits has no mask, got %+v", stops)
-	}
-	if stops := MaskStops(0, 20, true, true); stops != nil {
-		t.Fatalf("empty view %+v", stops)
-	}
-	bottom := MaskStops(200, 20, false, true)
-	if len(bottom) != 3 || bottom[0] != (MaskStop{0, 0}) || bottom[1] != (MaskStop{20.0 / 200.0, 1}) || bottom[2] != (MaskStop{1, 1}) {
-		t.Fatalf("bottom %+v", bottom)
-	}
-	top := MaskStops(200, 20, true, false)
-	if len(top) != 3 || top[0] != (MaskStop{0, 1}) || top[1] != (MaskStop{1 - 20.0/200.0, 1}) || top[2] != (MaskStop{1, 0}) {
-		t.Fatalf("top %+v", top)
-	}
-	both := MaskStops(200, 20, true, true)
-	if len(both) != 4 || both[0].Alpha != 0 || both[1] != (MaskStop{20.0 / 200.0, 1}) || both[2] != (MaskStop{1 - 20.0/200.0, 1}) || both[3].Alpha != 0 {
-		t.Fatalf("both %+v", both)
-	}
-	// A band taller than the view still meets in the middle, clear at both edges.
-	tight := MaskStops(30, 40, true, true)
-	if len(tight) != 4 || tight[0].Alpha != 0 || tight[1].Location != 0.5 || tight[3].Alpha != 0 {
-		t.Fatalf("tight %+v", tight)
-	}
 }
 
 func TestFontFaceSkipsGenerics(t *testing.T) {

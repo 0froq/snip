@@ -171,16 +171,23 @@ func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
 		apply,
 		usableFrame(visible.X, visible.Y, visible.W, visible.H) && intersects(x, y, fw, fh, visible),
 		readWindowAlpha(window), windowOrderedIn(window))
-	if !apply || !usableFrame(x, y, fw, fh) {
-		log.Printf("snip: reject setFrame path=windowDidEndLiveResize fromOrigin=(%g,%g) newOrigin=(%g,%g) rect=(%g,%g,%g,%g)",
-			frame.origin.x, frame.origin.y, x, y, x, y, fw, fh)
-		return
-	}
-	if x != frame.origin.x || y != frame.origin.y || fw != frame.size.width || fh != frame.size.height {
+	if apply && usableFrame(x, y, fw, fh) &&
+		(x != frame.origin.x || y != frame.origin.y || fw != frame.size.width || fh != frame.size.height) {
 		setWindowFrame(window, sel("setFrame:display:"), nsRect{
 			origin: nsPoint{x: x, y: y},
 			size:   nsSize{width: fw, height: fh},
 		}, true)
+	} else if !apply || !usableFrame(x, y, fw, fh) {
+		log.Printf("snip: reject setFrame path=windowDidEndLiveResize fromOrigin=(%g,%g) newOrigin=(%g,%g) rect=(%g,%g,%g,%g)",
+			frame.origin.x, frame.origin.y, x, y, x, y, fw, fh)
+	}
+	// Live resize already sized the scroll view, but it used to return
+	// without clamping the clip origin. A later window move called
+	// setFrame, and that display was the first time AppKit pulled the
+	// origin back to the top. This setFrame and a setFrame that changes
+	// nothing both run the same relayout, so the move is not required.
+	if h := cardTextForWindow(window); h != nil {
+		h.relayoutCard()
 	}
 }
 

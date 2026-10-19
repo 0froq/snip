@@ -57,20 +57,11 @@ type CardText struct {
 	haveText    bool
 	text        string
 
-	// fadeMask is the scroll view's mask. Its origin stays at zero, so a
-	// clip-view bounds shift cannot carry it. fadeGrad is the text-area
-	// gradient inside it (both edges clear). fadeTop and fadeBottom are
-	// solid covers whose opacity eases that edge's fade in and out.
-	// fadeBar keeps the scroller fully visible. fadeLive is set once the
-	// covers have been placed, so the first frame snaps and later edge
-	// changes animate.
-	fadeMask     id
-	fadeGrad     id
-	fadeTop      id
-	fadeBottom   id
-	fadeBar      id
-	fadeWatching bool
-	fadeLive     bool
+	// fade is the scroll view's mask. watching is only the clip-view
+	// bounds observer, so it is not added twice. Neither stores which
+	// edge is fading: that is computed on each call.
+	fade     id
+	watching bool
 }
 
 var (
@@ -165,12 +156,15 @@ func AttachCardText(handle uintptr, opt CardTextOptions) *CardText {
 
 	content := send(h.window, "contentView")
 	send(content, "addSubview:", uintptr(scroll))
-	h.installFades()
+	h.installClipWatch()
+	h.relayoutCard()
 	return h
 }
 
-// Layout moves the scroll view to the inset content frame. A window that
-// is too small to inset is left where it was. Editing keeps the draft.
+// Layout moves the scroll view to the inset content frame, then runs the
+// same relayout a live resize step, the resize-end setFrame, and any other
+// setFrame use. A window that is too small to inset is left where it was.
+// Editing keeps the draft.
 func (h *CardText) Layout(winW, winH, padX, padY, border, resizeMargin, topExtra int) {
 	if h == nil || h.closing || h.scroll == 0 {
 		return
@@ -184,8 +178,7 @@ func (h *CardText) Layout(winW, winH, padX, padY, border, resizeMargin, topExtra
 		purego.RegisterFunc(&setLayerScale, msgSendAddr)
 	})
 	setViewFrame(h.scroll, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}})
-	applyTextContainer(h.view, send(h.view, "textContainer"), w, ht)
-	h.updateFades()
+	h.relayoutCard()
 }
 
 // applyTextContainer writes the same insets the card height was measured
@@ -345,7 +338,7 @@ func (h *CardText) Close() {
 	h.closing = true
 	h.editing = false
 	h.removeMonitors()
-	h.removeFadeWatch()
+	h.removeClipWatch()
 	h.onAction = nil
 	h.onCommit = nil
 	cardTextMu.Lock()
@@ -388,7 +381,6 @@ func (h *CardText) writeText(s string) {
 	h.text = s
 	h.fontApplied = false
 	h.applyFont()
-	h.updateFades()
 }
 
 func (h *CardText) applyFont() {
@@ -413,7 +405,7 @@ func (h *CardText) applyFont() {
 	if h.colorSet {
 		h.applyColor()
 	}
-	h.updateFades()
+	h.relayoutCard()
 }
 
 func (h *CardText) applyColor() {
@@ -549,18 +541,18 @@ func ensureCardText() {
 
 func cardTextDidChange(self id, _ objc.SEL, _ id) {
 	if h := cardTextFor(self); h != nil {
-		h.updateFades()
+		h.relayoutCard()
 	}
 }
 
 func cardClipBoundsChanged(self id, _ objc.SEL, _ id) {
 	if h := cardTextFor(self); h != nil {
-		h.updateFades()
+		h.updateFade()
 	}
 }
 
-func (h *CardText) installFades() {
-	if h == nil || h.scroll == 0 || h.fadeWatching {
+func (h *CardText) installClipWatch() {
+	if h == nil || h.scroll == 0 || h.watching {
 		return
 	}
 	clip := send(h.scroll, "contentView")
@@ -568,105 +560,104 @@ func (h *CardText) installFades() {
 		return
 	}
 	send(clip, "setDrawsBackground:", 0)
-	// The scroll view's bounds origin does not move when the document
-	// scrolls. The clip view's does, which is why the mask cannot live there.
 	send(h.scroll, "setWantsLayer:", 1)
-	if h.delegate != 0 {
-		send(clip, "setPostsBoundsChangedNotifications:", 1)
-		center := send(class("NSNotificationCenter"), "defaultCenter")
-		watch := func(name string, object id) {
-			send(center, "addObserver:selector:name:object:",
-				uintptr(h.delegate),
-				uintptr(sel("snipClipBoundsChanged:")),
-				uintptr(nsString(name)),
-				uintptr(object))
-		}
-		// Bounds can coalesce during a flick. The live-scroll notifications
-		// fire for the tracking and for the momentum settling on an end.
-		watch("NSViewBoundsDidChangeNotification", clip)
-		watch("NSScrollViewDidLiveScrollNotification", h.scroll)
-		watch("NSScrollViewDidEndLiveScrollNotification", h.scroll)
-		h.fadeWatching = true
+	if h.delegate == 0 {
+		return
 	}
-	h.updateFades()
+	send(clip, "setPostsBoundsChangedNotifications:", 1)
+	send(send(class("NSNotificationCenter"), "defaultCenter"), "addObserver:selector:name:object:",
+		uintptr(h.delegate),
+		uintptr(sel("snipClipBoundsChanged:")),
+		uintptr(nsString("NSViewBoundsDidChangeNotification")),
+		uintptr(clip))
+	h.watching = true
 }
 
-func (h *CardText) updateFades() {
+// relayoutCard sizes the text to the scroll view, keeps the clip origin
+// inside the document, and refreshes the fade. Live resize steps, the
+// setFrame at the end of a resize, and a setFrame that does not change
+// the window size all come through here. A window move is not required:
+// the move used to be the next display, and that display was what let
+// AppKit pull a stale origin back to the top.
+func (h *CardText) relayoutCard() {
 	if h == nil || h.closing || h.scroll == 0 || h.view == 0 {
+		return
+	}
+	bounds := layerRect(h.scroll, "bounds")
+	w, ht := bounds.size.width, bounds.size.height
+	if w <= 0 || ht <= 0 {
+		frame := layerRect(h.scroll, "frame")
+		w, ht = frame.size.width, frame.size.height
+	}
+	if w <= 0 || ht <= 0 {
+		return
+	}
+	container := send(h.view, "textContainer")
+	applyTextContainer(h.view, container, w, ht)
+	if container != 0 {
+		if lm := send(h.view, "layoutManager"); lm != 0 {
+			send(lm, "ensureLayoutForTextContainer:", uintptr(container))
+		}
+	}
+	h.clampClip()
+	h.updateFade()
+}
+
+// clampClip pulls the clip bounds origin into [0, max(0, docH-clipH)].
+// The text view is flipped, so that origin is the distance from the top.
+func (h *CardText) clampClip() {
+	clip := send(h.scroll, "contentView")
+	if clip == 0 || setCGPoint == nil {
+		return
+	}
+	document := layerRect(clip, "documentRect")
+	bounds := layerRect(clip, "bounds")
+	origin := clampClipOrigin(bounds.origin.y, document.size.height, bounds.size.height)
+	if origin == bounds.origin.y {
+		return
+	}
+	setCGPoint(clip, sel("scrollToPoint:"), nsPoint{x: bounds.origin.x, y: origin})
+	send(h.scroll, "reflectScrolledClipView:", uintptr(clip))
+}
+
+func (h *CardText) updateFade() {
+	if h == nil || h.closing || h.scroll == 0 {
 		return
 	}
 	clip := send(h.scroll, "contentView")
 	if clip == 0 {
 		return
 	}
-	// A failed geometry read must not drop the mask. An empty rect from a
-	// bad HFA read used to clear both edges for a frame.
-	// Both rects come from the clip view, in the document view's coordinates.
-	// Mixing in the text view's bounds made the document taller than the
-	// scroller's travel, and the max of the two origins kept a resting
-	// inset above the 1pt slop, so neither end ever looked finished.
 	document := layerRect(clip, "documentRect")
-	// The clip bounds are the scroll offset and the viewport. Visibility
-	// is that pair against the document height, on every layout, edit,
-	// and scroll. A saved edge from an earlier event is not reused.
 	clipBounds := layerRect(clip, "bounds")
-	clipFrame := layerRect(clip, "frame")
 	scrollBounds := layerRect(h.scroll, "bounds")
-	if scrollBounds.size.width <= 0 || scrollBounds.size.height <= 0 || document.size.height <= 0 || clipBounds.size.height <= 0 {
-		return
-	}
-	gx, gy, gw, gh := FadeRect(
-		scrollBounds.size.width, scrollBounds.size.height,
-		clipFrame.origin.x, clipFrame.origin.y, clipFrame.size.width, clipFrame.size.height,
-	)
-	flipped := send(h.view, "isFlipped") != 0
-	fadeH := FadeHeightForLine(h.fadeLineHeight())
-	locations, alphas := ViewportFade(
-		document.origin.y, document.size.height,
-		clipBounds.origin.y, clipBounds.size.height,
-		gh, fadeH, fadeEpsilon, flipped,
-	)
+	mask := updateFade(clipBounds.origin.y, clipBounds.size.height, document.size.height, h.lineHeight())
 	withoutFadeAnimation(func() {
 		send(h.scroll, "setWantsLayer:", 1)
 		host := send(h.scroll, "layer")
 		if host == 0 {
 			return
 		}
-		// Leave the clip view unmasked. Its bounds origin is the scroll
-		// offset, and a mask framed there rides along with the text.
 		if clipLayer := send(clip, "layer"); clipLayer != 0 {
 			send(clipLayer, "setMask:", 0)
 		}
-		// No overflow, the top of the document, and the bottom of the
-		// document all share this path: an edge that should not fade is
-		// absent in the stops, and no fade means no mask. Actions stay
-		// disabled so a resting edge cannot sit mid-animation.
-		if len(locations) == 0 {
+		if len(mask.Locations) == 0 {
 			send(host, "setMask:", 0)
 			return
 		}
-		h.ensureFadeMask()
-		if h.fadeMask == 0 || h.fadeGrad == 0 {
+		h.ensureFade()
+		if h.fade == 0 || setViewFrame == nil {
 			return
 		}
-		x, y, w, ht := MaskFrame(scrollBounds.origin.x, scrollBounds.origin.y, scrollBounds.size.width, scrollBounds.size.height)
-		box := nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}}
-		setViewFrame(h.fadeMask, sel("setFrame:"), box)
-		setViewFrame(h.fadeMask, sel("setBounds:"), box)
-		setViewFrame(h.fadeGrad, sel("setFrame:"), nsRect{origin: nsPoint{x: gx, y: gy}, size: nsSize{width: gw, height: gh}})
-		applyMaskStops(h.fadeGrad, locations, alphas)
-		if h.fadeTop != 0 {
-			send(h.fadeTop, "setHidden:", 1)
-		}
-		if h.fadeBottom != 0 {
-			send(h.fadeBottom, "setHidden:", 1)
-		}
-		h.placeFadeBar()
-		send(host, "setMask:", uintptr(h.fadeMask))
+		setViewFrame(h.fade, sel("setFrame:"), nsRect{
+			size: nsSize{width: scrollBounds.size.width, height: scrollBounds.size.height},
+		})
+		applyMaskStops(h.fade, mask.Locations, mask.Alphas)
+		send(host, "setMask:", uintptr(h.fade))
 	})
 }
 
-func (h *CardText) fadeLineHeight() float64 {
+func (h *CardText) lineHeight() float64 {
 	if h == nil || h.view == 0 {
 		return 0
 	}
@@ -701,155 +692,21 @@ func lineHeightForFont(layout, font id) float64 {
 	return lineHForFont(layout, sel("defaultLineHeightForFont:"), font)
 }
 
-func (h *CardText) ensureFadeMask() {
-	if h.fadeMask != 0 {
+func (h *CardText) ensureFade() {
+	if h.fade != 0 {
 		return
 	}
-	container := send(send(class("CALayer"), "alloc"), "init")
 	grad := send(send(class("CAGradientLayer"), "alloc"), "init")
-	top := send(send(class("CALayer"), "alloc"), "init")
-	bottom := send(send(class("CALayer"), "alloc"), "init")
-	bar := send(send(class("CALayer"), "alloc"), "init")
-	if container == 0 || grad == 0 || top == 0 || bottom == 0 || bar == 0 {
-		releaseLayer(container)
-		releaseLayer(grad)
-		releaseLayer(top)
-		releaseLayer(bottom)
-		releaseLayer(bar)
+	if grad == 0 {
 		return
 	}
-	// The container's geometryFlipped matches FadeContainerFlipped, which
-	// is what FadeCovers uses for the cover bands. Off keeps the scroller
-	// patch in the scroll view's bottom-left frame. The mask is still
-	// composited with low y on the visual top, so the top cover is the
-	// low band. The gradient's own flag stays off: its axis, not this
-	// flag, puts location 1 on the visual top.
-	if FadeContainerFlipped {
-		send(container, "setGeometryFlipped:", 1)
-	} else {
-		send(container, "setGeometryFlipped:", 0)
-	}
+	// geometryFlipped stays off. Unit y=0 of this mask is the visual top,
+	// so the axis starts at the visual bottom (location 0) and ends at the
+	// visual top (location 1).
 	send(grad, "setGeometryFlipped:", 0)
-	sx, sy, ex, ey := GradientAxis()
-	setCGPoint(grad, sel("setStartPoint:"), nsPoint{x: sx, y: sy})
-	setCGPoint(grad, sel("setEndPoint:"), nsPoint{x: ex, y: ey})
-	setOpaqueBlack(bar)
-	setOpaqueBlack(top)
-	setOpaqueBlack(bottom)
-	// Covers sit above the gradient and under the scroller patch.
-	// Opacity 1 (the layer default) hides an edge until the first snap.
-	send(container, "addSublayer:", uintptr(grad))
-	send(container, "addSublayer:", uintptr(bottom))
-	send(container, "addSublayer:", uintptr(top))
-	send(container, "addSublayer:", uintptr(bar))
-	h.fadeMask = container
-	h.fadeGrad = grad
-	h.fadeTop = top
-	h.fadeBottom = bottom
-	h.fadeBar = bar
-}
-
-func setOpaqueBlack(layer id) {
-	if layer == 0 || colorSRGB == nil {
-		return
-	}
-	opaque := colorSRGB(class("NSColor"), sel("colorWithSRGBRed:green:blue:alpha:"), 0, 0, 0, 1)
-	if cg := send(opaque, "CGColor"); cg != 0 {
-		send(layer, "setBackgroundColor:", uintptr(cg))
-	}
-}
-
-func (h *CardText) placeFadeCover(layer id, cover FadeCover) {
-	if layer == 0 {
-		return
-	}
-	setViewFrame(layer, sel("setFrame:"), nsRect{
-		origin: nsPoint{x: cover.X, y: cover.Y},
-		size:   nsSize{width: cover.W, height: cover.H},
-	})
-	send(layer, "setHidden:", 0)
-}
-
-func writeFadeOpacity(layer id, opacity float64) {
-	if layer == 0 {
-		return
-	}
-	setCGFloat(layer, sel("setOpacity:"), opacity)
-}
-
-// animateFadeOpacity eases one cover toward opacity. The model value is
-// already the last target, so a scroll frame that does not change the edge
-// does not restart the curve. A reversal starts from whatever is on screen.
-func (h *CardText) animateFadeOpacity(layer id, target float64) {
-	if layer == 0 || setCGFloat == nil {
-		return
-	}
-	if math.Abs(msgFloat(layer, sel("opacity"))-target) < 1e-3 {
-		return
-	}
-	send(class("CATransaction"), "begin")
-	send(class("CATransaction"), "setDisableActions:", 0)
-	setCGFloat(class("CATransaction"), sel("setAnimationDuration:"), FadeOpacitySeconds)
-	if timing := send(class("CAMediaTimingFunction"), "functionWithName:", uintptr(nsString(FadeOpacityTiming))); timing != 0 {
-		send(class("CATransaction"), "setAnimationTimingFunction:", uintptr(timing))
-	}
-	setCGFloat(layer, sel("setOpacity:"), target)
-	send(class("CATransaction"), "commit")
-}
-
-// nsScrollerKnob is NSScrollerKnob. rectForPart: returns that part in the
-// scroller's own bounds, or a zero rect when the knob is not drawn.
-const nsScrollerKnob = 2
-
-// placeFadeBar keeps only the visible knob solid. The track is left to the
-// gradient, so glyphs under an overlay scroller still fade. A hidden
-// scroller, a faded-out overlay (alpha 0), or an empty knob hides the patch.
-func (h *CardText) placeFadeBar() {
-	if h.fadeBar == 0 {
-		return
-	}
-	hide := func() {
-		send(h.fadeBar, "setHidden:", 1)
-	}
-	scroller := send(h.scroll, "verticalScroller")
-	if scroller == 0 {
-		hide()
-		return
-	}
-	visible := send(scroller, "isHidden") == 0 && msgFloat(scroller, sel("alphaValue")) > 0
-	frame := layerRect(scroller, "frame")
-	bounds := layerRect(scroller, "bounds")
-	knob := scrollerPartRect(scroller, nsScrollerKnob)
-	x, y, w, ht, ok := KnobFrame(
-		visible,
-		send(h.scroll, "isFlipped") != 0,
-		send(scroller, "isFlipped") != 0,
-		frame.origin.x, frame.origin.y, frame.size.height,
-		knob.origin.x-bounds.origin.x, knob.origin.y-bounds.origin.y,
-		knob.size.width, knob.size.height,
-	)
-	if !ok {
-		hide()
-		return
-	}
-	setViewFrame(h.fadeBar, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}})
-	send(h.fadeBar, "setHidden:", 0)
-}
-
-var (
-	partRectOnce sync.Once
-	partRect     func(id, objc.SEL, uintptr) nsRect
-)
-
-func scrollerPartRect(scroller id, part uintptr) nsRect {
-	if scroller == 0 {
-		return nsRect{}
-	}
-	load()
-	partRectOnce.Do(func() {
-		purego.RegisterFunc(&partRect, msgSendAddr)
-	})
-	return partRect(scroller, sel("rectForPart:"), part)
+	setCGPoint(grad, sel("setStartPoint:"), nsPoint{x: 0.5, y: 1})
+	setCGPoint(grad, sel("setEndPoint:"), nsPoint{x: 0.5, y: 0})
+	h.fade = grad
 }
 
 func releaseLayer(layer id) {
@@ -858,10 +715,8 @@ func releaseLayer(layer id) {
 	}
 }
 
-// withoutFadeAnimation turns off Core Animation's implicit 0.25s frame
-// animation. A mask whose frame tracked the clip bounds was always mid-tween
-// during a scroll, so the fade lagged the viewport. Edge opacity is animated
-// in its own transaction, outside this one.
+// withoutFadeAnimation turns off Core Animation's implicit frame animation
+// so a resize or a scroll snaps the mask to the clip it was computed from.
 func withoutFadeAnimation(fn func()) {
 	send(class("CATransaction"), "begin")
 	send(class("CATransaction"), "setDisableActions:", 1)
@@ -910,33 +765,23 @@ func applyMaskStops(layer id, locations, alphas []float64) {
 	send(locs, "release")
 }
 
-func (h *CardText) removeFadeWatch() {
+func (h *CardText) removeClipWatch() {
 	if h == nil {
 		return
 	}
-	if h.fadeWatching && h.delegate != 0 {
+	if h.watching && h.delegate != 0 {
 		send(send(class("NSNotificationCenter"), "defaultCenter"), "removeObserver:", uintptr(h.delegate))
-		h.fadeWatching = false
+		h.watching = false
 	}
 	withoutFadeAnimation(func() {
 		if h.scroll != 0 {
 			if host := send(h.scroll, "layer"); host != 0 {
 				send(host, "setMask:", 0)
 			}
-			if clip := send(h.scroll, "contentView"); clip != 0 {
-				if host := send(clip, "layer"); host != 0 {
-					send(host, "setMask:", 0)
-				}
-			}
 		}
 	})
-	releaseLayer(h.fadeGrad)
-	releaseLayer(h.fadeTop)
-	releaseLayer(h.fadeBottom)
-	releaseLayer(h.fadeBar)
-	releaseLayer(h.fadeMask)
-	h.fadeGrad, h.fadeTop, h.fadeBottom, h.fadeBar, h.fadeMask = 0, 0, 0, 0, 0
-	h.fadeLive = false
+	releaseLayer(h.fade)
+	h.fade = 0
 }
 
 func snipScrollHitTest(self id, _ objc.SEL, pt nsPoint) id {
@@ -1035,6 +880,20 @@ func cardTextFor(key id) *CardText {
 	cardTextMu.Lock()
 	defer cardTextMu.Unlock()
 	return cardTexts[key]
+}
+
+func cardTextForWindow(window id) *CardText {
+	if window == 0 {
+		return nil
+	}
+	cardTextMu.Lock()
+	defer cardTextMu.Unlock()
+	for _, h := range cardTexts {
+		if h != nil && h.window == window {
+			return h
+		}
+	}
+	return nil
 }
 
 func goString(ns id) string {

@@ -791,25 +791,59 @@ func (h *CardText) animateFadeOpacity(layer id, target float64) {
 	send(class("CATransaction"), "commit")
 }
 
-// placeFadeBar covers the vertical scroller in the mask so the bar stays
-// solid. The gradient is only the clip view, which does not include it,
-// and this layer fills the overlap of an overlay scroller.
+// nsScrollerKnob is NSScrollerKnob. rectForPart: returns that part in the
+// scroller's own bounds, or a zero rect when the knob is not drawn.
+const nsScrollerKnob = 2
+
+// placeFadeBar keeps only the visible knob solid. The track is left to the
+// gradient, so glyphs under an overlay scroller still fade. A hidden
+// scroller, a faded-out overlay (alpha 0), or an empty knob hides the patch.
 func (h *CardText) placeFadeBar() {
 	if h.fadeBar == 0 {
 		return
 	}
+	hide := func() {
+		send(h.fadeBar, "setHidden:", 1)
+	}
 	scroller := send(h.scroll, "verticalScroller")
-	if scroller == 0 || send(scroller, "isHidden") != 0 {
-		send(h.fadeBar, "setHidden:", 1)
+	if scroller == 0 {
+		hide()
 		return
 	}
+	visible := send(scroller, "isHidden") == 0 && msgFloat(scroller, sel("alphaValue")) > 0
 	frame := layerRect(scroller, "frame")
-	if frame.size.width <= 0 || frame.size.height <= 0 {
-		send(h.fadeBar, "setHidden:", 1)
+	bounds := layerRect(scroller, "bounds")
+	knob := scrollerPartRect(scroller, nsScrollerKnob)
+	x, y, w, ht, ok := KnobFrame(
+		visible,
+		send(h.scroll, "isFlipped") != 0,
+		send(scroller, "isFlipped") != 0,
+		frame.origin.x, frame.origin.y, frame.size.height,
+		knob.origin.x-bounds.origin.x, knob.origin.y-bounds.origin.y,
+		knob.size.width, knob.size.height,
+	)
+	if !ok {
+		hide()
 		return
 	}
-	setViewFrame(h.fadeBar, sel("setFrame:"), frame)
+	setViewFrame(h.fadeBar, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}})
 	send(h.fadeBar, "setHidden:", 0)
+}
+
+var (
+	partRectOnce sync.Once
+	partRect     func(id, objc.SEL, uintptr) nsRect
+)
+
+func scrollerPartRect(scroller id, part uintptr) nsRect {
+	if scroller == 0 {
+		return nsRect{}
+	}
+	load()
+	partRectOnce.Do(func() {
+		purego.RegisterFunc(&partRect, msgSendAddr)
+	})
+	return partRect(scroller, sel("rectForPart:"), part)
 }
 
 func releaseLayer(layer id) {

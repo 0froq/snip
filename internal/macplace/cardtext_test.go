@@ -221,6 +221,36 @@ func TestFadeRectKeepsTheTopStopInsideTheViewport(t *testing.T) {
 	if x != 0 || y != 0 || w != 300 || h != 200 {
 		t.Fatalf("shifted clip %v %v %v %v", x, y, w, h)
 	}
+	// Overlay track: the clip is the full width, but a gutter-narrow clip
+	// must not stop the fade short of the last glyphs.
+	x, y, w, h = FadeRect(320, 200, 0, 0, 306, 200)
+	if x != 0 || y != 0 || w != 320 || h != 200 {
+		t.Fatalf("narrow clip %v %v %v %v", x, y, w, h)
+	}
+}
+
+func TestFadeBarIsOnlyTheVisibleKnob(t *testing.T) {
+	// Same y direction: the knob sits inside the scroller frame, not across the track.
+	x, y, w, h, ok := KnobFrame(true, false, false, 300, 0, 200, 2, 40, 8, 36)
+	if !ok || x != 302 || y != 40 || w != 8 || h != 36 {
+		t.Fatalf("knob %+v %v %v %v ok=%v", x, y, w, h, ok)
+	}
+	// A flipped scroller reports the knob from its top. The scroll view does not.
+	x, y, w, h, ok = KnobFrame(true, false, true, 300, 0, 200, 2, 40, 8, 36)
+	if !ok || x != 302 || y != 200-40-36 || w != 8 || h != 36 {
+		t.Fatalf("flipped knob %v %v %v %v ok=%v", x, y, w, h, ok)
+	}
+	if _, _, _, _, ok := KnobFrame(false, false, false, 300, 0, 200, 2, 40, 8, 36); ok {
+		t.Fatal("a hidden scroller has no solid patch")
+	}
+	if _, _, _, _, ok := KnobFrame(true, false, false, 300, 0, 200, 2, 0, 14, 0); ok {
+		t.Fatal("an empty knob must not cover the track")
+	}
+	// The gradient beside that knob still spans the scroll view, past the track.
+	gx, _, gw, _ := FadeRect(320, 200, 0, 0, 306, 200)
+	if gx != 0 || gw != 320 || gx+gw < x+w {
+		t.Fatalf("gradient %v %v does not reach past the knob", gx, gw)
+	}
 }
 
 func TestFadeCoversEaseWithTheScroll(t *testing.T) {

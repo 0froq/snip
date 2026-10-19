@@ -254,23 +254,39 @@ func ViewportFade(docOrigin, docH, visOrigin, visH, maskH, fadeH, epsilon float6
 	return locations, alphas
 }
 
-// FadeRect is the gradient's frame inside an unflipped scroll-view mask.
-// The clip view's frame is in that same space only while it sits inside
-// the scroll view. A taller frame (the document height) or one shifted up
-// by a scroll offset draws the clear top stop above the mask, and the
-// bottom stop still lands on the bottom edge.
+// FadeRect is the gradient's frame inside the scroll-view mask. It is the
+// whole scroll view, not the clip view. An overlay scroller does not inset
+// the clip, so a gradient only as wide as a gutter-clipped frame leaves the
+// last glyphs outside the fade. A document-tall or y-shifted clip frame
+// would also park the clear top stop above the mask.
 func FadeRect(scrollW, scrollH, clipX, clipY, clipW, clipH float64) (x, y, w, h float64) {
+	_, _, _, _ = clipX, clipY, clipW, clipH
 	if scrollW < 0 {
 		scrollW = 0
 	}
 	if scrollH < 0 {
 		scrollH = 0
 	}
-	if clipW <= 0 || clipH <= 0 || clipX < 0 || clipY < 0 ||
-		clipX+clipW > scrollW+0.5 || clipY+clipH > scrollH+0.5 {
-		return 0, 0, scrollW, scrollH
+	return 0, 0, scrollW, scrollH
+}
+
+// KnobFrame is the scroller knob in the scroll view's coordinates. The
+// solid mask patch is this rectangle and nothing else, so the fade still
+// covers the text under the track. A hidden scroller or an empty knob
+// returns ok false.
+// knobX/knobY are in the scroller's bounds, with the bounds origin removed.
+// scrollFlipped and scrollerFlipped are the two views' isFlipped.
+func KnobFrame(visible, scrollFlipped, scrollerFlipped bool, scrollerX, scrollerY, scrollerH, knobX, knobY, knobW, knobH float64) (x, y, w, h float64, ok bool) {
+	if !visible || scrollerH <= 0 || knobW <= 0 || knobH <= 0 {
+		return 0, 0, 0, 0, false
 	}
-	return clipX, clipY, clipW, clipH
+	x = scrollerX + knobX
+	if scrollFlipped == scrollerFlipped {
+		y = scrollerY + knobY
+	} else {
+		y = scrollerY + (scrollerH - knobY - knobH)
+	}
+	return x, y, knobW, knobH, true
 }
 
 // MaskStops is the vertical alpha mask for a viewport viewH points tall.

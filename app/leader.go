@@ -34,6 +34,16 @@ func finishLeaderAction(stay bool, end func()) {
 	}
 }
 
+// leaderDispatch resolves the leader follow-up chord against the binding list.
+// The closed-over action is used for keys that are not follow-ups, such as escape.
+// Shift+D does not run the binding for D.
+func leaderDispatch(rows config.BindingList, key, action string, stay bool) (string, bool) {
+	if row, ok := config.MatchLeader(rows, key); ok {
+		return row.Action, row.Stay
+	}
+	return action, stay
+}
+
 func (a *App) bind(acc, action string, double bool) {
 	acc = strings.TrimSpace(acc)
 	if acc == "" {

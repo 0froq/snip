@@ -32,3 +32,27 @@ func TestStayKeepsLeaderMode(t *testing.T) {
 		t.Fatal("default next leader binding does not stay")
 	}
 }
+
+func TestLeaderDispatchKeepsModifiers(t *testing.T) {
+	rows := config.Default().Bindings
+	act, stay := leaderDispatch(rows, "Shift+D", "cancel", false)
+	if act != "clear_cards" || stay {
+		t.Fatalf("shift+d → %s stay %v", act, stay)
+	}
+	act, stay = leaderDispatch(rows, "d", "cancel", false)
+	if act != "delete" || stay {
+		t.Fatalf("d → %s stay %v", act, stay)
+	}
+	act, stay = leaderDispatch(rows, "shift+d", "cancel", true)
+	if act != "clear_cards" || stay {
+		t.Fatalf("live match ignored modifiers: %s %v", act, stay)
+	}
+	act, stay = leaderDispatch(rows, "escape", "cancel", true)
+	if act != "cancel" || !stay {
+		t.Fatalf("escape fell into a follow-up: %s %v", act, stay)
+	}
+	act, _ = leaderDispatch(rows, "Ctrl+D", "cancel", false)
+	if act != "cancel" {
+		t.Fatalf("ctrl+d ran %s", act)
+	}
+}

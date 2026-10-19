@@ -3,6 +3,7 @@ package app
 import (
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI/pixel"
 	"github.com/0froq/snip/config"
@@ -84,6 +85,15 @@ func normalizeJumpKey(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
+// followUpJumpKey is the jump-pool letter a leader follow-up occupies.
+// A modified chord such as Shift+D does not occupy d.
+func followUpJumpKey(chord string) (string, bool) {
+	if strings.Contains(chord, "+") || utf8.RuneCountInString(chord) != 1 {
+		return "", false
+	}
+	return strings.ToLower(chord), true
+}
+
 func boundLeaderKeys(bindings config.BindingList) map[string]struct{} {
 	out := map[string]struct{}{}
 	for _, row := range bindings {
@@ -91,7 +101,7 @@ func boundLeaderKeys(bindings config.BindingList) map[string]struct{} {
 		if err != nil || !parsed.Leader {
 			continue
 		}
-		if k := normalizeJumpKey(parsed.Chord); k != "" {
+		if k, ok := followUpJumpKey(parsed.Chord); ok {
 			out[k] = struct{}{}
 		}
 	}

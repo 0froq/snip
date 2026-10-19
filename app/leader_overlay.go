@@ -56,18 +56,22 @@ func (a *App) jumpCardOrder() []string {
 
 func (a *App) bindLeader(key, action string, double, sticky bool) {
 	key = strings.TrimSpace(key)
+	if parsed, err := config.ParseBinding(key); err == nil {
+		key = parsed.Chord
+	}
 	if key == "" || a.leaderKeyTaken(key) {
 		return
 	}
 	if err := mygo.GlobalShortcut.Register(key, func() {
-		if action == "cancel" {
+		act, stay := leaderDispatch(a.config().Bindings, key, action, sticky)
+		if act == "cancel" {
 			a.endLeader()
 			return
 		}
-		a.taps.pressOnly("leader:"+key, action, double, a.config().Leader.DoubleGap(), func(act string) {
-			a.perform(act)
+		a.taps.pressOnly("leader:"+key, act, double, a.config().Leader.DoubleGap(), func(name string) {
+			a.perform(name)
 			a.invalidateCards()
-			finishLeaderAction(sticky, a.endLeader)
+			finishLeaderAction(stay, a.endLeader)
 		})
 	}); err != nil {
 		log.Printf("snip: leader key %q: %v", key, err)
@@ -91,9 +95,8 @@ func (a *App) bindJump(key string) {
 }
 
 func (a *App) leaderKeyTaken(key string) bool {
-	want := normalizeJumpKey(key)
 	for _, k := range a.leaderKeys {
-		if normalizeJumpKey(k) == want {
+		if config.SameChord(k, key) {
 			return true
 		}
 	}

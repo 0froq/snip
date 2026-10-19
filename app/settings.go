@@ -92,6 +92,11 @@ func (a *App) openSettings() {
 	macplace.SquareWindow(win.NativeHandle())
 	a.settingsWin = win
 	win.OnClosed(func() {
+		if a.rec.On {
+			a.rec = config.Recorder{}
+			a.restoreShortcuts()
+		}
+		a.bindNotes = nil
 		a.settingsWin = nil
 		a.settingsForm = nil
 	})
@@ -116,8 +121,17 @@ func (a *App) settingsView(c *ui.Context) {
 	draft.Language = lang
 	draft.Theme.Palette = f.Palette
 	k := usePixel(c, draft, dark)
-	if c.Shortcut(ui.Cmd, ui.KeyW) || c.Shortcut(0, ui.KeyEscape) {
+	a.pollRecording(c.Now())
+	// Escape is a window shortcut, so it is taken before the record catcher.
+	// While a row is recording it cancels that row and leaves Settings open.
+	if c.Shortcut(ui.Cmd, ui.KeyW) {
 		a.closeSettings()
+	} else if c.Shortcut(0, ui.KeyEscape) {
+		if a.rec.On {
+			a.cancelRecording()
+		} else {
+			a.closeSettings()
+		}
 	}
 	if f.SettingsTab < 0 || f.SettingsTab > int(settingsPrivacy) {
 		f.SettingsTab = int(settingsGeneral)
@@ -158,6 +172,7 @@ func (a *App) settingsView(c *ui.Context) {
 				a.saveSettings()
 			}
 			ui.Box(c).Grow(1)
+			a.recordCatcher(c)
 		})
 	})
 }
@@ -315,7 +330,7 @@ func (a *App) settingsShortcuts(c *ui.Context, f *config.Form, lang string) {
 	removeAt := -1
 	a.settingsSection(c, tr(lang, "leader"), func() {
 		text.Paragraph(c, tr(lang, "leader_key_hint"), text.ParagraphOptions{MaxLines: 2, Slot: pixel.Faint})
-		bindingRows(c, f, lang, "leader", issues, &removeAt)
+		a.bindingRows(c, f, lang, "leader", issues, &removeAt)
 		if input.Button(c, tr(lang, "bind_add"), input.ButtonOptions{Label: tr(lang, "bind_add") + " leader"}).Clicked {
 			addAction = "leader"
 		}
@@ -341,7 +356,7 @@ func (a *App) settingsShortcuts(c *ui.Context, f *config.Form, lang string) {
 			for _, name := range names {
 				name := name
 				text.Paragraph(c, tr(lang, name), text.ParagraphOptions{MaxLines: 2, Slot: pixel.Ink})
-				bindingRows(c, f, lang, name, issues, &removeAt)
+				a.bindingRows(c, f, lang, name, issues, &removeAt)
 				if input.Button(c, tr(lang, "bind_add"), input.ButtonOptions{Label: tr(lang, "bind_add") + " " + name}).Clicked {
 					addAction = name
 				}
@@ -351,11 +366,17 @@ func (a *App) settingsShortcuts(c *ui.Context, f *config.Form, lang string) {
 	for _, name := range extraShortcutActions(f.Bindings) {
 		name := name
 		a.settingsSection(c, name, func() {
-			bindingRows(c, f, lang, name, issues, &removeAt)
+			a.bindingRows(c, f, lang, name, issues, &removeAt)
 			if input.Button(c, tr(lang, "bind_add"), input.ButtonOptions{Label: tr(lang, "bind_add") + " " + name}).Clicked {
 				addAction = name
 			}
 		})
+	}
+	if addAction != "" || removeAt >= 0 {
+		if a.rec.On {
+			a.cancelRecording()
+		}
+		a.bindNotes = nil
 	}
 	if addAction != "" {
 		f.Bindings = insertBinding(f.Bindings, addAction)
@@ -382,7 +403,7 @@ func extraShortcutActions(rows config.BindingList) []string {
 	return out
 }
 
-func bindingRows(c *ui.Context, f *config.Form, lang, action string, issues []*config.BindingIssue, removeAt *int) {
+func (a *App) bindingRows(c *ui.Context, f *config.Form, lang, action string, issues []*config.BindingIssue, removeAt *int) {
 	k := pixel.K(c)
 	for i := range f.Bindings {
 		if f.Bindings[i].Action != action {
@@ -391,7 +412,15 @@ func bindingRows(c *ui.Context, f *config.Form, lang, action string, issues []*c
 		i := i
 		ui.Column(c).Shrink(0).Gap(k.D(1)).Children(func() {
 			ui.Row(c).Gap(k.D(4)).AlignItems(ui.Center).Shrink(0).Children(func() {
-				input.TextInput(c, action, &f.Bindings[i].Keys, input.TextInputOptions{Width: shortcutFieldDots})
+				recording := a.rec.On && a.rec.Row == i
+				input.TextInput(c, action+" "+strconv.Itoa(i), &f.Bindings[i].Keys, input.TextInputOptions{Width: shortcutFieldDots, Disabled: recording})
+				opts := input.ButtonOptions{Label: tr(lang, "bind_record") + " " + action + " " + strconv.Itoa(i)}
+				if recording {
+					opts.Variant = input.Primary
+				}
+				if input.Button(c, tr(lang, "bind_record"), opts).Clicked {
+					a.beginRecord(i)
+				}
 				if input.Button(c, tr(lang, "bind_remove"), input.ButtonOptions{Label: tr(lang, "bind_remove") + " " + action + " " + strconv.Itoa(i)}).Clicked {
 					*removeAt = i
 				}
@@ -399,8 +428,19 @@ func bindingRows(c *ui.Context, f *config.Form, lang, action string, issues []*c
 			if action != "leader" && config.HasLeaderPrefix(f.Bindings[i].Keys) {
 				input.Checkbox(c, tr(lang, "sticky"), &f.Bindings[i].Stay, input.CheckboxOptions{})
 			}
-			if i < len(issues) && issues[i] != nil {
-				text.Paragraph(c, bindingIssueText(lang, issues[i]), text.ParagraphOptions{MaxLines: 2, Slot: pixel.Bad})
+			issue := (*config.BindingIssue)(nil)
+			if a.rec.On && a.rec.Row == i {
+				issue = nil
+			} else {
+				if i < len(issues) {
+					issue = issues[i]
+				}
+				if note, ok := a.bindNotes[i]; ok && note.keys == f.Bindings[i].Keys {
+					issue = &config.BindingIssue{Code: note.code}
+				}
+			}
+			if issue != nil {
+				text.Paragraph(c, bindingIssueText(lang, issue), text.ParagraphOptions{MaxLines: 2, Slot: pixel.Bad})
 			}
 		})
 	}
@@ -418,6 +458,10 @@ func bindingIssueText(lang string, issue *config.BindingIssue) string {
 		return tr(lang, "bind_leader_key")
 	case "action":
 		return tr(lang, "bind_action") + " " + issue.Token
+	case "occupied":
+		return tr(lang, "bind_occupied")
+	case "leader_follow":
+		return tr(lang, "bind_leader_follow")
 	default:
 		panic("snip: unknown binding issue " + issue.Code)
 	}

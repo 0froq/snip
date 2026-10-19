@@ -58,6 +58,51 @@ direct = "cmd+shift+v"
 	}
 }
 
+func TestMigrateModifiedLeaderFollowUp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := `
+[leader]
+shortcut = "CmdOrCtrl+Shift+Space"
+
+[bindings.delete]
+direct = "CmdOrCtrl+Shift+Backspace"
+leader = "d"
+
+[bindings.clear_cards]
+direct = "CmdOrCtrl+Shift+Option+Backspace"
+leader = "Shift+D"
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plain, mod Binding
+	for _, row := range got.Bindings {
+		switch row.Keys {
+		case "leader d":
+			plain = row
+		case "leader Shift+D":
+			mod = row
+		}
+	}
+	if plain.Action != "delete" || mod.Action != "clear_cards" {
+		t.Fatalf("migrated %#v", got.Bindings)
+	}
+	rows, err := CanonicalBindings(got.Bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	del, ok1 := MatchLeader(rows, "d")
+	clear, ok2 := MatchLeader(rows, "Shift+D")
+	if !ok1 || !ok2 || del.Action != "delete" || clear.Action != "clear_cards" || del.Action == clear.Action {
+		t.Fatalf("match plain %#v mod %#v", del, clear)
+	}
+}
+
 func TestSaveCanonicalShortcutList(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

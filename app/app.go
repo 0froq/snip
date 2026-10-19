@@ -46,6 +46,9 @@ type App struct {
 	settingsWin   *mygo.Window
 	settingsForm  *config.Form
 	settingsApps  []macpaste.RunningApp
+	rec           config.Recorder
+	bindNotes     map[int]bindNote
+	claimShortcut func(string) error
 	leaderOn      bool
 	leaderGen     int
 	leaderKeys    []string

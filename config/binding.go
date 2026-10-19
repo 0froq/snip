@@ -209,7 +209,8 @@ type ParsedBinding struct {
 
 // BindingIssue is a problem with one shortcut string.
 type BindingIssue struct {
-	// Code is empty, unknown, conflict, or leader.
+	// Code is empty, unknown, conflict, leader, action, occupied, or leader_follow.
+	// occupied and leader_follow are reported by shortcut recording, not CheckBindings.
 	Code  string
 	Token string
 }
@@ -271,9 +272,55 @@ func HasLeaderPrefix(s string) bool {
 	return len(fields) > 0 && strings.EqualFold(fields[0], "leader")
 }
 
+// SameChord reports whether a and b are the same accelerator.
+// Shift+D and D are different. shift+d and Shift+D are the same.
+func SameChord(a, b string) bool {
+	ca, ea := canonicalChord(a)
+	cb, eb := canonicalChord(b)
+	return ea == nil && eb == nil && ca == cb
+}
+
+// LeaderChords returns the canonical global chords that start leader mode.
+func LeaderChords(rows []Binding) []string {
+	var out []string
+	for _, row := range rows {
+		if row.Action != "leader" {
+			continue
+		}
+		parsed, err := ParseBinding(row.Keys)
+		if err != nil || parsed.Leader {
+			continue
+		}
+		out = append(out, parsed.Chord)
+	}
+	return out
+}
+
+// MatchLeader finds the leader-combo row whose follow-up is chord.
+// A modified follow-up does not match the unmodified key.
+func MatchLeader(rows []Binding, chord string) (Binding, bool) {
+	want, err := canonicalChord(chord)
+	if err != nil {
+		return Binding{}, false
+	}
+	for _, row := range rows {
+		parsed, err := ParseBinding(row.Keys)
+		if err != nil || !parsed.Leader || row.Action == "leader" {
+			continue
+		}
+		if parsed.Chord == want {
+			return row, true
+		}
+	}
+	return Binding{}, false
+}
+
 // ParseBinding parses a shortcut string.
 // An empty string, an unknown key, and a leader prefix with no key are errors.
 func ParseBinding(s string) (ParsedBinding, error) {
+	if strings.TrimSpace(s) == LeaderWaitText {
+		return ParsedBinding{}, &BindingIssue{Code: "empty"}
+	}
 	fields := strings.Fields(s)
 	if len(fields) == 0 {
 		return ParsedBinding{}, &BindingIssue{Code: "empty"}

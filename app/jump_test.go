@@ -57,6 +57,41 @@ func TestAssignJumpLabelsSkipsBoundFollowUps(t *testing.T) {
 	}
 }
 
+func TestModifiedFollowUpDoesNotStealJumpKey(t *testing.T) {
+	onlyShift := boundLeaderKeys(config.BindingList{
+		{Action: "clear_cards", Keys: "leader shift+d"},
+	})
+	if _, ok := onlyShift["d"]; ok {
+		t.Fatalf("shift+d occupied d: %v", onlyShift)
+	}
+	if got := assignJumpLabels([]string{"card"}, onlyShift, jumpKeyPool); got[0] != "1" {
+		t.Fatalf("modified follow-up changed the pool: %v", got)
+	}
+	both := boundLeaderKeys(config.BindingList{
+		{Action: "delete", Keys: "leader d"},
+		{Action: "clear_cards", Keys: "leader Shift+D"},
+	})
+	if _, ok := both["d"]; !ok {
+		t.Fatal("plain d should occupy the jump letter")
+	}
+	if _, ok := both["shift+d"]; ok {
+		t.Fatal("modified chord stored as a jump letter")
+	}
+	cfg := config.Default()
+	var sawD, sawShift bool
+	for _, item := range whichKeyItems(cfg) {
+		if item.Key == "d" {
+			sawD = true
+		}
+		if item.Key == "Shift+D" {
+			sawShift = true
+		}
+	}
+	if !sawD || !sawShift {
+		t.Fatal("which-key collapsed shift+d and d")
+	}
+}
+
 func TestAssignJumpLabelsStableOrder(t *testing.T) {
 	ids := []string{"c", "b", "a"}
 	bound := map[string]struct{}{"s": {}, "v": {}, "S": {}}

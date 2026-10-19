@@ -119,11 +119,25 @@ func FontFace(family string) (name string, system bool) {
 }
 
 const (
-	// FadeHeightPt is the scroll-edge gradient, in points.
-	FadeHeightPt = 20
+	// fadeLineFraction is the fade band as a share of one line. Half a line
+	// is the most the gradient may cover, so it never hides a whole line.
+	fadeLineFraction = 0.5
 	// fadeEpsilon absorbs a fractional scroll offset so the fade does not flicker.
 	fadeEpsilon = 1
 )
+
+// FadeHeightForLine is the gradient band for one line of text. It is half
+// the line at most, and zero when the line height is unknown.
+func FadeHeightForLine(lineH float64) float64 {
+	if lineH <= 0 {
+		return 0
+	}
+	h := lineH * fadeLineFraction
+	if h > lineH*0.5 {
+		h = lineH * 0.5
+	}
+	return h
+}
 
 // ScrollFades reports which edges of a vertical scroller should fade.
 // contentH is the document height, viewH the visible height, and offset
@@ -148,6 +162,18 @@ func ScrollFades(contentH, viewH, offset, epsilon float64) (top, bottom bool) {
 		bottom = true
 	}
 	return top, bottom
+}
+
+// FadeEdges is which edges fade, from the clip view's bounds and the
+// document rect only. boundsY/boundsH is the clip bounds: the scroll offset
+// and the viewport. docOrigin/docH is the document. flipped is the document
+// view. The same inputs always give the same answer, on the first layout,
+// after a resize, and after an edit. Offset 0 has no top fade. A document
+// that fits in the clip has no fade. The bottom fade is absent when the
+// clip's far edge reaches the document.
+func FadeEdges(docOrigin, docH, boundsY, boundsH, epsilon float64, flipped bool) (top, bottom bool) {
+	offset := documentOffset(docOrigin, docH, boundsY, boundsH, flipped)
+	return ScrollFades(docH, boundsH, offset, epsilon)
 }
 
 // FadeBand is the gradient height that fits in the visible area. It is

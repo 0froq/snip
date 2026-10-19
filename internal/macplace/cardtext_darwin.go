@@ -606,10 +606,13 @@ func (h *CardText) updateFades() {
 	// scroller's travel, and the max of the two origins kept a resting
 	// inset above the 1pt slop, so neither end ever looked finished.
 	document := layerRect(clip, "documentRect")
-	visible := layerRect(clip, "documentVisibleRect")
+	// The clip bounds are the scroll offset and the viewport. Visibility
+	// is that pair against the document height, on every layout, edit,
+	// and scroll. A saved edge from an earlier event is not reused.
+	clipBounds := layerRect(clip, "bounds")
 	clipFrame := layerRect(clip, "frame")
 	scrollBounds := layerRect(h.scroll, "bounds")
-	if scrollBounds.size.width <= 0 || scrollBounds.size.height <= 0 || document.size.height <= 0 || visible.size.height <= 0 {
+	if scrollBounds.size.width <= 0 || scrollBounds.size.height <= 0 || document.size.height <= 0 || clipBounds.size.height <= 0 {
 		return
 	}
 	gx, gy, gw, gh := FadeRect(
@@ -617,20 +620,12 @@ func (h *CardText) updateFades() {
 		clipFrame.origin.x, clipFrame.origin.y, clipFrame.size.width, clipFrame.size.height,
 	)
 	flipped := send(h.view, "isFlipped") != 0
-	off := documentOffset(
+	fadeH := FadeHeightForLine(h.fadeLineHeight())
+	locations, alphas := ViewportFade(
 		document.origin.y, document.size.height,
-		visible.origin.y, visible.size.height,
-		flipped,
+		clipBounds.origin.y, clipBounds.size.height,
+		gh, fadeH, fadeEpsilon, flipped,
 	)
-	topCover, bottomCover, fadeOK := ScrollFadeCovers(
-		document.size.height, visible.size.height, off, fadeEpsilon,
-		gx, gy, gw, gh, FadeHeightPt, FadeContainerFlipped,
-	)
-	locations, alphas := fadeStopArrays(FadeUnderlay(gh, FadeHeightPt))
-	if !fadeOK {
-		locations, alphas = nil, nil
-	}
-	installed := false
 	withoutFadeAnimation(func() {
 		send(h.scroll, "setWantsLayer:", 1)
 		host := send(h.scroll, "layer")
@@ -642,12 +637,16 @@ func (h *CardText) updateFades() {
 		if clipLayer := send(clip, "layer"); clipLayer != 0 {
 			send(clipLayer, "setMask:", 0)
 		}
+		// No overflow, the top of the document, and the bottom of the
+		// document all share this path: an edge that should not fade is
+		// absent in the stops, and no fade means no mask. Actions stay
+		// disabled so a resting edge cannot sit mid-animation.
 		if len(locations) == 0 {
 			send(host, "setMask:", 0)
 			return
 		}
 		h.ensureFadeMask()
-		if h.fadeMask == 0 || h.fadeGrad == 0 || h.fadeTop == 0 || h.fadeBottom == 0 {
+		if h.fadeMask == 0 || h.fadeGrad == 0 {
 			return
 		}
 		x, y, w, ht := MaskFrame(scrollBounds.origin.x, scrollBounds.origin.y, scrollBounds.size.width, scrollBounds.size.height)
@@ -656,43 +655,50 @@ func (h *CardText) updateFades() {
 		setViewFrame(h.fadeMask, sel("setBounds:"), box)
 		setViewFrame(h.fadeGrad, sel("setFrame:"), nsRect{origin: nsPoint{x: gx, y: gy}, size: nsSize{width: gw, height: gh}})
 		applyMaskStops(h.fadeGrad, locations, alphas)
-		h.placeFadeCover(h.fadeTop, topCover)
-		h.placeFadeCover(h.fadeBottom, bottomCover)
-		// The first placement snaps. Animating it would fade every edge
-		// in when the card opens, and this disabled transaction would
-		// swallow that animation.
-		if !h.fadeLive {
-			writeFadeOpacity(h.fadeTop, topCover.Opacity)
-			writeFadeOpacity(h.fadeBottom, bottomCover.Opacity)
+		if h.fadeTop != 0 {
+			send(h.fadeTop, "setHidden:", 1)
+		}
+		if h.fadeBottom != 0 {
+			send(h.fadeBottom, "setHidden:", 1)
 		}
 		h.placeFadeBar()
 		send(host, "setMask:", uintptr(h.fadeMask))
-		installed = true
 	})
-	if !installed {
-		return
-	}
-	if !h.fadeLive {
-		h.fadeLive = true
-		return
-	}
-	// Opacity is outside the disabled transaction, so leaving an edge
-	// eases the fade in and reaching one eases it back out.
-	h.animateFadeOpacity(h.fadeTop, topCover.Opacity)
-	h.animateFadeOpacity(h.fadeBottom, bottomCover.Opacity)
 }
 
-func fadeStopArrays(stops []MaskStop) (locations, alphas []float64) {
-	if len(stops) == 0 {
-		return nil, nil
+func (h *CardText) fadeLineHeight() float64 {
+	if h == nil || h.view == 0 {
+		return 0
 	}
-	locations = make([]float64, len(stops))
-	alphas = make([]float64, len(stops))
-	for i, stop := range stops {
-		locations[i] = stop.Location
-		alphas[i] = stop.Alpha
+	font := send(h.view, "font")
+	if font == 0 {
+		return 0
 	}
-	return locations, alphas
+	if lm := send(h.view, "layoutManager"); lm != 0 {
+		if height := lineHeightForFont(lm, font); height > 0 {
+			return height
+		}
+	}
+	if pt := msgFloat(font, sel("pointSize")); pt > 0 {
+		return pt + 6
+	}
+	return 0
+}
+
+var (
+	lineHOnce    sync.Once
+	lineHForFont func(id, objc.SEL, id) float64
+)
+
+func lineHeightForFont(layout, font id) float64 {
+	if layout == 0 || font == 0 {
+		return 0
+	}
+	load()
+	lineHOnce.Do(func() {
+		purego.RegisterFunc(&lineHForFont, msgSendAddr)
+	})
+	return lineHForFont(layout, sel("defaultLineHeightForFont:"), font)
 }
 
 func (h *CardText) ensureFadeMask() {

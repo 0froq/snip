@@ -84,18 +84,93 @@ func TestScrollFadesFollowTheEdges(t *testing.T) {
 	}
 }
 
+func TestFadeVisibilityFollowsClipBounds(t *testing.T) {
+	const (
+		docH   = 500.0
+		viewH  = 200.0
+		line   = 18.0
+		maxOff = docH - viewH
+	)
+	fadeH := FadeHeightForLine(line)
+	if fadeH <= 0 || fadeH > line*0.5 {
+		t.Fatalf("fade height %v for line %v", fadeH, line)
+	}
+	// Each call is only the clip bounds and the document. A previous
+	// offset must not stick: the top is absent again at offset 0.
+	_, _ = FadeEdges(0, docH, 120, viewH, fadeEpsilon, true)
+	top, bottom := FadeEdges(0, docH, 0, viewH, fadeEpsilon, true)
+	if top || !bottom {
+		t.Fatalf("at the top, top %v bottom %v", top, bottom)
+	}
+	locs, alphas := ViewportFade(0, docH, 0, viewH, viewH, fadeH, fadeEpsilon, true)
+	if alphaAt(locs, alphas, 1) != 1 || alphaAt(locs, alphas, 0) != 0 {
+		t.Fatalf("at the top the fade is still drawn %+v %+v", locs, alphas)
+	}
+	// A fraction of a point is still the top, including after a resize
+	// that leaves the clip origin at the document origin.
+	top, bottom = FadeEdges(12, docH, 12.4, viewH, fadeEpsilon, true)
+	if top || !bottom {
+		t.Fatalf("resting inset %+v %+v", top, bottom)
+	}
+	locs, alphas = ViewportFade(12, docH, 12.4, viewH, viewH, fadeH, fadeEpsilon, true)
+	if alphaAt(locs, alphas, 1) != 1 {
+		t.Fatalf("inset top still fades %+v", alphas)
+	}
+
+	top, bottom = FadeEdges(0, docH, 150, viewH, fadeEpsilon, true)
+	if !top || !bottom {
+		t.Fatalf("middle top %v bottom %v", top, bottom)
+	}
+	locs, alphas = ViewportFade(0, docH, 150, viewH, viewH, fadeH, fadeEpsilon, true)
+	if alphaAt(locs, alphas, 1) != 0 || alphaAt(locs, alphas, 0) != 0 {
+		t.Fatalf("middle %+v %+v", locs, alphas)
+	}
+
+	top, bottom = FadeEdges(0, docH, maxOff, viewH, fadeEpsilon, true)
+	if !top || bottom {
+		t.Fatalf("at the bottom, top %v bottom %v", top, bottom)
+	}
+	locs, alphas = ViewportFade(0, docH, maxOff, viewH, viewH, fadeH, fadeEpsilon, true)
+	if alphaAt(locs, alphas, 0) != 1 || alphaAt(locs, alphas, 1) != 0 {
+		t.Fatalf("bottom fade still drawn %+v %+v", locs, alphas)
+	}
+	// Just short of the end still counts as the end.
+	top, bottom = FadeEdges(0, docH, maxOff-0.4, viewH, fadeEpsilon, true)
+	if bottom {
+		t.Fatalf("near the end still fades the bottom")
+	}
+
+	top, bottom = FadeEdges(0, 180, 0, viewH, fadeEpsilon, true)
+	if top || bottom {
+		t.Fatalf("content that fits top %v bottom %v", top, bottom)
+	}
+	if locs, alphas = ViewportFade(0, 180, 0, viewH, viewH, fadeH, fadeEpsilon, true); locs != nil || alphas != nil {
+		t.Fatalf("content that fits still has a mask %+v %+v", locs, alphas)
+	}
+	// The clear band of a real fade is half a line, not the whole line.
+	stops := MaskStops(viewH, fadeH, false, true)
+	if len(stops) < 2 || stops[1].Location*viewH > line*0.5+1e-9 {
+		t.Fatalf("band covers a line %+v", stops)
+	}
+}
+
 func TestFadeBandStaysInsideTheView(t *testing.T) {
-	if band := FadeBand(400, FadeHeightPt); band != FadeHeightPt {
+	const line = 18.0
+	fade := FadeHeightForLine(line)
+	if fade != line/2 || fade >= line {
+		t.Fatalf("fade %v hides a line of %v", fade, line)
+	}
+	if FadeHeightForLine(0) != 0 || FadeHeightForLine(-3) != 0 {
+		t.Fatal("an unknown line has no fade band")
+	}
+	if band := FadeBand(400, fade); band != fade {
 		t.Fatalf("band %v", band)
 	}
-	if band := FadeBand(30, FadeHeightPt); band != 15 {
+	if band := FadeBand(10, fade); band != 5 {
 		t.Fatalf("band %v", band)
 	}
-	if band := FadeBand(0, FadeHeightPt); band != 0 {
+	if band := FadeBand(0, fade); band != 0 {
 		t.Fatalf("band %v", band)
-	}
-	if FadeHeightPt < 16 || FadeHeightPt > 24 {
-		t.Fatalf("fade height %v", FadeHeightPt)
 	}
 }
 
@@ -125,7 +200,7 @@ func TestViewportFadeHandsTheLayerTheEndStops(t *testing.T) {
 	)
 
 	// offset 0: the visual top is opaque, the visual bottom fades.
-	locs, alphas := ViewportFade(0, docH, 0, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	locs, alphas := ViewportFade(0, docH, 0, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
 	if alphaAt(locs, alphas, topLoc) != 1 || alphaAt(locs, alphas, bottomLoc) != 0 {
 		t.Fatalf("at the top, visual top alpha %v visual bottom alpha %v (%v %v)", alphaAt(locs, alphas, topLoc), alphaAt(locs, alphas, bottomLoc), locs, alphas)
 	}
@@ -134,47 +209,47 @@ func TestViewportFadeHandsTheLayerTheEndStops(t *testing.T) {
 	}
 
 	// A resting origin of 12 (content inset) is still the top.
-	locs, alphas = ViewportFade(12, docH, 12, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	locs, alphas = ViewportFade(12, docH, 12, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
 	if !fadeEdges(locs, alphas, 0, 1) {
 		t.Fatalf("inset top %+v %+v", locs, alphas)
 	}
 
 	// offset = max: bottom is opaque, top fades.
-	locs, alphas = ViewportFade(0, docH, maxY, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	locs, alphas = ViewportFade(0, docH, maxY, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
 	if !fadeEdges(locs, alphas, 1, 0) {
 		t.Fatalf("at the bottom %+v %+v", locs, alphas)
 	}
 
 	// A fraction of a point short of the end still counts as the end.
-	locs, alphas = ViewportFade(0, docH, maxY-0.4, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	locs, alphas = ViewportFade(0, docH, maxY-0.4, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
 	if !fadeEdges(locs, alphas, 1, 0) {
 		t.Fatalf("near the bottom %+v %+v", locs, alphas)
 	}
 
 	// Past the 1pt slop, the bottom still fades.
-	locs, alphas = ViewportFade(0, docH, maxY-1.5, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	locs, alphas = ViewportFade(0, docH, maxY-1.5, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
 	if !fadeEdges(locs, alphas, 0, 0) {
 		t.Fatalf("short of the bottom %+v %+v", locs, alphas)
 	}
 
 	// Middle: both edges are clear.
-	locs, alphas = ViewportFade(0, docH, 150, visH, visH, FadeHeightPt, fadeEpsilon, true)
+	locs, alphas = ViewportFade(0, docH, 150, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
 	if !fadeEdges(locs, alphas, 0, 0) {
 		t.Fatalf("middle %+v %+v", locs, alphas)
 	}
 
 	// Non-flipped: y is the bottom of the visible rect. Origin 0 is the
 	// bottom of the document, so the bottom stop is opaque.
-	locs, alphas = ViewportFade(0, docH, 0, visH, visH, FadeHeightPt, fadeEpsilon, false)
+	locs, alphas = ViewportFade(0, docH, 0, visH, visH, FadeHeightForLine(20), fadeEpsilon, false)
 	if !fadeEdges(locs, alphas, 1, 0) {
 		t.Fatalf("non-flipped bottom %+v %+v", locs, alphas)
 	}
-	locs, alphas = ViewportFade(0, docH, maxY, visH, visH, FadeHeightPt, fadeEpsilon, false)
+	locs, alphas = ViewportFade(0, docH, maxY, visH, visH, FadeHeightForLine(20), fadeEpsilon, false)
 	if !fadeEdges(locs, alphas, 0, 1) {
 		t.Fatalf("non-flipped top %+v %+v", locs, alphas)
 	}
 
-	if locs, alphas := ViewportFade(0, 100, 0, 200, 200, FadeHeightPt, fadeEpsilon, true); locs != nil || alphas != nil {
+	if locs, alphas := ViewportFade(0, 100, 0, 200, 200, FadeHeightForLine(20), fadeEpsilon, true); locs != nil || alphas != nil {
 		t.Fatalf("content that fits %+v %+v", locs, alphas)
 	}
 }
@@ -265,13 +340,13 @@ func TestFadeCoversEaseWithTheScroll(t *testing.T) {
 		visH = 200.0
 		maxY = docH - visH
 	)
-	under := FadeUnderlay(visH, FadeHeightPt)
+	under := FadeUnderlay(visH, FadeHeightForLine(20))
 	if len(under) != 4 || under[0] != (MaskStop{0, 0}) || under[3] != (MaskStop{1, 0}) {
 		t.Fatalf("underlay %+v", under)
 	}
 	assert := func(offset, topOpacity, bottomOpacity float64) {
 		t.Helper()
-		top, bottom, ok := ScrollFadeCovers(docH, visH, offset, fadeEpsilon, 0, 0, 300, visH, FadeHeightPt, FadeContainerFlipped)
+		top, bottom, ok := ScrollFadeCovers(docH, visH, offset, fadeEpsilon, 0, 0, 300, visH, FadeHeightForLine(20), FadeContainerFlipped)
 		if !ok {
 			t.Fatalf("offset %v has no covers", offset)
 		}
@@ -279,13 +354,13 @@ func TestFadeCoversEaseWithTheScroll(t *testing.T) {
 			t.Fatalf("offset %v cover opacity top %v bottom %v", offset, top.Opacity, bottom.Opacity)
 		}
 		// FadeContainerFlipped is off, so the low band is the visual top.
-		if top.Y != 0 || top.H != FadeHeightPt || bottom.Y != visH-FadeHeightPt || bottom.H != FadeHeightPt {
+		if top.Y != 0 || top.H != FadeHeightForLine(20) || bottom.Y != visH-FadeHeightForLine(20) || bottom.H != FadeHeightForLine(20) {
 			t.Fatalf("offset %v frames top %+v bottom %+v", offset, top, bottom)
 		}
-		if top.Y+top.H != FadeHeightPt || bottom.Y+bottom.H != visH {
+		if top.Y+top.H != FadeHeightForLine(20) || bottom.Y+bottom.H != visH {
 			t.Fatalf("offset %v bands leave the viewport %+v %+v", offset, top, bottom)
 		}
-		locs, alphas := ViewportFade(0, docH, offset, visH, visH, FadeHeightPt, fadeEpsilon, true)
+		locs, alphas := ViewportFade(0, docH, offset, visH, visH, FadeHeightForLine(20), fadeEpsilon, true)
 		if alphaAt(locs, alphas, 1) != top.Opacity || alphaAt(locs, alphas, 0) != bottom.Opacity {
 			t.Fatalf("offset %v baked %+v %+v covers %v %v", offset, locs, alphas, top.Opacity, bottom.Opacity)
 		}
@@ -301,14 +376,14 @@ func TestFadeCoversEaseWithTheScroll(t *testing.T) {
 
 	// Content that fits still has covers, both solid, so a later overflow
 	// can ease a fade in instead of attaching a mask already at full strength.
-	top, bottom, ok := ScrollFadeCovers(100, 200, 0, fadeEpsilon, 4, 6, 300, 200, FadeHeightPt, FadeContainerFlipped)
+	top, bottom, ok := ScrollFadeCovers(100, 200, 0, fadeEpsilon, 4, 6, 300, 200, FadeHeightForLine(20), FadeContainerFlipped)
 	if !ok || top.Opacity != 1 || bottom.Opacity != 1 {
 		t.Fatalf("content that fits %+v %+v ok=%v", top, bottom, ok)
 	}
-	if top.Y != 6 || bottom.Y != 200-FadeHeightPt+6 {
+	if top.Y != 6 || bottom.Y != 200-FadeHeightForLine(20)+6 {
 		t.Fatalf("shifted bands %+v %+v", top, bottom)
 	}
-	if _, _, ok := ScrollFadeCovers(500, 200, 100, fadeEpsilon, 0, 0, 0, 200, FadeHeightPt, FadeContainerFlipped); ok {
+	if _, _, ok := ScrollFadeCovers(500, 200, 100, fadeEpsilon, 0, 0, 0, 200, FadeHeightForLine(20), FadeContainerFlipped); ok {
 		t.Fatal("a zero-width gradient has no covers")
 	}
 	if documentOffset(12, docH, 12, visH, true) != 0 {
@@ -323,28 +398,28 @@ func TestFadeCoversPinTheVisualEdge(t *testing.T) {
 	const gradH = 200.0
 	// geometryFlipped off: the mask shows the low band on the visual top
 	// and the high band on the visual bottom.
-	top, bottom, ok := FadeCovers(0, 0, 300, gradH, FadeHeightPt, false, false, false)
-	if !ok || top.Y != 0 || bottom.Y != gradH-FadeHeightPt {
+	top, bottom, ok := FadeCovers(0, 0, 300, gradH, FadeHeightForLine(20), false, false, false)
+	if !ok || top.Y != 0 || bottom.Y != gradH-FadeHeightForLine(20) {
 		t.Fatalf("unflipped covers top %+v bottom %+v", top, bottom)
 	}
-	if top.Y+top.H != FadeHeightPt || bottom.Y+bottom.H != gradH {
+	if top.Y+top.H != FadeHeightForLine(20) || bottom.Y+bottom.H != gradH {
 		t.Fatalf("unflipped bands top %+v bottom %+v", top, bottom)
 	}
 	// geometryFlipped on cancels that composite, so the bands swap.
-	top, bottom, ok = FadeCovers(0, 0, 300, gradH, FadeHeightPt, false, false, true)
-	if !ok || top.Y != gradH-FadeHeightPt || bottom.Y != 0 {
+	top, bottom, ok = FadeCovers(0, 0, 300, gradH, FadeHeightForLine(20), false, false, true)
+	if !ok || top.Y != gradH-FadeHeightForLine(20) || bottom.Y != 0 {
 		t.Fatalf("flipped covers top %+v bottom %+v", top, bottom)
 	}
 
 	// Scrolled to the bottom: the visual bottom cover is solid (fade
 	// hidden) and the visual top cover is clear (fade shown).
-	top, bottom, ok = ScrollFadeCovers(500, gradH, 500-gradH, fadeEpsilon, 0, 0, 300, gradH, FadeHeightPt, false)
-	if !ok || top.Opacity != 0 || bottom.Opacity != 1 || top.Y != 0 || bottom.Y != gradH-FadeHeightPt {
+	top, bottom, ok = ScrollFadeCovers(500, gradH, 500-gradH, fadeEpsilon, 0, 0, 300, gradH, FadeHeightForLine(20), false)
+	if !ok || top.Opacity != 0 || bottom.Opacity != 1 || top.Y != 0 || bottom.Y != gradH-FadeHeightForLine(20) {
 		t.Fatalf("at the bottom top %+v bottom %+v", top, bottom)
 	}
 	// Scrolled to the top: the visual top cover is solid.
-	top, bottom, ok = ScrollFadeCovers(500, gradH, 0, fadeEpsilon, 0, 0, 300, gradH, FadeHeightPt, false)
-	if !ok || top.Opacity != 1 || bottom.Opacity != 0 || top.Y != 0 || bottom.Y != gradH-FadeHeightPt {
+	top, bottom, ok = ScrollFadeCovers(500, gradH, 0, fadeEpsilon, 0, 0, 300, gradH, FadeHeightForLine(20), false)
+	if !ok || top.Opacity != 1 || bottom.Opacity != 0 || top.Y != 0 || bottom.Y != gradH-FadeHeightForLine(20) {
 		t.Fatalf("at the top top %+v bottom %+v", top, bottom)
 	}
 	if FadeContainerFlipped {

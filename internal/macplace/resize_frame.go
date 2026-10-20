@@ -3,6 +3,8 @@ package macplace
 import (
 	"fmt"
 	"math"
+
+	"github.com/0froq/snip/config"
 )
 
 // windowEdge is one side of a window in AppKit's bottom-left coordinates.
@@ -32,15 +34,121 @@ func dragWindowEdge(x, y, w, h, delta float64, edge windowEdge) (float64, float6
 	}
 }
 
-// contentSizeChanged reports that the content view's size changed.
-// A top or right drag keeps the window origin and still changes the size,
-// so the relayout decision is the size alone. A move, which changes only
-// the origin, does not. A non-positive read is not a size.
+// contentSizeChanged reports that a content view's width or height changed.
+// A non-positive read is not a size. A move that keeps the size is not a
+// size change; contentFrameChanged is what also notices the origin.
 func contentSizeChanged(oldW, oldH, newW, newH float64) bool {
 	if newW <= 0 || newH <= 0 {
 		return false
 	}
 	return newW != oldW || newH != oldH
+}
+
+// contentFrameChanged reports that the content view moved or resized inside
+// the window. A bottom or left drag slides that origin while the size is
+// still catching up, and a size-only check skips the relayout. A non-positive
+// size is a failed read. A window move that leaves this frame alone does not
+// report a change.
+func contentFrameChanged(oldX, oldY, oldW, oldH, newX, newY, newW, newH float64) bool {
+	if newW <= 0 || newH <= 0 {
+		return false
+	}
+	return newX != oldX || newY != oldY || newW != oldW || newH != oldH
+}
+
+// windowDrag is one edge or corner, in AppKit's bottom-left coordinates.
+type windowDrag int
+
+const (
+	windowDragTop windowDrag = iota
+	windowDragBottom
+	windowDragLeft
+	windowDragRight
+	windowDragTopLeft
+	windowDragTopRight
+	windowDragBottomLeft
+	windowDragBottomRight
+)
+
+// dragWindow is the frame after dragging one edge or corner by dx and dy.
+// Left and bottom move the origin. Top and right change only the size.
+// A corner does both of its edges.
+func dragWindow(x, y, w, h, dx, dy float64, dir windowDrag) (float64, float64, float64, float64) {
+	switch dir {
+	case windowDragTop:
+		return dragWindowEdge(x, y, w, h, dy, windowEdgeTop)
+	case windowDragBottom:
+		return dragWindowEdge(x, y, w, h, dy, windowEdgeBottom)
+	case windowDragLeft:
+		return dragWindowEdge(x, y, w, h, dx, windowEdgeLeft)
+	case windowDragRight:
+		return dragWindowEdge(x, y, w, h, dx, windowEdgeRight)
+	case windowDragTopLeft:
+		x, y, w, h = dragWindowEdge(x, y, w, h, dx, windowEdgeLeft)
+		return dragWindowEdge(x, y, w, h, dy, windowEdgeTop)
+	case windowDragTopRight:
+		x, y, w, h = dragWindowEdge(x, y, w, h, dx, windowEdgeRight)
+		return dragWindowEdge(x, y, w, h, dy, windowEdgeTop)
+	case windowDragBottomLeft:
+		x, y, w, h = dragWindowEdge(x, y, w, h, dx, windowEdgeLeft)
+		return dragWindowEdge(x, y, w, h, dy, windowEdgeBottom)
+	case windowDragBottomRight:
+		x, y, w, h = dragWindowEdge(x, y, w, h, dx, windowEdgeRight)
+		return dragWindowEdge(x, y, w, h, dy, windowEdgeBottom)
+	default:
+		panic(fmt.Sprintf("snip: unhandled window drag %d", int(dir)))
+	}
+}
+
+// draggedCardLayout is where the content view, the text, and the scroll
+// offset sit after one drag. The content view is pinned to the window, so a
+// bottom or left drag moves the window origin and does not move the view
+// inside it. Text is in the content view's unflipped coordinates: its top is
+// the window height minus the top inset. ScrollX/ScrollY are the clip origin.
+// The text view is flipped, so Y is the distance from the top of the document.
+type draggedCardLayout struct {
+	WinX, WinY, WinW, WinH                 float64
+	ContentX, ContentY, ContentW, ContentH float64
+	TextX, TextY, TextW, TextH             float64
+	PadLeft, PadTop, PadRight, PadBottom   int
+	ContainerW                             float64
+	ScrollX, ScrollY                       float64
+	OK                                     bool
+}
+
+// layoutDraggedCard places the card after dragging dir by dx and dy.
+// clipY is the flipped scroll offset from before the drag. A change in the
+// window origin is not added to it.
+func layoutDraggedCard(x, y, w, h, dx, dy float64, dir windowDrag, padX, padY, border, resizeMargin, topExtra int, docH, clipY float64) draggedCardLayout {
+	nx, ny, nw, nh := dragWindow(x, y, w, h, dx, dy, dir)
+	lay := layoutCardFrame(nx, ny, nw, nh, padX, padY, border, resizeMargin, topExtra, docH, clipY, true, clipY-(ny-y), nx-x, ny-y)
+	return lay
+}
+
+// layoutCardFrame pins the content view to (0,0,winW,winH) and places the
+// text from the top padding. reported is the clip origin after the frame
+// moved; originDX/originDY are the window-origin change. haveClip is false
+// on the first layout, which trusts reported.
+func layoutCardFrame(winX, winY, winW, winH float64, padX, padY, border, resizeMargin, topExtra int, docH, clipY float64, haveClip bool, reported, originDX, originDY float64) draggedCardLayout {
+	lay := draggedCardLayout{WinX: winX, WinY: winY, WinW: winW, WinH: winH}
+	lay.ContentX, lay.ContentY = 0, 0
+	lay.ContentW, lay.ContentH = winW, winH
+	left, top, right, bottom := config.TextFrameInsets(padX, padY, border, resizeMargin, topExtra)
+	lay.PadLeft, lay.PadTop, lay.PadRight, lay.PadBottom = left, top, right, bottom
+	tx, ty, tw, th, ok := TextContentFrame(int(math.Round(winW)), int(math.Round(winH)), padX, padY, border, resizeMargin, topExtra)
+	if !ok {
+		return lay
+	}
+	lay.OK = true
+	lay.TextX, lay.TextY, lay.TextW, lay.TextH = tx, ty, tw, th
+	inner := tw - 2*config.TextContainerInsetX
+	if inner < 1 {
+		inner = 1
+	}
+	lay.ContainerW = inner
+	lay.ScrollX = 0
+	lay.ScrollY = adjustedClipOrigin(clipY, haveClip, reported, originDX, originDY, docH, th)
+	return lay
 }
 
 // box is an axis-aligned rectangle in the same coordinate space as the frame

@@ -300,9 +300,8 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		win.Invalidate()
 		return layout.Width, layout.Height
 	})
-	// windowDidResize is delivered when a drag moves the bottom-left
-	// origin (bottom and left). A top or right drag changes only the
-	// size, so the content view's frame is the trigger for every edge.
+	// Origin changes (bottom, left) and size changes (top, right) both
+	// come through the content view's frame, and so do the corners.
 	cleanupFrame := macplace.FollowContentFrame(win.NativeHandle(), func() {
 		a.relayoutCardWindow(host, win)
 	})
@@ -448,11 +447,14 @@ func (a *App) commitCardFrame(host *cardUI, w, h int) config.CardLayout {
 }
 
 // relayoutCardWindow refits the card to the window's current frame. It is
-// the one path for a content-view size change and for windowDidResize.
+// the one path for a live resize step, the setFrame at the end of a resize,
+// and a content-view frame change. The content view is pinned first, so an
+// origin change cannot leave the text on the old bottom edge.
 func (a *App) relayoutCardWindow(host *cardUI, win *mygo.Window) {
-	if win == nil {
+	if host == nil || win == nil || host.syncing {
 		return
 	}
+	macplace.PinContentFrame(win.NativeHandle())
 	a.relayoutFromWindow(host, macplace.InLiveResize(win.NativeHandle()))
 }
 

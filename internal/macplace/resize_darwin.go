@@ -20,18 +20,20 @@ type NSSize struct {
 }
 
 var (
-	resizeLoadOnce  sync.Once
-	setObjectClass  func(id, objc.Class) objc.Class
-	setWindowFrame  func(id, objc.SEL, nsRect, bool)
-	setContentMin   func(id, objc.SEL, NSSize)
-	contentMinSize  func(id, objc.SEL) NSSize
-	setWindowAlpha  func(id, objc.SEL, float64)
-	windowAlpha     func(id, objc.SEL) float64
-	resizeClasses   = map[objc.Class]objc.Class{}
-	resizeSizes     = map[id]func(int, int) (int, int){}
-	frameWatchOnce  sync.Once
-	frameWatchClass objc.Class
-	frameWatches    = map[id]*contentFrameWatch{}
+	resizeLoadOnce   sync.Once
+	setObjectClass   func(id, objc.Class) objc.Class
+	setWindowFrame   func(id, objc.SEL, nsRect, bool)
+	setContentMin    func(id, objc.SEL, NSSize)
+	contentMinSize   func(id, objc.SEL) NSSize
+	setWindowAlpha   func(id, objc.SEL, float64)
+	windowAlpha      func(id, objc.SEL) float64
+	resizeClasses    = map[objc.Class]objc.Class{}
+	resizeSizes      = map[id]func(int, int) (int, int){}
+	frameWatchOnce   sync.Once
+	frameWatchClass  objc.Class
+	frameWatches     = map[id]*contentFrameWatch{}
+	frameWatchByView = map[id]*contentFrameWatch{}
+	windowRelayouts  = map[id]func(){}
 )
 
 // nsViewHeightSizable is AppKit's height-tracking bit. Width is already
@@ -39,11 +41,13 @@ var (
 // move the window origin leaves the view at its old size.
 const nsViewHeightSizable = 16
 
-// contentFrameWatch is one content view whose size changes relayout the card.
+// contentFrameWatch is one content view. An origin change and a size change
+// both relayout the card. Bottom and left drags move the origin; top and
+// right change only the size.
 type contentFrameWatch struct {
-	view         id
-	lastW, lastH float64
-	fn           func()
+	view, window               id
+	lastX, lastY, lastW, lastH float64
+	fn                         func()
 }
 
 // ConstrainWindowResize installs content-bound native resizing. Call on the
@@ -69,21 +73,21 @@ func ConstrainWindowResize(handle uintptr, size func(int, int) (int, int)) func(
 	return cleanup
 }
 
-// FollowContentFrame calls relayout when the content view's size changes.
-// Dragging the bottom or left edge moves the window origin, and AppKit
-// delivers windowDidResize for that. Dragging the top or right edge changes
-// only the size, and that notification is not what has been refreshing the
-// card. The content view's frame is the same signal for all four edges.
-// The view is made width- and height-sizable first: after the borderless
-// frame is written by hand, a size-only drag otherwise leaves the view, the
-// padding, and the text where they were.
+// FollowContentFrame calls relayout when the content view moves or resizes.
+// Every edge and corner comes through this frame: a bottom or left drag
+// changes the origin, a top or right drag changes only the size, and a
+// corner does both. The view is made width- and height-sizable first so a
+// size-only drag still grows it after the borderless frame was written by
+// hand. The relayout callback is also the path for the setFrame at the end
+// of a resize.
 func FollowContentFrame(handle uintptr, relayout func()) func() {
 	if handle == 0 || relayout == nil {
 		return func() {}
 	}
 	load()
 	ensureFrameWatch()
-	content := send(id(handle), "contentView")
+	window := id(handle)
+	content := send(window, "contentView")
 	if content == 0 {
 		return func() {}
 	}
@@ -94,12 +98,18 @@ func FollowContentFrame(handle uintptr, relayout func()) func() {
 		return func() {}
 	}
 	frame := msgRect(content, sel("frame"))
-	frameWatches[obs] = &contentFrameWatch{
-		view:  content,
-		lastW: frame.size.width,
-		lastH: frame.size.height,
-		fn:    relayout,
+	watch := &contentFrameWatch{
+		view:   content,
+		window: window,
+		lastX:  frame.origin.x,
+		lastY:  frame.origin.y,
+		lastW:  frame.size.width,
+		lastH:  frame.size.height,
+		fn:     relayout,
 	}
+	frameWatches[obs] = watch
+	frameWatchByView[content] = watch
+	windowRelayouts[window] = relayout
 	send(send(class("NSNotificationCenter"), "defaultCenter"), "addObserver:selector:name:object:",
 		uintptr(obs),
 		uintptr(sel("snipContentViewFrameChanged:")),
@@ -113,8 +123,30 @@ func FollowContentFrame(handle uintptr, relayout func()) func() {
 		closed = true
 		send(send(class("NSNotificationCenter"), "defaultCenter"), "removeObserver:", uintptr(obs))
 		delete(frameWatches, obs)
+		delete(frameWatchByView, content)
+		delete(windowRelayouts, window)
 		send(obs, "release")
 	}
+}
+
+// PinContentFrame puts the content view at (0,0) in the window, at the
+// window's size. A bottom or left drag moves the window origin and can
+// leave the view shifted inside it; the text then stays on the old bottom.
+func PinContentFrame(handle uintptr) {
+	if handle == 0 {
+		return
+	}
+	load()
+	window := id(handle)
+	content := send(window, "contentView")
+	if content == 0 {
+		return
+	}
+	if watch := frameWatchByView[content]; watch != nil {
+		pinContentView(watch)
+		return
+	}
+	syncContentFrame(window, content)
 }
 
 func ensureFrameWatch() {
@@ -142,12 +174,38 @@ func contentViewFrameChanged(self id, _ objc.SEL, note id) {
 		}
 	}
 	frame := msgRect(view, sel("frame"))
+	x, y := frame.origin.x, frame.origin.y
 	w, h := frame.size.width, frame.size.height
-	if !contentSizeChanged(watch.lastW, watch.lastH, w, h) {
+	if !contentFrameChanged(watch.lastX, watch.lastY, watch.lastW, watch.lastH, x, y, w, h) {
 		return
 	}
-	watch.lastW, watch.lastH = w, h
+	watch.lastX, watch.lastY, watch.lastW, watch.lastH = x, y, w, h
+	// Pin before the callback. The target is stored first, so the nested
+	// setFrame sees the same frame and does not relayout again.
+	pinContentView(watch)
 	watch.fn()
+}
+
+// pinContentView fills the window with the content view. The last frame is
+// the pin target before setFrame, so the notification this setFrame posts
+// is not a second relayout.
+func pinContentView(watch *contentFrameWatch) {
+	if watch == nil || watch.window == 0 || watch.view == 0 {
+		return
+	}
+	win := msgRect(watch.window, sel("frame"))
+	view := msgRect(watch.view, sel("frame"))
+	x, y, w, h, changed := contentFrameMatchingWindow(
+		win.size.width, win.size.height,
+		view.origin.x, view.origin.y, view.size.width, view.size.height,
+	)
+	if !usableFrame(0, 0, w, h) {
+		return
+	}
+	watch.lastX, watch.lastY, watch.lastW, watch.lastH = x, y, w, h
+	if changed {
+		syncContentFrame(watch.window, watch.view)
+	}
 }
 
 func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {
@@ -277,12 +335,21 @@ func windowDidEndLiveResize(self id, _ objc.SEL, note id) {
 		log.Printf("snip: reject setFrame path=windowDidEndLiveResize fromOrigin=(%g,%g) newOrigin=(%g,%g) rect=(%g,%g,%g,%g)",
 			frame.origin.x, frame.origin.y, x, y, x, y, fw, fh)
 	}
-	// Live resize already sized the scroll view, but it used to return
-	// without clamping the clip origin. A later window move called
-	// setFrame, and that display was the first time AppKit pulled the
-	// origin back to the top. This setFrame and a setFrame that changes
-	// nothing both run the same relayout, so the move is not required.
-	if h := cardTextForWindow(window); h != nil {
+	// Live steps, this setFrame, and a setFrame that changes nothing share
+	// one relayout. Pinning first keeps a bottom or left drag from leaving
+	// the content view on the old origin; the callback places the text and
+	// calls relayoutCard. A window that never installed the callback still
+	// reflows the text that is already on it.
+	if content := send(window, "contentView"); content != 0 {
+		if watch := frameWatchByView[content]; watch != nil {
+			pinContentView(watch)
+		} else {
+			syncContentFrame(window, content)
+		}
+	}
+	if fn := windowRelayouts[window]; fn != nil {
+		fn()
+	} else if h := cardTextForWindow(window); h != nil {
 		h.relayoutCard()
 	}
 }

@@ -180,6 +180,20 @@ func updateFade(clipY, clipH, docH, lineHeight float64) FadeMask {
 	return FadeMask{Band: band, Locations: locations, Alphas: alphas}
 }
 
+// adjustedClipOrigin is the flipped clip origin after a resize.
+// previous is the distance from the top of the document before the drag.
+// reported is what the clip view says after the frame moved. originDX and
+// originDY are the window-origin change. An unflipped clip adds that change
+// into bounds.origin, which scrolls the text when the bottom or left edge
+// moves. The text view is flipped, so an origin change keeps previous and
+// then clamps it. A drag that leaves the origin alone trusts reported.
+func adjustedClipOrigin(previous float64, havePrevious bool, reported, originDX, originDY, docH, clipH float64) float64 {
+	if havePrevious && (originDX != 0 || originDY != 0) {
+		return clampClipOrigin(previous, docH, clipH)
+	}
+	return clampClipOrigin(reported, docH, clipH)
+}
+
 // clampClipOrigin keeps a clip-view bounds origin inside the document.
 // The range is [0, max(0, docH-clipH)]. Content that fits, or a clip
 // already at the top, stays at 0, so a resize cannot leave the first line

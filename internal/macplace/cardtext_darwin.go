@@ -62,6 +62,17 @@ type CardText struct {
 	// edge is fading: that is computed on each call.
 	fade     id
 	watching bool
+
+	// clipY is the flipped scroll offset last chosen by a relayout, or by
+	// a user scroll while the window origin stayed put. originX/originY
+	// are the window origin at that time. A bottom or left drag changes
+	// the origin, and the clip view may add that delta as if it were
+	// unflipped; the next relayout keeps clipY instead.
+	haveClip   bool
+	clipY      float64
+	haveOrigin bool
+	originX    float64
+	originY    float64
 }
 
 var (
@@ -547,8 +558,31 @@ func cardTextDidChange(self id, _ objc.SEL, _ id) {
 
 func cardClipBoundsChanged(self id, _ objc.SEL, _ id) {
 	if h := cardTextFor(self); h != nil {
+		h.rememberUserClip()
 		h.updateFade()
 	}
+}
+
+// rememberUserClip stores a scroll that happened while the window origin
+// stayed put. A live resize, or a clip change that arrives together with a
+// new window origin, is the unflipped shift and is not a user scroll.
+func (h *CardText) rememberUserClip() {
+	if h == nil || h.closing || h.scroll == 0 || liveResize(h.window) {
+		return
+	}
+	if h.window != 0 && h.haveOrigin {
+		frame := msgRect(h.window, sel("frame"))
+		if frame.origin.x != h.originX || frame.origin.y != h.originY {
+			return
+		}
+	}
+	clip := send(h.scroll, "contentView")
+	if clip == 0 {
+		return
+	}
+	bounds := layerRect(clip, "bounds")
+	h.clipY = bounds.origin.y
+	h.haveClip = true
 }
 
 func (h *CardText) installClipWatch() {
@@ -605,6 +639,8 @@ func (h *CardText) relayoutCard() {
 
 // clampClip pulls the clip bounds origin into [0, max(0, docH-clipH)].
 // The text view is flipped, so that origin is the distance from the top.
+// There is no horizontal scroller, so x stays 0. A window-origin change
+// keeps the flipped offset from before the drag.
 func (h *CardText) clampClip() {
 	clip := send(h.scroll, "contentView")
 	if clip == 0 || setCGPoint == nil {
@@ -612,11 +648,25 @@ func (h *CardText) clampClip() {
 	}
 	document := layerRect(clip, "documentRect")
 	bounds := layerRect(clip, "bounds")
-	origin := clampClipOrigin(bounds.origin.y, document.size.height, bounds.size.height)
-	if origin == bounds.origin.y {
+	var originDX, originDY float64
+	if h.window != 0 {
+		frame := msgRect(h.window, sel("frame"))
+		if usableFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height) {
+			if h.haveOrigin {
+				originDX = frame.origin.x - h.originX
+				originDY = frame.origin.y - h.originY
+			}
+			h.originX, h.originY = frame.origin.x, frame.origin.y
+			h.haveOrigin = true
+		}
+	}
+	origin := adjustedClipOrigin(h.clipY, h.haveClip, bounds.origin.y, originDX, originDY, document.size.height, bounds.size.height)
+	h.clipY = origin
+	h.haveClip = true
+	if origin == bounds.origin.y && bounds.origin.x == 0 {
 		return
 	}
-	setCGPoint(clip, sel("scrollToPoint:"), nsPoint{x: bounds.origin.x, y: origin})
+	setCGPoint(clip, sel("scrollToPoint:"), nsPoint{x: 0, y: origin})
 	send(h.scroll, "reflectScrolledClipView:", uintptr(clip))
 }
 

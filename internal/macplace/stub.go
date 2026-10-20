@@ -27,6 +27,9 @@ func ConstrainWindowResize(_ uintptr, _ func(int, int) (int, int)) func() { retu
 // FollowContentFrame is a no-op off macOS.
 func FollowContentFrame(uintptr, func()) func() { return func() {} }
 
+// PinContentFrame is a no-op off macOS.
+func PinContentFrame(uintptr) {}
+
 func InLiveResize(handle uintptr) bool { return false }
 func UseFrameResizeCursors()           {}
 

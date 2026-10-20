@@ -1,8 +1,11 @@
 package macplace
 
 import (
+	"fmt"
 	"math"
 	"testing"
+
+	"github.com/0froq/snip/config"
 )
 
 func TestTopAndRightDragsRelayoutWithoutMovingTheOrigin(t *testing.T) {
@@ -33,6 +36,130 @@ func TestTopAndRightDragsRelayoutWithoutMovingTheOrigin(t *testing.T) {
 	}
 	if contentSizeChanged(w, h, 0, h) || contentSizeChanged(w, h, w, -1) {
 		t.Fatal("a failed size read relayouts")
+	}
+}
+
+func TestEightDragDirectionsPlaceTextFromTheTop(t *testing.T) {
+	const (
+		x, y, w, h                 = 40.0, 80.0, 300.0, 160.0
+		dx, dy                     = 48.0, 36.0
+		padX, padY, border, margin = 8, 6, 6, 10
+		topExtra                   = 24
+		docH                       = 500.0
+		clipY                      = 40.0
+	)
+	dirs := []struct {
+		name        string
+		dir         windowDrag
+		originMoves bool
+	}{
+		{name: "top", dir: windowDragTop, originMoves: false},
+		{name: "bottom", dir: windowDragBottom, originMoves: true},
+		{name: "left", dir: windowDragLeft, originMoves: true},
+		{name: "right", dir: windowDragRight, originMoves: false},
+		{name: "top-left", dir: windowDragTopLeft, originMoves: true},
+		{name: "top-right", dir: windowDragTopRight, originMoves: false},
+		{name: "bottom-left", dir: windowDragBottomLeft, originMoves: true},
+		{name: "bottom-right", dir: windowDragBottomRight, originMoves: true},
+	}
+	left, top, right, bottom := config.TextFrameInsets(padX, padY, border, margin, topExtra)
+	var topLay, bottomLay, leftLay, rightLay draggedCardLayout
+	for _, tc := range dirs {
+		lay := layoutDraggedCard(x, y, w, h, dx, dy, tc.dir, padX, padY, border, margin, topExtra, docH, clipY)
+		if !lay.OK {
+			t.Fatalf("%s: text frame was rejected", tc.name)
+		}
+		moved := lay.WinX != x || lay.WinY != y
+		if moved != tc.originMoves {
+			t.Fatalf("%s origin moved=%v, want %v (%v,%v) -> (%v,%v)", tc.name, moved, tc.originMoves, x, y, lay.WinX, lay.WinY)
+		}
+		if lay.ContentX != 0 || lay.ContentY != 0 || lay.ContentW != lay.WinW || lay.ContentH != lay.WinH {
+			t.Fatalf("%s content view (%v,%v,%v,%v), want (0,0,%v,%v)", tc.name, lay.ContentX, lay.ContentY, lay.ContentW, lay.ContentH, lay.WinW, lay.WinH)
+		}
+		if lay.PadLeft != left || lay.PadTop != top || lay.PadRight != right || lay.PadBottom != bottom {
+			t.Fatalf("%s padding (%d,%d,%d,%d), want (%d,%d,%d,%d)", tc.name, lay.PadLeft, lay.PadTop, lay.PadRight, lay.PadBottom, left, top, right, bottom)
+		}
+		if lay.TextX != float64(left) || lay.TextY != float64(bottom) {
+			t.Fatalf("%s text origin (%v,%v), want padding (%d,%d)", tc.name, lay.TextX, lay.TextY, left, bottom)
+		}
+		if lay.ContentH-(lay.TextY+lay.TextH) != float64(top) {
+			t.Fatalf("%s top gap %v, want %d", tc.name, lay.ContentH-(lay.TextY+lay.TextH), top)
+		}
+		if lay.TextW != lay.WinW-float64(left+right) || lay.TextH != lay.WinH-float64(top+bottom) {
+			t.Fatalf("%s text size (%v,%v)", tc.name, lay.TextW, lay.TextH)
+		}
+		if lay.ContainerW != lay.TextW-2*config.TextContainerInsetX {
+			t.Fatalf("%s container %v, text width %v", tc.name, lay.ContainerW, lay.TextW)
+		}
+		if lay.ScrollX != 0 {
+			t.Fatalf("%s horizontal scroll %v", tc.name, lay.ScrollX)
+		}
+		wantY := clampClipOrigin(clipY, docH, lay.TextH)
+		if lay.ScrollY != wantY {
+			t.Fatalf("%s scroll %v, want %v", tc.name, lay.ScrollY, wantY)
+		}
+		if tc.originMoves {
+			// The content view can slide by the window-origin delta before
+			// its size updates. That is the same relayout as a size change.
+			ox, oy := 0.0, 0.0
+			if lay.WinX != x {
+				ox = x - lay.WinX
+			}
+			if lay.WinY != y {
+				oy = y - lay.WinY
+			}
+			if contentSizeChanged(w, h, w, h) || !contentFrameChanged(0, 0, w, h, ox, oy, w, h) {
+				t.Fatalf("%s origin slide (%v,%v) was not a relayout", tc.name, ox, oy)
+			}
+			if lay.WinY != y {
+				shifted := clampClipOrigin(clipY-(lay.WinY-y), docH, lay.TextH)
+				if shifted == wantY || lay.ScrollY == shifted {
+					t.Fatalf("%s scroll followed the window origin (%v, kept %v)", tc.name, shifted, lay.ScrollY)
+				}
+			}
+		}
+		fits := layoutDraggedCard(x, y, w, h, dx, dy, tc.dir, padX, padY, border, margin, topExtra, 10, 80)
+		if !fits.OK || fits.ScrollY != 0 {
+			t.Fatalf("%s text that fits scrolled to %v", tc.name, fits.ScrollY)
+		}
+		switch tc.dir {
+		case windowDragTop:
+			topLay = lay
+		case windowDragBottom:
+			bottomLay = lay
+		case windowDragLeft:
+			leftLay = lay
+		case windowDragRight:
+			rightLay = lay
+		case windowDragTopLeft, windowDragTopRight, windowDragBottomLeft, windowDragBottomRight:
+		default:
+			panic(fmt.Sprintf("snip: unhandled window drag %d", int(tc.dir)))
+		}
+	}
+	assertSameText(t, "top/bottom", topLay, bottomLay)
+	assertSameText(t, "left/right", leftLay, rightLay)
+	if contentFrameChanged(0, 0, w, h, 0, 0, w, h) {
+		t.Fatal("a content view that already fills the window relayouts again")
+	}
+	if contentFrameChanged(0, 0, w, h, 0, 0, 0, h) || contentFrameChanged(0, 0, w, h, 0, 0, w, -1) {
+		t.Fatal("a failed size read relayouts")
+	}
+	// Same resulting size, whether or not the origin moved.
+	grown := layoutCardFrame(40, 40, 348, 196, padX, padY, border, margin, topExtra, docH, clipY, true, clipY+36, -48, -40)
+	if !grown.OK || grown.ContentX != 0 || grown.ContentY != 0 || grown.ScrollY != clampClipOrigin(clipY, docH, grown.TextH) {
+		t.Fatalf("pinned grown card %+v", grown)
+	}
+}
+
+func assertSameText(t *testing.T, name string, a, b draggedCardLayout) {
+	t.Helper()
+	if a.TextX != b.TextX || a.TextY != b.TextY || a.TextW != b.TextW || a.TextH != b.TextH ||
+		a.ContainerW != b.ContainerW || a.ScrollX != b.ScrollX || a.ScrollY != b.ScrollY ||
+		a.PadTop != b.PadTop || a.ContentW != b.ContentW || a.ContentH != b.ContentH {
+		t.Fatalf("%s placed text differently: %+v vs %+v", name, a, b)
+	}
+	if a.WinX == b.WinX && a.WinY == b.WinY {
+		t.Fatalf("%s windows did not differ in origin", name)
 	}
 }
 

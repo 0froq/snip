@@ -5,6 +5,37 @@ import (
 	"testing"
 )
 
+func TestTopAndRightDragsRelayoutWithoutMovingTheOrigin(t *testing.T) {
+	const x, y, w, h = 40.0, 80.0, 300.0, 160.0
+	cases := []struct {
+		name        string
+		edge        windowEdge
+		originMoves bool
+	}{
+		{name: "top", edge: windowEdgeTop, originMoves: false},
+		{name: "right", edge: windowEdgeRight, originMoves: false},
+		{name: "bottom", edge: windowEdgeBottom, originMoves: true},
+		{name: "left", edge: windowEdgeLeft, originMoves: true},
+	}
+	for _, tc := range cases {
+		nx, ny, nw, nh := dragWindowEdge(x, y, w, h, 36, tc.edge)
+		if !contentSizeChanged(w, h, nw, nh) {
+			t.Fatalf("%s did not change the size (%v,%v) -> (%v,%v)", tc.name, w, h, nw, nh)
+		}
+		moved := nx != x || ny != y
+		if moved != tc.originMoves {
+			t.Fatalf("%s origin moved=%v, want %v (%v,%v) -> (%v,%v)", tc.name, moved, tc.originMoves, x, y, nx, ny)
+		}
+	}
+	// Dragging the window keeps the size. That is not a relayout.
+	if contentSizeChanged(w, h, w, h) {
+		t.Fatal("an origin-only move relayouts")
+	}
+	if contentSizeChanged(w, h, 0, h) || contentSizeChanged(w, h, w, -1) {
+		t.Fatal("a failed size read relayouts")
+	}
+}
+
 func TestSnapResizeFrameKeepsTopAndLeft(t *testing.T) {
 	visible := box{X: 0, Y: 0, W: 10000, H: 10000}
 	x, y, w, h, ok := snapResizeFrame(100, 200, 320, 180, 300, 40, 1, 1, visible)

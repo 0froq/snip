@@ -1,6 +1,47 @@
 package macplace
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
+
+// windowEdge is one side of a window in AppKit's bottom-left coordinates.
+type windowEdge int
+
+const (
+	windowEdgeLeft windowEdge = iota
+	windowEdgeRight
+	windowEdgeBottom
+	windowEdgeTop
+)
+
+// dragWindowEdge is the frame after growing one edge by delta points.
+// Left and bottom move the origin. Top and right change only the size.
+func dragWindowEdge(x, y, w, h, delta float64, edge windowEdge) (float64, float64, float64, float64) {
+	switch edge {
+	case windowEdgeLeft:
+		return x - delta, y, w + delta, h
+	case windowEdgeRight:
+		return x, y, w + delta, h
+	case windowEdgeBottom:
+		return x, y - delta, w, h + delta
+	case windowEdgeTop:
+		return x, y, w, h + delta
+	default:
+		panic(fmt.Sprintf("snip: unhandled window edge %d", int(edge)))
+	}
+}
+
+// contentSizeChanged reports that the content view's size changed.
+// A top or right drag keeps the window origin and still changes the size,
+// so the relayout decision is the size alone. A move, which changes only
+// the origin, does not. A non-positive read is not a size.
+func contentSizeChanged(oldW, oldH, newW, newH float64) bool {
+	if newW <= 0 || newH <= 0 {
+		return false
+	}
+	return newW != oldW || newH != oldH
+}
 
 // box is an axis-aligned rectangle in the same coordinate space as the frame
 // it is compared with. AppKit frames are bottom-left; mygo frames are top-left.

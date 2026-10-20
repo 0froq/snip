@@ -277,7 +277,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		// this for the whole live resize left the previous multi-line string
 		// painted into a one-line window when the last willResize ran after
 		// inLiveResize had already gone false.
-		a.relayoutFromWindow(host, macplace.InLiveResize(win.NativeHandle()))
+		a.relayoutCardWindow(host, win)
 	})
 	macplace.UseFrameResizeCursors()
 	macplace.PreventWindowFocus(win.NativeHandle())
@@ -300,7 +300,14 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 		win.Invalidate()
 		return layout.Width, layout.Height
 	})
+	// windowDidResize is delivered when a drag moves the bottom-left
+	// origin (bottom and left). A top or right drag changes only the
+	// size, so the content view's frame is the trigger for every edge.
+	cleanupFrame := macplace.FollowContentFrame(win.NativeHandle(), func() {
+		a.relayoutCardWindow(host, win)
+	})
 	win.OnClosed(func() {
+		cleanupFrame()
 		cleanupResize()
 		if host.textHost != nil {
 			host.textHost.Close()
@@ -438,6 +445,15 @@ func (a *App) commitCardFrame(host *cardUI, w, h int) config.CardLayout {
 		log.Printf("snip: resize frame %dx%d is below one line; snapping up", w, h)
 	}
 	return a.fitCardSize(host, w, h)
+}
+
+// relayoutCardWindow refits the card to the window's current frame. It is
+// the one path for a content-view size change and for windowDidResize.
+func (a *App) relayoutCardWindow(host *cardUI, win *mygo.Window) {
+	if win == nil {
+		return
+	}
+	a.relayoutFromWindow(host, macplace.InLiveResize(win.NativeHandle()))
 }
 
 // relayoutFromWindow makes the drawn text match win's frame and, once the

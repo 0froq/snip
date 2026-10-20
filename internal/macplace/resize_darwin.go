@@ -20,16 +20,31 @@ type NSSize struct {
 }
 
 var (
-	resizeLoadOnce sync.Once
-	setObjectClass func(id, objc.Class) objc.Class
-	setWindowFrame func(id, objc.SEL, nsRect, bool)
-	setContentMin  func(id, objc.SEL, NSSize)
-	contentMinSize func(id, objc.SEL) NSSize
-	setWindowAlpha func(id, objc.SEL, float64)
-	windowAlpha    func(id, objc.SEL) float64
-	resizeClasses  = map[objc.Class]objc.Class{}
-	resizeSizes    = map[id]func(int, int) (int, int){}
+	resizeLoadOnce  sync.Once
+	setObjectClass  func(id, objc.Class) objc.Class
+	setWindowFrame  func(id, objc.SEL, nsRect, bool)
+	setContentMin   func(id, objc.SEL, NSSize)
+	contentMinSize  func(id, objc.SEL) NSSize
+	setWindowAlpha  func(id, objc.SEL, float64)
+	windowAlpha     func(id, objc.SEL) float64
+	resizeClasses   = map[objc.Class]objc.Class{}
+	resizeSizes     = map[id]func(int, int) (int, int){}
+	frameWatchOnce  sync.Once
+	frameWatchClass objc.Class
+	frameWatches    = map[id]*contentFrameWatch{}
 )
+
+// nsViewHeightSizable is AppKit's height-tracking bit. Width is already
+// nsViewWidthSizable. A content view needs both, or a drag that does not
+// move the window origin leaves the view at its old size.
+const nsViewHeightSizable = 16
+
+// contentFrameWatch is one content view whose size changes relayout the card.
+type contentFrameWatch struct {
+	view         id
+	lastW, lastH float64
+	fn           func()
+}
 
 // ConstrainWindowResize installs content-bound native resizing. Call on the
 // main thread, after creating the window, and call the returned cleanup on
@@ -52,6 +67,87 @@ func ConstrainWindowResize(handle uintptr, size func(int, int) (int, int)) func(
 	send(w, "setDelegate:", 0)
 	send(w, "setDelegate:", uintptr(delegate))
 	return cleanup
+}
+
+// FollowContentFrame calls relayout when the content view's size changes.
+// Dragging the bottom or left edge moves the window origin, and AppKit
+// delivers windowDidResize for that. Dragging the top or right edge changes
+// only the size, and that notification is not what has been refreshing the
+// card. The content view's frame is the same signal for all four edges.
+// The view is made width- and height-sizable first: after the borderless
+// frame is written by hand, a size-only drag otherwise leaves the view, the
+// padding, and the text where they were.
+func FollowContentFrame(handle uintptr, relayout func()) func() {
+	if handle == 0 || relayout == nil {
+		return func() {}
+	}
+	load()
+	ensureFrameWatch()
+	content := send(id(handle), "contentView")
+	if content == 0 {
+		return func() {}
+	}
+	send(content, "setAutoresizingMask:", nsViewWidthSizable|nsViewHeightSizable)
+	send(content, "setPostsFrameChangedNotifications:", 1)
+	obs := send(send(id(frameWatchClass), "alloc"), "init")
+	if obs == 0 {
+		return func() {}
+	}
+	frame := msgRect(content, sel("frame"))
+	frameWatches[obs] = &contentFrameWatch{
+		view:  content,
+		lastW: frame.size.width,
+		lastH: frame.size.height,
+		fn:    relayout,
+	}
+	send(send(class("NSNotificationCenter"), "defaultCenter"), "addObserver:selector:name:object:",
+		uintptr(obs),
+		uintptr(sel("snipContentViewFrameChanged:")),
+		uintptr(nsString("NSViewFrameDidChangeNotification")),
+		uintptr(content))
+	var closed bool
+	return func() {
+		if closed {
+			return
+		}
+		closed = true
+		send(send(class("NSNotificationCenter"), "defaultCenter"), "removeObserver:", uintptr(obs))
+		delete(frameWatches, obs)
+		send(obs, "release")
+	}
+}
+
+func ensureFrameWatch() {
+	frameWatchOnce.Do(func() {
+		var err error
+		frameWatchClass, err = objc.RegisterClass("SnipContentFrameWatch", objc.GetClass("NSObject"), nil, nil, []objc.MethodDef{{
+			Cmd: objc.RegisterName("snipContentViewFrameChanged:"),
+			Fn:  contentViewFrameChanged,
+		}})
+		if err != nil {
+			panic("macplace: " + err.Error())
+		}
+	})
+}
+
+func contentViewFrameChanged(self id, _ objc.SEL, note id) {
+	watch := frameWatches[self]
+	if watch == nil || watch.fn == nil {
+		return
+	}
+	view := watch.view
+	if note != 0 {
+		if object := send(note, "object"); object != 0 {
+			view = object
+		}
+	}
+	frame := msgRect(view, sel("frame"))
+	w, h := frame.size.width, frame.size.height
+	if !contentSizeChanged(watch.lastW, watch.lastH, w, h) {
+		return
+	}
+	watch.lastW, watch.lastH = w, h
+	watch.fn()
 }
 
 func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {

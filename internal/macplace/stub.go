@@ -24,6 +24,9 @@ func DisplayWindow(uintptr) {}
 // ConstrainWindowResize is a no-op off macOS.
 func ConstrainWindowResize(_ uintptr, _ func(int, int) (int, int)) func() { return func() {} }
 
+// FollowContentFrame is a no-op off macOS.
+func FollowContentFrame(uintptr, func()) func() { return func() {} }
+
 func InLiveResize(handle uintptr) bool { return false }
 func UseFrameResizeCursors()           {}
 

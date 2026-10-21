@@ -7,10 +7,14 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// hoverPollInterval is how often the global cursor is sampled. A hidden
-// card receives no mouse events, and a pointer that rests still does not
-// generate moves, so the dwell has to be counted from this poll.
-const hoverPollInterval = 80 * time.Millisecond
+const (
+	// hoverPollInterval is how often the global cursor is sampled. A hidden
+	// card receives no mouse events, and a pointer that rests still does not
+	// generate moves, so the dwell has to be counted from this poll.
+	hoverPollInterval = 80 * time.Millisecond
+	// hoverFadeDuration is how long a hover hide or restore takes to fade.
+	hoverFadeDuration = 200 * time.Millisecond
+)
 
 // HoverState is one card's dwell. InsideSince is when the pointer entered
 // the frame. It stays put while the pointer moves inside that frame.
@@ -94,34 +98,77 @@ func pointInFrame(px, py, x, y, w, h int) bool {
 	return px >= x && py >= y && px < x+w && py < y+h
 }
 
-// opacityUpdateAllowed is false while a hide, hide-all, or hover-hide owns
-// the window alpha.
-func opacityUpdateAllowed(hiding, orderedOut, hoverHidden, cardsShown bool) bool {
-	return cardsShown && !hiding && !orderedOut && !hoverHidden
+// opacityUpdateAllowed is false while a hide, hide-all, or hover fade owns
+// the window alpha. A running fade must not be snapped by a selection change.
+func opacityUpdateAllowed(hiding, orderedOut, hoverHidden, hoverFading, cardsShown bool) bool {
+	return cardsShown && !hiding && !orderedOut && !hoverHidden && !hoverFading
 }
 
-// hoverWindow is the slice of a card window hover-hide is allowed to touch.
-// It has no Show or Focus, so a restore cannot take keyboard focus.
-type hoverWindow interface {
-	SetOpacity(float64)
+// hoverFader fades alpha. It has no Show or Focus, so a restore cannot
+// take keyboard focus.
+type hoverFader interface {
 	SetIgnoreMouseEvents(bool)
+	FadeOpacity(alpha float64, d time.Duration)
 }
 
-// applyHoverEffect hides by ignoring the mouse and dropping alpha, or
-// restores the configured alpha and takes mouse events again.
-func applyHoverEffect(win hoverWindow, effect HoverEffect, opacity float64) {
+// applyHoverFade hides by ignoring the mouse and fading alpha to 0, or
+// restores mouse events and fades back to the configured alpha. The ignore
+// flag changes at the start of the fade. A later call replaces an in-flight
+// fade instead of waiting for it.
+func applyHoverFade(win hoverFader, effect HoverEffect, opacity float64, d time.Duration) {
 	if win == nil {
 		return
 	}
 	if effect.Hide {
 		win.SetIgnoreMouseEvents(true)
-		win.SetOpacity(0)
+		win.FadeOpacity(0, d)
 		return
 	}
 	if effect.Restore {
 		win.SetIgnoreMouseEvents(false)
-		win.SetOpacity(opacity)
+		win.FadeOpacity(opacity, d)
 	}
+}
+
+type windowAlphaFader struct {
+	win *mygo.Window
+}
+
+func (f windowAlphaFader) SetIgnoreMouseEvents(v bool) {
+	if f.win != nil {
+		f.win.SetIgnoreMouseEvents(v)
+	}
+}
+
+func (f windowAlphaFader) FadeOpacity(alpha float64, d time.Duration) {
+	if f.win != nil {
+		macplace.AnimateWindowAlpha(f.win.NativeHandle(), alpha, d)
+	}
+}
+
+func (h *cardUI) beginHoverFade() uint64 {
+	h.hoverFadeGen++
+	h.hoverFading = true
+	return h.hoverFadeGen
+}
+
+// finishHoverFade marks the fade idle only when gen is still the latest.
+// An older fade that a pointer flip replaced must not clear the new one.
+func (h *cardUI) finishHoverFade(gen uint64) {
+	if h == nil || h.hoverFadeGen != gen {
+		return
+	}
+	h.hoverFading = false
+}
+
+// cancelHoverFade drops an in-flight hover fade so hide-all and show can
+// set alpha themselves.
+func (h *cardUI) cancelHoverFade() {
+	if h == nil {
+		return
+	}
+	h.hoverFadeGen++
+	h.hoverFading = false
 }
 
 func (h *cardUI) hoverBlock(buttonDown bool) bool {
@@ -209,7 +256,11 @@ func (a *App) pollHover() {
 		h.hover = next
 		if effect.Hide || effect.Restore {
 			a.prepareCardOpacity(h)
-			applyHoverEffect(h.win, effect, h.windowOpacity())
+			gen := h.beginHoverFade()
+			applyHoverFade(windowAlphaFader{h.win}, effect, h.windowOpacity(), hoverFadeDuration)
+			time.AfterFunc(hoverFadeDuration, func() {
+				mygo.RunOnMain(func() { h.finishHoverFade(gen) })
+			})
 		}
 	}
 	a.ensureHoverPoll()

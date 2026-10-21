@@ -51,11 +51,15 @@ func (h *cardUI) showWindow(win noteWindow) {
 	h.hideGen++ // Cancel any pending animated hide, including its posted callback.
 	h.hiding = false
 	h.orderedOut = false
+	h.cancelHoverFade()
 	// Paint the full note while the window is still ordered out (hide leaves
 	// it at alpha 0) and only then order it in and reveal it at the
-	// configured alpha. The hide path still drops alpha to 0.
+	// configured alpha. The hide path still drops alpha to 0. Stop a hover
+	// fade first so it cannot land on top of that alpha.
 	win.Invalidate()
-	macplace.DisplayWindow(win.NativeHandle())
+	handle := win.NativeHandle()
+	macplace.StopWindowAlphaAnimation(handle)
+	macplace.DisplayWindow(handle)
 	win.ShowInactive()
 	win.SetOpacity(h.windowOpacity())
 }
@@ -82,7 +86,7 @@ func (h *cardUI) windowOpacity() float64 {
 // applyShownOpacity sets the window alpha of a card that is on screen.
 // A card that hide ordered out stays at alpha 0 so the hide is not undone.
 func (a *App) applyShownOpacity(h *cardUI) {
-	if h == nil || h.win == nil || !opacityUpdateAllowed(h.hiding, h.orderedOut, h.hover.Hidden, a.cardsShown()) {
+	if h == nil || h.win == nil || !opacityUpdateAllowed(h.hiding, h.orderedOut, h.hover.Hidden, h.hoverFading, a.cardsShown()) {
 		return
 	}
 	a.prepareCardOpacity(h)

@@ -2,7 +2,11 @@
 
 package macplace
 
-import "github.com/0froq/snip/config"
+import (
+	"time"
+
+	"github.com/0froq/snip/config"
+)
 
 // Supported is false off macOS.
 const Supported = false
@@ -37,6 +41,12 @@ func InLiveResize(handle uintptr) bool { return false }
 
 // MouseButtonsDown reports whether a mouse button is held. It is false off macOS.
 func MouseButtonsDown() bool { return false }
+
+// AnimateWindowAlpha is a no-op off macOS.
+func AnimateWindowAlpha(uintptr, float64, time.Duration) {}
+
+// StopWindowAlphaAnimation is a no-op off macOS.
+func StopWindowAlphaAnimation(uintptr) {}
 
 func UseFrameResizeCursors() {}
 

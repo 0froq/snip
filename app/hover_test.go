@@ -161,32 +161,65 @@ func TestPointInFrame(t *testing.T) {
 }
 
 func TestOpacityUpdateSkipsHoverAndHideAll(t *testing.T) {
-	if !opacityUpdateAllowed(false, false, false, true) {
+	if !opacityUpdateAllowed(false, false, false, false, true) {
 		t.Fatal("shown card")
 	}
-	if opacityUpdateAllowed(true, false, false, true) ||
-		opacityUpdateAllowed(false, true, false, true) ||
-		opacityUpdateAllowed(false, false, true, true) ||
-		opacityUpdateAllowed(false, false, false, false) {
+	if opacityUpdateAllowed(true, false, false, false, true) ||
+		opacityUpdateAllowed(false, true, false, false, true) ||
+		opacityUpdateAllowed(false, false, true, false, true) ||
+		opacityUpdateAllowed(false, false, false, true, true) ||
+		opacityUpdateAllowed(false, false, false, false, false) {
 		t.Fatal("hide owns the alpha")
 	}
 }
 
-func TestApplyHoverEffectDoesNotOrderOrFocus(t *testing.T) {
+func TestApplyHoverFadeDoesNotOrderOrFocus(t *testing.T) {
 	w := &recordingHoverWindow{}
-	applyHoverEffect(w, HoverEffect{Hide: true}, 0.4)
-	if !reflect.DeepEqual(w.calls, []string{"ignore true", "opacity 0"}) {
+	applyHoverFade(w, HoverEffect{Hide: true}, 0.4, hoverFadeDuration)
+	if !reflect.DeepEqual(w.calls, []string{"ignore true", "fade 0 200ms"}) {
 		t.Fatalf("hide calls %v", w.calls)
 	}
 	w.calls = nil
-	applyHoverEffect(w, HoverEffect{Restore: true}, 0.4)
-	if !reflect.DeepEqual(w.calls, []string{"ignore false", "opacity 0.4"}) {
+	applyHoverFade(w, HoverEffect{Restore: true}, 0.4, hoverFadeDuration)
+	if !reflect.DeepEqual(w.calls, []string{"ignore false", "fade 0.4 200ms"}) {
 		t.Fatalf("restore calls %v", w.calls)
 	}
 	w.calls = nil
-	applyHoverEffect(w, HoverEffect{}, 1)
+	applyHoverFade(w, HoverEffect{}, 1, hoverFadeDuration)
 	if len(w.calls) != 0 {
 		t.Fatalf("no effect wrote %v", w.calls)
+	}
+}
+
+func TestHoverFadeCancelSupersedes(t *testing.T) {
+	var h cardUI
+	first := h.beginHoverFade()
+	if !h.hoverFading || first == 0 {
+		t.Fatalf("fade gen %d fading %v", first, h.hoverFading)
+	}
+	second := h.beginHoverFade()
+	h.finishHoverFade(first)
+	if !h.hoverFading || h.hoverFadeGen != second {
+		t.Fatalf("older fade finished the newer one: %+v", h)
+	}
+	h.finishHoverFade(second)
+	if h.hoverFading {
+		t.Fatal("latest fade should finish")
+	}
+	h.beginHoverFade()
+	h.cancelHoverFade()
+	if h.hoverFading {
+		t.Fatal("cancel should drop the fade")
+	}
+	h.finishHoverFade(second)
+	if h.hoverFading {
+		t.Fatal("a cancelled fade must stay idle")
+	}
+}
+
+func TestHoverFadeDuration(t *testing.T) {
+	if hoverFadeDuration != 200*time.Millisecond {
+		t.Fatal(hoverFadeDuration)
 	}
 }
 
@@ -200,12 +233,18 @@ type recordingHoverWindow struct {
 	calls []string
 }
 
-func (w *recordingHoverWindow) SetOpacity(v float64) {
-	if v == 0 {
-		w.calls = append(w.calls, "opacity 0")
-		return
+func (w *recordingHoverWindow) FadeOpacity(alpha float64, d time.Duration) {
+	w.calls = append(w.calls, "fade "+formatFade(alpha, d))
+}
+
+func formatFade(alpha float64, d time.Duration) string {
+	if alpha == 0 && d == 200*time.Millisecond {
+		return "0 200ms"
 	}
-	w.calls = append(w.calls, "opacity 0.4")
+	if alpha == 0.4 && d == 200*time.Millisecond {
+		return "0.4 200ms"
+	}
+	return "other"
 }
 
 func (w *recordingHoverWindow) SetIgnoreMouseEvents(v bool) {

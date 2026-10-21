@@ -118,6 +118,10 @@ type cardUI struct {
 	opacityActive   float64
 	opacityInactive float64
 	hover           HoverState
+	// hoverFadeGen identifies the hover fade in flight. A newer fade or a
+	// cancel makes an older completion a no-op.
+	hoverFadeGen uint64
+	hoverFading  bool
 	// menuOpen is true while the card context menu is tracking.
 	menuOpen bool
 }
@@ -797,6 +801,10 @@ func (a *App) hideCard(h *cardUI) {
 	h.hiding = false
 	h.orderedOut = true
 	h.hover = HoverState{}
+	h.cancelHoverFade()
+	// Stop a hover fade before hide-all sets alpha, so the fade cannot
+	// write over this drop. Hide itself still snaps to 0 and orders out.
+	macplace.StopWindowAlphaAnimation(h.win.NativeHandle())
 	// Drop the whole window before any repaint. Fading or clearing the text
 	// first left the rounded background on screen with the note gone.
 	// Mouse events are taken again so a later show is not click-through.
@@ -1290,8 +1298,10 @@ func (a *App) applyConfig(next config.Config) {
 			h.win.SetSize(width, height)
 		}
 		a.syncCardHeight(h)
-		if h.hover.Hidden {
+		if h.hover.Hidden || h.hoverFading {
 			h.hover = HoverState{}
+			h.cancelHoverFade()
+			macplace.StopWindowAlphaAnimation(h.win.NativeHandle())
 			h.win.SetIgnoreMouseEvents(false)
 		}
 		a.applyShownOpacity(h)

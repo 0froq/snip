@@ -148,6 +148,14 @@ func frontmostPID() int32 {
 	return int32(sendInt(app, "processIdentifier"))
 }
 
+// MouseButtonsDown reports whether any mouse button is currently held.
+// pressedMouseButtons is an integer bitmask, not a struct, so it is safe
+// to read through the integer message send.
+func MouseButtonsDown() bool {
+	load()
+	return sendInt(class("NSEvent"), "pressedMouseButtons") != 0
+}
+
 func cursorPoint() (int, int, bool) {
 	p := msgPoint(class("NSEvent"), sel("mouseLocation"))
 	y, ok := FlipAppKitY(p.y, primaryScreenHeight())

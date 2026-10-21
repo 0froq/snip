@@ -21,6 +21,10 @@ double_click_paste = true
 # Both are 0.2–1. 1 is fully opaque.
 active_opacity = 1.0
 inactive_opacity = 1.0
+# hover_hide drops a card after the pointer has stayed inside its frame.
+# The delay counts while the pointer is inside, whether or not it moves.
+hover_hide = true
+hover_hide_delay_ms = 1500
 padding_x = 10
 padding_y = 6
 # font_family: system sans, then a CJK sans for glyphs it lacks

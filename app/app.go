@@ -28,7 +28,10 @@ type App struct {
 	selected int
 	// visible is the global hide/show state. Cards start shown. The flag is
 	// not persisted.
-	visible bool
+	// hoverStop ends the cursor poll. It is nil while the poll is stopped
+	// and is only touched on the main thread.
+	hoverStop chan struct{}
+	visible   bool
 
 	mu               sync.Mutex
 	lastChange       int
@@ -114,6 +117,9 @@ type cardUI struct {
 	// copied onto the card before it is shown or its selection changes.
 	opacityActive   float64
 	opacityInactive float64
+	hover           HoverState
+	// menuOpen is true while the card context menu is tracking.
+	menuOpen bool
 }
 
 // New creates the application state.
@@ -336,6 +342,7 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	a.showCard(host)
 	a.refreshSelection()
 	a.relayoutLeader()
+	a.ensureHoverPoll()
 }
 
 func (a *App) applyWindowFlags(win *mygo.Window) {
@@ -756,6 +763,7 @@ func (a *App) setAllVisible(show bool) {
 				a.hideCard(h)
 			}
 		}
+		a.ensureHoverPoll()
 	})
 }
 
@@ -788,8 +796,11 @@ func (a *App) hideCard(h *cardUI) {
 	h.hideGen++
 	h.hiding = false
 	h.orderedOut = true
+	h.hover = HoverState{}
 	// Drop the whole window before any repaint. Fading or clearing the text
 	// first left the rounded background on screen with the note gone.
+	// Mouse events are taken again so a later show is not click-through.
+	h.win.SetIgnoreMouseEvents(false)
 	h.win.SetOpacity(0)
 	h.win.Hide()
 	a.hideBadge(h)
@@ -986,7 +997,9 @@ func (a *App) openCardMenu(host *cardUI, win *mygo.Window) {
 	w, h := win.Size()
 	sp := mygo.Screen.CursorScreenPoint()
 	wx, wy := win.Position()
+	host.menuOpen = true
 	host.textHost.ShowMenu(sp.X-wx, sp.Y-wy, w, h)
+	host.menuOpen = false
 }
 
 func (a *App) cardMenuAction(host *cardUI, action macplace.CardMenuAction) {
@@ -1194,6 +1207,7 @@ func (a *App) detachCard(id string) {
 	}
 	a.refreshSelection()
 	a.relayoutLeader()
+	a.ensureHoverPoll()
 }
 
 func (a *App) secrets() secrets.Config {
@@ -1276,9 +1290,14 @@ func (a *App) applyConfig(next config.Config) {
 			h.win.SetSize(width, height)
 		}
 		a.syncCardHeight(h)
+		if h.hover.Hidden {
+			h.hover = HoverState{}
+			h.win.SetIgnoreMouseEvents(false)
+		}
 		a.applyShownOpacity(h)
 		h.win.Invalidate()
 	}
+	a.ensureHoverPoll()
 }
 
 // LoadConfigFromDefaultPaths loads config.toml from cwd or the user config dir.

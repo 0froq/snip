@@ -36,6 +36,8 @@ type Form struct {
 	DoubleClickPaste       bool
 	ActiveOpacity          string
 	InactiveOpacity        string
+	HoverHide              bool
+	HoverHideDelayMs       string
 	CaptureMode            string
 	Blocklist              []string
 	Allowlist              []string
@@ -90,6 +92,8 @@ func FormFrom(c Config) Form {
 		DoubleClickPaste:       c.Card.DoubleClickPaste,
 		ActiveOpacity:          formatOpacity(c.Card.EffectiveActiveOpacity()),
 		InactiveOpacity:        formatOpacity(c.Card.EffectiveInactiveOpacity()),
+		HoverHide:              c.Card.HoverHide,
+		HoverHideDelayMs:       strconv.Itoa(c.Card.EffectiveHoverHideDelayMs()),
 		CaptureMode:            c.Capture.EffectiveMode(),
 		Blocklist:              append([]string(nil), c.Capture.Blocklist...),
 		Allowlist:              append([]string(nil), c.Capture.Allowlist...),
@@ -182,6 +186,10 @@ func (f Form) Parse(prev Config) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.Card.InactiveOpacity, err = opacityValue(f.InactiveOpacity, "Inactive opacity"); err != nil {
+		return Config{}, err
+	}
+	cfg.Card.HoverHide = f.HoverHide
+	if cfg.Card.HoverHideDelayMs, err = positiveInt(f.HoverHideDelayMs, "Hover hide delay"); err != nil {
 		return Config{}, err
 	}
 	mode, err := NormalizeCaptureMode(f.CaptureMode)

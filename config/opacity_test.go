@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestOpacityDefaultsAndClamp(t *testing.T) {
@@ -52,6 +53,45 @@ func TestOpacityFormRoundTrip(t *testing.T) {
 	}
 	if got.Card.OpacityFor(true) != 1 || got.Card.OpacityFor(false) != 1 {
 		t.Fatalf("edge %+v", got.Card)
+	}
+}
+
+func TestHoverHideDefaults(t *testing.T) {
+	if !Default().Card.HoverHide || Default().Card.EffectiveHoverHideDelayMs() != DefaultHoverHideDelayMs {
+		t.Fatalf("default %+v", Default().Card)
+	}
+	var blank Card
+	if blank.HoverHide {
+		t.Fatal("zero value is not the file default; Load starts from Default")
+	}
+	if blank.HoverHideDelay() != 1500*time.Millisecond {
+		t.Fatal(blank.HoverHideDelay())
+	}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("max_cards = 3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Card.HoverHide || got.Card.HoverHideDelayMs != DefaultHoverHideDelayMs {
+		t.Fatalf("missing keys %+v", got.Card)
+	}
+	off := Default()
+	off.Card.HoverHide = false
+	off.Card.HoverHideDelayMs = 800
+	round, err := FormFrom(off).Parse(off)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if round.Card.HoverHide || round.Card.HoverHideDelayMs != 800 {
+		t.Fatalf("round trip %+v", round.Card)
+	}
+	f := FormFrom(off)
+	f.HoverHideDelayMs = "0"
+	if _, err := f.Parse(off); err == nil {
+		t.Fatal("delay must be greater than zero")
 	}
 }
 

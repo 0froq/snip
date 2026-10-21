@@ -55,6 +55,11 @@ type Card struct {
 	// every other card. Both are 0.2–1. Zero means the default of 1.
 	ActiveOpacity   float64 `toml:"active_opacity"`
 	InactiveOpacity float64 `toml:"inactive_opacity"`
+	// HoverHide drops a card to alpha 0 after the pointer has rested inside
+	// its frame. HoverHideDelayMs is how long that rest lasts. Zero delay
+	// means the default.
+	HoverHide        bool `toml:"hover_hide"`
+	HoverHideDelayMs int  `toml:"hover_hide_delay_ms"`
 }
 
 // Leader controls timing and the which-key panel. The leader key itself
@@ -138,6 +143,8 @@ func Default() Config {
 			DoubleClickPaste: true,
 			ActiveOpacity:    1,
 			InactiveOpacity:  1,
+			HoverHide:        true,
+			HoverHideDelayMs: DefaultHoverHideDelayMs,
 		},
 		Bindings: DefaultBindings(),
 		Capture:  Capture{Mode: CaptureAll},
@@ -375,6 +382,24 @@ func clampOpacity(v float64) float64 {
 		return OpacityMax
 	}
 	return v
+}
+
+// DefaultHoverHideDelayMs is how long the pointer must stay inside a card
+// before that card hides itself.
+const DefaultHoverHideDelayMs = 1500
+
+// EffectiveHoverHideDelayMs is the dwell time. An unset value keeps the
+// default so an older config file does not hide cards immediately.
+func (c Card) EffectiveHoverHideDelayMs() int {
+	if c.HoverHideDelayMs <= 0 {
+		return DefaultHoverHideDelayMs
+	}
+	return c.HoverHideDelayMs
+}
+
+// HoverHideDelay is the dwell time as a duration.
+func (c Card) HoverHideDelay() time.Duration {
+	return time.Duration(c.EffectiveHoverHideDelayMs()) * time.Millisecond
 }
 
 func (c Card) EffectiveCharWidth() int {

@@ -19,6 +19,10 @@ func (a *App) showCard(h *cardUI) {
 	if h == nil || h.win == nil {
 		return
 	}
+	// A show reveals the card. Drop any hover-hide so the window takes
+	// mouse events again, without focusing it.
+	h.hover = HoverState{}
+	h.win.SetIgnoreMouseEvents(false)
 	a.prepareCardOpacity(h)
 	a.orderCardFront(h, h.showWindow)
 }
@@ -78,7 +82,7 @@ func (h *cardUI) windowOpacity() float64 {
 // applyShownOpacity sets the window alpha of a card that is on screen.
 // A card that hide ordered out stays at alpha 0 so the hide is not undone.
 func (a *App) applyShownOpacity(h *cardUI) {
-	if h == nil || h.win == nil || h.hiding || h.orderedOut || !a.cardsShown() {
+	if h == nil || h.win == nil || !opacityUpdateAllowed(h.hiding, h.orderedOut, h.hover.Hidden, a.cardsShown()) {
 		return
 	}
 	a.prepareCardOpacity(h)

@@ -34,7 +34,11 @@ func PinContentFrame(uintptr) {}
 func FinishLiveRelayout(uintptr) {}
 
 func InLiveResize(handle uintptr) bool { return false }
-func UseFrameResizeCursors()           {}
+
+// MouseButtonsDown reports whether a mouse button is held. It is false off macOS.
+func MouseButtonsDown() bool { return false }
+
+func UseFrameResizeCursors() {}
 
 // SetContentMinSize is a no-op off macOS.
 func SetContentMinSize(uintptr, int, int) {}

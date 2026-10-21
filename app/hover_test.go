@@ -41,13 +41,31 @@ func TestHoverDwellCountsWhileThePointerStaysInside(t *testing.T) {
 }
 
 func TestHoverLeaveRestores(t *testing.T) {
-	s := HoverState{Hidden: true, InsideSince: time.Unix(0, 0)}
+	start := time.Unix(2, 0)
+	wait := 2 * time.Second
+	s := HoverState{Hidden: true}
 	next, effect := stepHover(s, HoverSample{
-		Now: time.Unix(2, 0), Delay: time.Second,
+		Now: start, Outside: true, Delay: time.Second, RestoreDelay: wait,
 		Enabled: true, CardsShown: true,
 	})
-	if !effect.Restore || effect.Hide || next.Hidden || !next.InsideSince.IsZero() {
-		t.Fatalf("leave = %+v %+v", next, effect)
+	if effect.Restore || effect.Hide || !next.Hidden || !next.OutsideSince.Equal(start) {
+		t.Fatalf("leave starts the outside wait = %+v %+v", next, effect)
+	}
+	next, effect = stepHover(next, HoverSample{
+		Now: start.Add(wait - time.Millisecond), Outside: true,
+		Delay: time.Second, RestoreDelay: wait,
+		Enabled: true, CardsShown: true,
+	})
+	if effect.Restore || !next.Hidden || !next.OutsideSince.Equal(start) {
+		t.Fatalf("before restore delay = %+v %+v", next, effect)
+	}
+	next, effect = stepHover(next, HoverSample{
+		Now: start.Add(wait), Outside: true,
+		Delay: time.Second, RestoreDelay: wait,
+		Enabled: true, CardsShown: true,
+	})
+	if !effect.Restore || effect.Hide || next.Hidden {
+		t.Fatalf("restore delay elapsed = %+v %+v", next, effect)
 	}
 }
 
@@ -70,20 +88,70 @@ func TestHoverBlockedDoesNotStart(t *testing.T) {
 	}
 }
 
-func TestHoverBlockedLeaveStillRestores(t *testing.T) {
-	s, effect := stepHover(HoverState{Hidden: true}, HoverSample{
-		Now: time.Unix(3, 0), Delay: time.Second,
-		Blocked: true, Enabled: true, CardsShown: true,
+func TestHoverButtonHeldDoesNotRestore(t *testing.T) {
+	start := time.Unix(3, 0)
+	wait := 2 * time.Second
+	held := HoverSample{
+		Now: start.Add(5 * time.Second), Outside: true,
+		Delay: time.Second, RestoreDelay: wait,
+		ButtonDown: true, Enabled: true, CardsShown: true,
+	}
+	s, effect := stepHover(HoverState{Hidden: true, OutsideSince: start}, held)
+	if effect.Restore || effect.Hide || !s.Hidden || !s.OutsideSince.IsZero() {
+		t.Fatalf("button held outside = %+v %+v", s, effect)
+	}
+	// Release while still outside. The wait starts at this sample, not at
+	// the moment the pointer first left.
+	released := held
+	released.ButtonDown = false
+	released.Now = start.Add(6 * time.Second)
+	s, effect = stepHover(s, released)
+	if effect.Restore || !s.Hidden || !s.OutsideSince.Equal(released.Now) {
+		t.Fatalf("release starts the outside wait = %+v %+v", s, effect)
+	}
+	s, effect = stepHover(s, HoverSample{
+		Now: released.Now.Add(wait), Outside: true,
+		Delay: time.Second, RestoreDelay: wait,
+		Enabled: true, CardsShown: true,
 	})
 	if !effect.Restore || s.Hidden {
-		t.Fatalf("blocked leave = %+v %+v", s, effect)
+		t.Fatalf("after release delay = %+v %+v", s, effect)
 	}
-	s, effect = stepHover(HoverState{Hidden: true}, HoverSample{
-		Now: time.Unix(3, 0), Inside: true, Delay: time.Second,
-		Blocked: true, Enabled: true, CardsShown: true,
+}
+
+func TestHoverOutsideTimerResetsOnReentry(t *testing.T) {
+	start := time.Unix(4, 0)
+	wait := 2 * time.Second
+	s, effect := stepHover(HoverState{Hidden: true}, HoverSample{
+		Now: start, Outside: true, RestoreDelay: wait,
+		Enabled: true, CardsShown: true,
 	})
-	if effect.Restore || effect.Hide || !s.Hidden {
-		t.Fatalf("blocked while still inside = %+v %+v", s, effect)
+	if effect.Restore || !s.Hidden || !s.OutsideSince.Equal(start) {
+		t.Fatalf("outside = %+v %+v", s, effect)
+	}
+	// Back inside the expanded frame, including the margin. Stay hidden
+	// and do not ask for another dwell.
+	s, effect = stepHover(s, HoverSample{
+		Now: start.Add(time.Second), RestoreDelay: wait,
+		Enabled: true, CardsShown: true,
+	})
+	if effect.Restore || effect.Hide || !s.Hidden || !s.OutsideSince.IsZero() {
+		t.Fatalf("re-enter = %+v %+v", s, effect)
+	}
+	left := start.Add(1500 * time.Millisecond)
+	s, effect = stepHover(s, HoverSample{
+		Now: left, Outside: true, RestoreDelay: wait,
+		Enabled: true, CardsShown: true,
+	})
+	if effect.Restore || !s.OutsideSince.Equal(left) {
+		t.Fatalf("leave again = %+v %+v", s, effect)
+	}
+	s, effect = stepHover(s, HoverSample{
+		Now: left.Add(wait - time.Millisecond), Outside: true, RestoreDelay: wait,
+		Enabled: true, CardsShown: true,
+	})
+	if effect.Restore || !s.Hidden {
+		t.Fatalf("short second wait = %+v %+v", s, effect)
 	}
 }
 
@@ -157,6 +225,31 @@ func TestPointInFrame(t *testing.T) {
 	}
 	if pointInFrame(9, 20, 10, 20, 30, 40) || pointInFrame(0, 0, 0, 0, 0, 10) {
 		t.Fatal("outside or empty")
+	}
+}
+
+func TestHoverHideMargin(t *testing.T) {
+	// Card at (100, 200), size 50x40. Margin 40 grows it to (60, 160, 130x120).
+	const x, y, w, h, margin = 100, 200, 50, 40, 40
+	if !pointInFrame(100, 200, x, y, w, h) || !pointInExpandedFrame(100, 200, x, y, w, h, margin) {
+		t.Fatal("card origin")
+	}
+	// In the band around the card: outside the card, inside the restore frame.
+	if pointInFrame(70, 200, x, y, w, h) || !pointInExpandedFrame(70, 200, x, y, w, h, margin) {
+		t.Fatal("left margin")
+	}
+	if pointInFrame(100, 170, x, y, w, h) || !pointInExpandedFrame(100, 170, x, y, w, h, margin) {
+		t.Fatal("top margin")
+	}
+	// The expanded right and bottom edges are outside. 60+130=190, 160+120=280.
+	if pointInExpandedFrame(190, 200, x, y, w, h, margin) || pointInExpandedFrame(100, 280, x, y, w, h, margin) {
+		t.Fatal("expanded edges")
+	}
+	if pointInExpandedFrame(59, 200, x, y, w, h, margin) {
+		t.Fatal("past the margin")
+	}
+	if !pointInExpandedFrame(100, 200, x, y, w, h, 0) || pointInExpandedFrame(99, 200, x, y, w, h, 0) {
+		t.Fatal("zero margin matches the card")
 	}
 }
 

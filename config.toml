@@ -25,6 +25,10 @@ inactive_opacity = 1.0
 # The delay counts while the pointer is inside, whether or not it moves.
 hover_hide = true
 hover_hide_delay_ms = 1500
+# Restore uses the card frame plus this margin on every side. The pointer
+# must then stay outside that larger frame for the restore delay.
+hover_hide_margin = 40
+hover_hide_restore_delay_ms = 2000
 padding_x = 10
 padding_y = 6
 # font_family: system sans, then a CJK sans for glyphs it lacks

@@ -57,9 +57,13 @@ type Card struct {
 	InactiveOpacity float64 `toml:"inactive_opacity"`
 	// HoverHide drops a card to alpha 0 after the pointer has rested inside
 	// its frame. HoverHideDelayMs is how long that rest lasts. Zero delay
-	// means the default.
-	HoverHide        bool `toml:"hover_hide"`
-	HoverHideDelayMs int  `toml:"hover_hide_delay_ms"`
+	// means the default. HoverHideMargin expands the frame for restore, and
+	// HoverHideRestoreDelayMs is how long the pointer must stay outside
+	// that expanded frame. A negative margin means the default.
+	HoverHide               bool `toml:"hover_hide"`
+	HoverHideDelayMs        int  `toml:"hover_hide_delay_ms"`
+	HoverHideMargin         int  `toml:"hover_hide_margin"`
+	HoverHideRestoreDelayMs int  `toml:"hover_hide_restore_delay_ms"`
 }
 
 // Leader controls timing and the which-key panel. The leader key itself
@@ -124,27 +128,29 @@ func Default() Config {
 			Panel:                  boolPtr(true),
 		},
 		Card: Card{
-			MinWidth:         120,
-			MaxWidth:         480,
-			Height:           44,
-			MaxHeight:        220,
-			LineHeight:       18,
-			MaxLines:         4,
-			ActiveColor:      "#C4784A",
-			PaddingX:         10,
-			PaddingY:         6,
-			FontFamily:       DefaultFontFamily,
-			FontSize:         DefaultFontSize,
-			CharWidth:        7,
-			CascadeStepX:     12,
-			CascadeStepY:     10,
-			CascadeOriginX:   24,
-			CascadeOriginY:   24,
-			DoubleClickPaste: true,
-			ActiveOpacity:    1,
-			InactiveOpacity:  1,
-			HoverHide:        true,
-			HoverHideDelayMs: DefaultHoverHideDelayMs,
+			MinWidth:                120,
+			MaxWidth:                480,
+			Height:                  44,
+			MaxHeight:               220,
+			LineHeight:              18,
+			MaxLines:                4,
+			ActiveColor:             "#C4784A",
+			PaddingX:                10,
+			PaddingY:                6,
+			FontFamily:              DefaultFontFamily,
+			FontSize:                DefaultFontSize,
+			CharWidth:               7,
+			CascadeStepX:            12,
+			CascadeStepY:            10,
+			CascadeOriginX:          24,
+			CascadeOriginY:          24,
+			DoubleClickPaste:        true,
+			ActiveOpacity:           1,
+			InactiveOpacity:         1,
+			HoverHide:               true,
+			HoverHideDelayMs:        DefaultHoverHideDelayMs,
+			HoverHideMargin:         DefaultHoverHideMargin,
+			HoverHideRestoreDelayMs: DefaultHoverHideRestoreDelayMs,
 		},
 		Bindings: DefaultBindings(),
 		Capture:  Capture{Mode: CaptureAll},
@@ -400,6 +406,37 @@ func (c Card) EffectiveHoverHideDelayMs() int {
 // HoverHideDelay is the dwell time as a duration.
 func (c Card) HoverHideDelay() time.Duration {
 	return time.Duration(c.EffectiveHoverHideDelayMs()) * time.Millisecond
+}
+
+// DefaultHoverHideMargin is how far past the card, in points, the pointer
+// must travel before a hidden card can come back.
+const DefaultHoverHideMargin = 40
+
+// DefaultHoverHideRestoreDelayMs is how long the pointer must stay outside
+// the expanded frame before a hidden card fades back.
+const DefaultHoverHideRestoreDelayMs = 2000
+
+// EffectiveHoverHideMargin is the restore margin. Negative means the
+// default. Zero is a real margin of zero, so a file can turn the buffer off.
+func (c Card) EffectiveHoverHideMargin() int {
+	if c.HoverHideMargin < 0 {
+		return DefaultHoverHideMargin
+	}
+	return c.HoverHideMargin
+}
+
+// EffectiveHoverHideRestoreDelayMs is the outside wait. An unset value
+// keeps the default.
+func (c Card) EffectiveHoverHideRestoreDelayMs() int {
+	if c.HoverHideRestoreDelayMs <= 0 {
+		return DefaultHoverHideRestoreDelayMs
+	}
+	return c.HoverHideRestoreDelayMs
+}
+
+// HoverHideRestoreDelay is the outside wait as a duration.
+func (c Card) HoverHideRestoreDelay() time.Duration {
+	return time.Duration(c.EffectiveHoverHideRestoreDelayMs()) * time.Millisecond
 }
 
 func (c Card) EffectiveCharWidth() int {

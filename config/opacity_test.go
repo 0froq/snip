@@ -57,8 +57,11 @@ func TestOpacityFormRoundTrip(t *testing.T) {
 }
 
 func TestHoverHideDefaults(t *testing.T) {
-	if !Default().Card.HoverHide || Default().Card.EffectiveHoverHideDelayMs() != DefaultHoverHideDelayMs {
-		t.Fatalf("default %+v", Default().Card)
+	d := Default().Card
+	if !d.HoverHide || d.EffectiveHoverHideDelayMs() != DefaultHoverHideDelayMs ||
+		d.EffectiveHoverHideMargin() != DefaultHoverHideMargin ||
+		d.EffectiveHoverHideRestoreDelayMs() != DefaultHoverHideRestoreDelayMs {
+		t.Fatalf("default %+v", d)
 	}
 	var blank Card
 	if blank.HoverHide {
@@ -75,17 +78,22 @@ func TestHoverHideDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Card.HoverHide || got.Card.HoverHideDelayMs != DefaultHoverHideDelayMs {
+	if !got.Card.HoverHide || got.Card.HoverHideDelayMs != DefaultHoverHideDelayMs ||
+		got.Card.HoverHideMargin != DefaultHoverHideMargin ||
+		got.Card.HoverHideRestoreDelayMs != DefaultHoverHideRestoreDelayMs {
 		t.Fatalf("missing keys %+v", got.Card)
 	}
 	off := Default()
 	off.Card.HoverHide = false
 	off.Card.HoverHideDelayMs = 800
+	off.Card.HoverHideMargin = 0
+	off.Card.HoverHideRestoreDelayMs = 500
 	round, err := FormFrom(off).Parse(off)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if round.Card.HoverHide || round.Card.HoverHideDelayMs != 800 {
+	if round.Card.HoverHide || round.Card.HoverHideDelayMs != 800 ||
+		round.Card.HoverHideMargin != 0 || round.Card.HoverHideRestoreDelayMs != 500 {
 		t.Fatalf("round trip %+v", round.Card)
 	}
 	f := FormFrom(off)

@@ -329,6 +329,8 @@ func (a *App) settingsCards(c *ui.Context, f *config.Form, lang string) {
 		labeledInput(c, tr(lang, "inactive_opacity"), &f.InactiveOpacity)
 		input.Checkbox(c, tr(lang, "hover_hide"), &f.HoverHide, input.CheckboxOptions{})
 		labeledInput(c, tr(lang, "hover_hide_delay"), &f.HoverHideDelayMs)
+		labeledInput(c, tr(lang, "hover_hide_margin"), &f.HoverHideMargin)
+		labeledInput(c, tr(lang, "hover_hide_restore"), &f.HoverHideRestoreDelayMs)
 	})
 	a.settingsSection(c, tr(lang, "motion"), func() {
 		input.Checkbox(c, tr(lang, "motion_on"), &f.MotionEnabled, input.CheckboxOptions{})

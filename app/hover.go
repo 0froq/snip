@@ -17,22 +17,30 @@ const (
 )
 
 // HoverState is one card's dwell. InsideSince is when the pointer entered
-// the frame. It stays put while the pointer moves inside that frame.
+// the card frame. It stays put while the pointer moves inside that frame.
 // Hidden means the card has been dropped to alpha 0 and ignores the mouse.
+// OutsideSince is when the pointer left the expanded frame while hidden.
 type HoverState struct {
-	InsideSince time.Time
-	Hidden      bool
+	InsideSince  time.Time
+	OutsideSince time.Time
+	Hidden       bool
 }
 
-// HoverSample is one poll of a card. Blocked is drag, resize, text editing,
-// an open context menu, or a mouse button held down.
+// HoverSample is one poll of a card. Inside is the card frame, where the
+// hide dwell counts. Outside is past the frame plus its margin, where the
+// restore wait counts. Blocked is drag, resize, text editing, or an open
+// context menu. ButtonDown is a held mouse button and, while the card is
+// already hidden, forbids restore.
 type HoverSample struct {
-	Now        time.Time
-	Inside     bool
-	Delay      time.Duration
-	Blocked    bool
-	Enabled    bool
-	CardsShown bool
+	Now          time.Time
+	Inside       bool
+	Outside      bool
+	Delay        time.Duration
+	RestoreDelay time.Duration
+	Blocked      bool
+	ButtonDown   bool
+	Enabled      bool
+	CardsShown   bool
 }
 
 // HoverEffect is what the poll should do to the window. Hide and Restore
@@ -43,9 +51,12 @@ type HoverEffect struct {
 	Restore bool
 }
 
-// stepHover advances a card's dwell. Time inside the frame counts whether
-// or not the pointer is moving. Leaving the frame restores a hidden card.
-// Hide-all (CardsShown false) clears the dwell and does not restore.
+// stepHover advances a card's dwell. Time inside the card frame counts
+// whether or not the pointer is moving. A hidden card stays hidden until
+// the pointer has remained outside the expanded frame for RestoreDelay,
+// and a held mouse button pauses that wait. Re-entering the expanded frame
+// clears it without asking for another dwell. Hide-all clears the dwell
+// and does not restore.
 func stepHover(s HoverState, in HoverSample) (HoverState, HoverEffect) {
 	if !in.CardsShown {
 		return HoverState{}, HoverEffect{}
@@ -56,30 +67,33 @@ func stepHover(s HoverState, in HoverSample) (HoverState, HoverEffect) {
 		}
 		return HoverState{}, HoverEffect{}
 	}
-	if in.Blocked {
-		if s.Hidden && !in.Inside {
-			return HoverState{}, HoverEffect{Restore: true}
-		}
-		if s.Hidden {
+	outside := in.Outside && !in.Inside
+	if s.Hidden {
+		if in.ButtonDown || !outside {
 			return HoverState{Hidden: true}, HoverEffect{}
 		}
-		return HoverState{}, HoverEffect{}
-	}
-	if !in.Inside {
-		if s.Hidden {
+		since := s.OutsideSince
+		if since.IsZero() {
+			since = in.Now
+		}
+		wait := in.RestoreDelay
+		if wait < 0 {
+			wait = 0
+		}
+		if !in.Now.Before(since.Add(wait)) {
 			return HoverState{}, HoverEffect{Restore: true}
 		}
-		return HoverState{}, HoverEffect{}
+		return HoverState{Hidden: true, OutsideSince: since}, HoverEffect{}
 	}
-	if s.Hidden {
-		return HoverState{Hidden: true}, HoverEffect{}
+	if in.Blocked || in.ButtonDown || !in.Inside {
+		return HoverState{}, HoverEffect{}
 	}
 	since := s.InsideSince
 	if since.IsZero() {
 		since = in.Now
 	}
 	if in.Delay > 0 && !in.Now.Before(since.Add(in.Delay)) {
-		return HoverState{Hidden: true, InsideSince: since}, HoverEffect{Hide: true}
+		return HoverState{Hidden: true}, HoverEffect{Hide: true}
 	}
 	return HoverState{InsideSince: since}, HoverEffect{}
 }
@@ -90,12 +104,22 @@ func pointerBlocksHover(dragging, resizing, editing, menu, buttonDown bool) bool
 }
 
 // pointInFrame reports whether a top-left screen point lies in a window frame.
-// The right and bottom edges are outside, so leaving through that edge restores.
+// The right and bottom edges are outside.
 func pointInFrame(px, py, x, y, w, h int) bool {
 	if w <= 0 || h <= 0 {
 		return false
 	}
 	return px >= x && py >= y && px < x+w && py < y+h
+}
+
+// pointInExpandedFrame reports whether a point lies in the frame grown by
+// margin on every side. The margin is the restore buffer: the band around
+// the card still counts as inside for coming back.
+func pointInExpandedFrame(px, py, x, y, w, h, margin int) bool {
+	if margin < 0 {
+		margin = 0
+	}
+	return pointInFrame(px, py, x-margin, y-margin, w+2*margin, h+2*margin)
 }
 
 // opacityUpdateAllowed is false while a hide, hide-all, or hover fade owns
@@ -244,14 +268,19 @@ func (a *App) pollHover() {
 		}
 		x, y := h.win.Position()
 		w, height := h.win.Size()
+		margin := cfg.EffectiveHoverHideMargin()
 		inside := pointInFrame(pt.X, pt.Y, x, y, w, height)
+		outside := !pointInExpandedFrame(pt.X, pt.Y, x, y, w, height, margin)
 		next, effect := stepHover(h.hover, HoverSample{
-			Now:        now,
-			Inside:     inside,
-			Delay:      cfg.HoverHideDelay(),
-			Blocked:    h.hoverBlock(buttons),
-			Enabled:    cfg.HoverHide,
-			CardsShown: shown,
+			Now:          now,
+			Inside:       inside,
+			Outside:      outside,
+			Delay:        cfg.HoverHideDelay(),
+			RestoreDelay: cfg.HoverHideRestoreDelay(),
+			Blocked:      h.hoverBlock(false),
+			ButtonDown:   buttons,
+			Enabled:      cfg.HoverHide,
+			CardsShown:   shown,
 		})
 		h.hover = next
 		if effect.Hide || effect.Restore {

@@ -1,3 +1,5 @@
+<p align="center"><img src="resources/icon.png" width="128" alt="snip"></p>
+
 # snip (feasibility prototype)
 
 Minimal macOS clipboard manager prototype built with [MyGo](https://mygo.egoist.dev/docs) **native UI** (`ui` package, no webview). Each new plain-text copy spawns a small floating card. Global shortcuts show/hide cards, move selection, paste, and delete.

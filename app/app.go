@@ -482,7 +482,10 @@ func (a *App) relayoutFromWindow(host *cardUI, live bool) {
 	minW, minH := a.cardMinSize(host.display)
 	below := w < minW || h < minH || w < 1 || h < 1
 	a.syncCardText(host)
-	if live && !below {
+	// The drag owns the window frame. Writing it here rounds the origin
+	// through MyGo and moves the edge that is not under the pointer.
+	// Min, max, and the text height are windowWillResize's return value.
+	if live {
 		host.win.Invalidate()
 		return
 	}

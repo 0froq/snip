@@ -163,6 +163,46 @@ func assertSameText(t *testing.T, name string, a, b draggedCardLayout) {
 	}
 }
 
+func TestLiveResizeKeepsTheFractionalWidthAndTheAnchoredEdge(t *testing.T) {
+	const x, y, w, h = 100.2, 80.0, 200.0, 160.0
+	right := x + w
+	// In range: 200.4 rounds to 200 and the clamp does not change it.
+	// The fraction has to survive, or the right edge jumps to 100.2+200.
+	nw, nh := constrainLiveResize(200.4, 160.0, 200, 160, 200, 160)
+	if nw != 200.4 || nh != 160 {
+		t.Fatalf("in-range size = (%v,%v), want (200.4,160)", nw, nh)
+	}
+	nx, ny := liveAnchoredOrigin(x, y, w, h, nw, nh, true, false)
+	if nx+nw != right || ny != y {
+		t.Fatalf("left drag moved the right edge to %v or the top (%v)", nx+nw, ny)
+	}
+	// AppKit places the origin for the proposed width. Returning a rounded
+	// width instead shifts the edge that proposal had locked.
+	if shifted := right - 200.4 + 200; shifted == right {
+		t.Fatal("rounding did not shift this fixture's anchored edge")
+	}
+	// Right drag keeps the left edge.
+	nx, ny = liveAnchoredOrigin(x, y, w, h, nw, nh, false, false)
+	if nx != x || ny != y {
+		t.Fatalf("right drag moved the origin to (%v,%v)", nx, ny)
+	}
+	// Past max width: the clamp replaces the proposal. The opposite edge
+	// still stays put, at the clamped width rather than a rounded one.
+	nw, nh = constrainLiveResize(500.6, 160.2, 501, 160, 480, 160)
+	if nw != 480 || nh != 160.2 {
+		t.Fatalf("clamped size = (%v,%v), want (480,160.2)", nw, nh)
+	}
+	nx, _ = liveAnchoredOrigin(x, y, w, h, nw, nh, true, false)
+	if nx+nw != right {
+		t.Fatalf("clamped left drag moved the right edge to %v", nx+nw)
+	}
+	// A zero proposal is not a window.
+	nw, nh = constrainLiveResize(0, 160, 0, 160, 0, 160)
+	if nw != 1 || nh != 160 {
+		t.Fatalf("zero width = (%v,%v)", nw, nh)
+	}
+}
+
 func TestLiveOriginChangeRelayoutsWhenContentFrameStaysPut(t *testing.T) {
 	const x, y, w, h = 40.0, 80.0, 300.0, 160.0
 	// Borderless content view: origin stays (0, 0). The window origin is

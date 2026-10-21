@@ -409,12 +409,21 @@ func windowWillResize(self id, _ objc.SEL, window id, proposed NSSize) NSSize {
 	}
 	minW, minH := windowMinContent(window)
 	if size := resizeSizes[self]; size != nil {
-		w, h := size(int(math.Round(proposed.Width)), int(math.Round(proposed.Height)))
+		roundW := int(math.Round(proposed.Width))
+		roundH := int(math.Round(proposed.Height))
+		w, h := size(roundW, roundH)
 		if w < minW {
 			w = minW
 		}
 		if h < minH {
 			h = minH
+		}
+		// A live drag must not receive a rounded size. AppKit anchors the
+		// opposite edge from the size we return; rounding the free edge
+		// moves that anchor and the next event moves it back.
+		if live {
+			nw, nh := constrainLiveResize(proposed.Width, proposed.Height, roundW, roundH, w, h)
+			return NSSize{Width: nw, Height: nh}
 		}
 		return NSSize{Width: float64(w), Height: float64(h)}
 	}

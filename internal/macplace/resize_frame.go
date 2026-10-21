@@ -56,6 +56,49 @@ func contentFrameChanged(oldX, oldY, oldW, oldH, newX, newY, newW, newH float64)
 	return newX != oldX || newY != oldY || newW != oldW || newH != oldH
 }
 
+// constrainLiveResize is the size windowWillResize returns while the pointer
+// is down. propW/propH are AppKit's proposal, including fractions. roundW/
+// roundH are that proposal rounded to integers. clampW/clampH are those
+// integers after min, max, and the text-height clamp.
+//
+// A free edge keeps the fraction. Rounding 200.4 down to 200 and handing
+// that back makes AppKit recompute the frame, and the edge that is not
+// being dragged moves by the fraction. The next mouse event moves it back,
+// so the width jitters and the anchored edge jitters with it. A clamp that
+// actually changed the rounded size (min, max, or the text height) is the
+// one size AppKit applies; it anchors the opposite edge itself.
+func constrainLiveResize(propW, propH float64, roundW, roundH, clampW, clampH int) (float64, float64) {
+	w := propW
+	if clampW != roundW {
+		w = float64(clampW)
+	}
+	h := propH
+	if clampH != roundH {
+		h = float64(clampH)
+	}
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return w, h
+}
+
+// liveAnchoredOrigin is where a window moves when one edge is dragged and
+// the opposite edge stays put. AppKit's origin is the bottom-left. left
+// means the left edge moved; bottom means the bottom edge moved.
+func liveAnchoredOrigin(x, y, w, h, newW, newH float64, left, bottom bool) (float64, float64) {
+	nx, ny := x, y
+	if left {
+		nx = x + w - newW
+	}
+	if bottom {
+		ny = y + h - newH
+	}
+	return nx, ny
+}
+
 // liveStepNeedsRelayout reports that this live resize step has to place the
 // text again. A borderless content view's origin stays (0, 0) in window
 // coordinates, so a left or bottom drag does not change that view's frame

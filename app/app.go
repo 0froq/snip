@@ -270,7 +270,15 @@ func (a *App) spawnCard(card store.Card, placeX, placeY int, havePlacement bool)
 	})
 	host.win = win
 	win.SetMovable(true)
-	win.OnMove(func() { a.rememberCardPosition(card.ID, win) })
+	win.OnMove(func() {
+		a.rememberCardPosition(card.ID, win)
+		// A left or bottom drag moves the window origin. AppKit delivers
+		// that as windowDidMove, and the borderless content view stays at
+		// (0, 0), so this is a live step the content-view watch cannot see.
+		if macplace.InLiveResize(win.NativeHandle()) {
+			a.relayoutCardWindow(host, win)
+		}
+	})
 	win.OnResize(func() {
 		a.followLeaderBadge(host)
 		// The frame that AppKit just committed is the line count. Skipping
@@ -456,6 +464,7 @@ func (a *App) relayoutCardWindow(host *cardUI, win *mygo.Window) {
 	}
 	macplace.PinContentFrame(win.NativeHandle())
 	a.relayoutFromWindow(host, macplace.InLiveResize(win.NativeHandle()))
+	macplace.FinishLiveRelayout(win.NativeHandle())
 }
 
 // relayoutFromWindow makes the drawn text match win's frame and, once the

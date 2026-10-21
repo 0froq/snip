@@ -45,15 +45,34 @@ func contentSizeChanged(oldW, oldH, newW, newH float64) bool {
 }
 
 // contentFrameChanged reports that the content view moved or resized inside
-// the window. A bottom or left drag slides that origin while the size is
-// still catching up, and a size-only check skips the relayout. A non-positive
-// size is a failed read. A window move that leaves this frame alone does not
-// report a change.
+// the window. A non-positive size is a failed read. A window move that leaves
+// this frame alone does not report a change. A borderless content view stays
+// at (0, 0), so a left or bottom drag is not one of these changes; that drag
+// is liveStepNeedsRelayout on the window frame.
 func contentFrameChanged(oldX, oldY, oldW, oldH, newX, newY, newW, newH float64) bool {
 	if newW <= 0 || newH <= 0 {
 		return false
 	}
 	return newX != oldX || newY != oldY || newW != oldW || newH != oldH
+}
+
+// liveStepNeedsRelayout reports that this live resize step has to place the
+// text again. A borderless content view's origin stays (0, 0) in window
+// coordinates, so a left or bottom drag does not change that view's frame
+// even though the window origin moved. The window frame is the signal:
+// its size changed, or the user is live-resizing and its origin moved.
+// A pure move (not live, same size) is not a relayout.
+func liveStepNeedsRelayout(live bool, oldX, oldY, oldW, oldH, newX, newY, newW, newH float64) bool {
+	if newW <= 0 || newH <= 0 {
+		return false
+	}
+	if newW != oldW || newH != oldH {
+		return true
+	}
+	if !live {
+		return false
+	}
+	return newX != oldX || newY != oldY
 }
 
 // windowDrag is one edge or corner, in AppKit's bottom-left coordinates.

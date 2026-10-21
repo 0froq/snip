@@ -163,6 +163,31 @@ func assertSameText(t *testing.T, name string, a, b draggedCardLayout) {
 	}
 }
 
+func TestLiveOriginChangeRelayoutsWhenContentFrameStaysPut(t *testing.T) {
+	const x, y, w, h = 40.0, 80.0, 300.0, 160.0
+	// Borderless content view: origin stays (0, 0). The window origin is
+	// what a left or bottom drag changes.
+	nx, ny, nw, nh := dragWindow(x, y, w, h, 48, 36, windowDragBottomLeft)
+	if contentFrameChanged(0, 0, w, h, 0, 0, w, h) {
+		t.Fatal("an unchanged content view frame looked like a left/bottom drag")
+	}
+	if !liveStepNeedsRelayout(true, x, y, w, h, nx, ny, nw, nh) {
+		t.Fatal("a live left/bottom drag did not relayout")
+	}
+	// Top/right change the size and leave the origin. Same decision.
+	tx, ty, tw, th := dragWindow(x, y, w, h, 48, 36, windowDragTopRight)
+	if tx != x || ty != y || !liveStepNeedsRelayout(true, x, y, w, h, tx, ty, tw, th) {
+		t.Fatalf("top/right (%v,%v,%v,%v)", tx, ty, tw, th)
+	}
+	// Dragging the card changes the origin and keeps the size.
+	if liveStepNeedsRelayout(false, x, y, w, h, x+20, y-10, w, h) {
+		t.Fatal("a pure move relayouts")
+	}
+	if liveStepNeedsRelayout(true, x, y, w, h, x, y, 0, h) {
+		t.Fatal("a failed size read relayouts")
+	}
+}
+
 func TestSnapResizeFrameKeepsTopAndLeft(t *testing.T) {
 	visible := box{X: 0, Y: 0, W: 10000, H: 10000}
 	x, y, w, h, ok := snapResizeFrame(100, 200, 320, 180, 300, 40, 1, 1, visible)

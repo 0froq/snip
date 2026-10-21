@@ -30,6 +30,9 @@ func FollowContentFrame(uintptr, func()) func() { return func() {} }
 // PinContentFrame is a no-op off macOS.
 func PinContentFrame(uintptr) {}
 
+// FinishLiveRelayout is a no-op off macOS.
+func FinishLiveRelayout(uintptr) {}
+
 func InLiveResize(handle uintptr) bool { return false }
 func UseFrameResizeCursors()           {}
 

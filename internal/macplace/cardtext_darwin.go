@@ -139,7 +139,11 @@ func AttachCardText(handle uintptr, opt CardTextOptions) *CardText {
 	// would, and the last word would wrap in a card sized to the ink.
 	send(scroll, "setScrollerStyle:", nsScrollerStyleOverlay)
 	send(scroll, "setAutomaticallyAdjustsContentInsets:", 0)
-	send(scroll, "setAutoresizingMask:", 0)
+	// Unflipped: y=0 is the bottom. A mask of 0 leaves the scroll view on
+	// that bottom when the content view grows, so a bottom drag carries the
+	// text with the bottom edge. Width and height sizable keep the insets,
+	// which holds the top of the text on the top padding.
+	send(scroll, "setAutoresizingMask:", nsViewWidthSizable|nsViewHeightSizable)
 	send(scroll, "setDocumentView:", uintptr(view))
 
 	send(view, "setDelegate:", uintptr(delegate))
@@ -189,6 +193,7 @@ func (h *CardText) Layout(winW, winH, padX, padY, border, resizeMargin, topExtra
 		purego.RegisterFunc(&setLayerScale, msgSendAddr)
 	})
 	setViewFrame(h.scroll, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: nsSize{width: w, height: ht}})
+	send(h.scroll, "setAutoresizingMask:", nsViewWidthSizable|nsViewHeightSizable)
 	h.relayoutCard()
 }
 

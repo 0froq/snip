@@ -41,12 +41,16 @@ var (
 // move the window origin leaves the view at its old size.
 const nsViewHeightSizable = 16
 
-// contentFrameWatch is one content view. An origin change and a size change
-// both relayout the card. Bottom and left drags move the origin; top and
-// right change only the size.
+// contentFrameWatch is one card window. A borderless content view stays at
+// (0, 0), so left and bottom drags are read off the window frame
+// (windowDidResize / windowDidMove), not off the content view frame.
 type contentFrameWatch struct {
 	view, window               id
 	lastX, lastY, lastW, lastH float64
+	winX, winY, winW, winH     float64
+	haveWin                    bool
+	busy                       bool
+	step                       string
 	fn                         func()
 }
 
@@ -73,13 +77,12 @@ func ConstrainWindowResize(handle uintptr, size func(int, int) (int, int)) func(
 	return cleanup
 }
 
-// FollowContentFrame calls relayout when the content view moves or resizes.
-// Every edge and corner comes through this frame: a bottom or left drag
-// changes the origin, a top or right drag changes only the size, and a
-// corner does both. The view is made width- and height-sizable first so a
-// size-only drag still grows it after the borderless frame was written by
-// hand. The relayout callback is also the path for the setFrame at the end
-// of a resize.
+// FollowContentFrame relayouts on a content-view frame change and on every
+// live windowDidResize / windowDidMove. The content view of a borderless
+// window stays at origin (0, 0), so a left or bottom drag never shows up
+// there; the window frame is what moves. The view is made width- and
+// height-sizable so a top or right drag still grows it. The same callback
+// is the path for the setFrame at the end of a resize.
 func FollowContentFrame(handle uintptr, relayout func()) func() {
 	if handle == 0 || relayout == nil {
 		return func() {}
@@ -98,23 +101,42 @@ func FollowContentFrame(handle uintptr, relayout func()) func() {
 		return func() {}
 	}
 	frame := msgRect(content, sel("frame"))
+	winFrame := msgRect(window, sel("frame"))
 	watch := &contentFrameWatch{
-		view:   content,
-		window: window,
-		lastX:  frame.origin.x,
-		lastY:  frame.origin.y,
-		lastW:  frame.size.width,
-		lastH:  frame.size.height,
-		fn:     relayout,
+		view:    content,
+		window:  window,
+		lastX:   frame.origin.x,
+		lastY:   frame.origin.y,
+		lastW:   frame.size.width,
+		lastH:   frame.size.height,
+		winX:    winFrame.origin.x,
+		winY:    winFrame.origin.y,
+		winW:    winFrame.size.width,
+		winH:    winFrame.size.height,
+		haveWin: usableFrame(winFrame.origin.x, winFrame.origin.y, winFrame.size.width, winFrame.size.height),
+		fn:      relayout,
 	}
 	frameWatches[obs] = watch
 	frameWatchByView[content] = watch
 	windowRelayouts[window] = relayout
-	send(send(class("NSNotificationCenter"), "defaultCenter"), "addObserver:selector:name:object:",
+	center := send(class("NSNotificationCenter"), "defaultCenter")
+	send(center, "addObserver:selector:name:object:",
 		uintptr(obs),
 		uintptr(sel("snipContentViewFrameChanged:")),
 		uintptr(nsString("NSViewFrameDidChangeNotification")),
 		uintptr(content))
+	// Posted for every live step, including a left or bottom drag whose
+	// content view frame never changes.
+	send(center, "addObserver:selector:name:object:",
+		uintptr(obs),
+		uintptr(sel("snipWindowLiveFrameChanged:")),
+		uintptr(nsString("NSWindowDidResizeNotification")),
+		uintptr(window))
+	send(center, "addObserver:selector:name:object:",
+		uintptr(obs),
+		uintptr(sel("snipWindowLiveFrameChanged:")),
+		uintptr(nsString("NSWindowDidMoveNotification")),
+		uintptr(window))
 	var closed bool
 	return func() {
 		if closed {
@@ -152,10 +174,16 @@ func PinContentFrame(handle uintptr) {
 func ensureFrameWatch() {
 	frameWatchOnce.Do(func() {
 		var err error
-		frameWatchClass, err = objc.RegisterClass("SnipContentFrameWatch", objc.GetClass("NSObject"), nil, nil, []objc.MethodDef{{
-			Cmd: objc.RegisterName("snipContentViewFrameChanged:"),
-			Fn:  contentViewFrameChanged,
-		}})
+		frameWatchClass, err = objc.RegisterClass("SnipContentFrameWatch", objc.GetClass("NSObject"), nil, nil, []objc.MethodDef{
+			{
+				Cmd: objc.RegisterName("snipContentViewFrameChanged:"),
+				Fn:  contentViewFrameChanged,
+			},
+			{
+				Cmd: objc.RegisterName("snipWindowLiveFrameChanged:"),
+				Fn:  windowLiveFrameChanged,
+			},
+		})
 		if err != nil {
 			panic("macplace: " + err.Error())
 		}
@@ -182,8 +210,107 @@ func contentViewFrameChanged(self id, _ objc.SEL, note id) {
 	watch.lastX, watch.lastY, watch.lastW, watch.lastH = x, y, w, h
 	// Pin before the callback. The target is stored first, so the nested
 	// setFrame sees the same frame and does not relayout again.
+	watch.relayout("contentView")
+}
+
+// windowLiveFrameChanged is one live windowDidResize or windowDidMove.
+// The content view origin is not consulted: it stays (0, 0) while the
+// window origin moves.
+func windowLiveFrameChanged(self id, _ objc.SEL, note id) {
+	watch := frameWatches[self]
+	if watch == nil || watch.fn == nil || watch.window == 0 || watch.busy {
+		return
+	}
+	frame := msgRect(watch.window, sel("frame"))
+	if !usableFrame(frame.origin.x, frame.origin.y, frame.size.width, frame.size.height) {
+		return
+	}
+	live := liveResize(watch.window)
+	needs := watch.haveWin && liveStepNeedsRelayout(live,
+		watch.winX, watch.winY, watch.winW, watch.winH,
+		frame.origin.x, frame.origin.y, frame.size.width, frame.size.height)
+	watch.haveWin = true
+	watch.winX, watch.winY = frame.origin.x, frame.origin.y
+	watch.winW, watch.winH = frame.size.width, frame.size.height
+	if !needs {
+		return
+	}
+	watch.relayout(noteName(note))
+}
+
+func (watch *contentFrameWatch) relayout(path string) {
+	if watch == nil || watch.fn == nil || watch.busy {
+		return
+	}
+	watch.busy = true
+	watch.step = path
 	pinContentView(watch)
+	// fn places the scroll view and, while the drag is live, displays and logs.
 	watch.fn()
+	watch.step = ""
+	watch.busy = false
+}
+
+func noteName(note id) string {
+	if note == 0 {
+		return "live"
+	}
+	name := goString(send(note, "name"))
+	if name == "" {
+		return "live"
+	}
+	return name
+}
+
+// logLiveFrames prints the frames a live step left behind. The content
+// origin stays (0, 0) on a borderless window. The scroll view is unflipped,
+// so its top is y+height and has to track the window height.
+func logLiveFrames(path string, window id) {
+	if window == 0 {
+		return
+	}
+	wf := msgRect(window, sel("frame"))
+	var cf, sf nsRect
+	if content := send(window, "contentView"); content != 0 {
+		cf = msgRect(content, sel("frame"))
+	}
+	if h := cardTextForWindow(window); h != nil && h.scroll != 0 {
+		sf = msgRect(h.scroll, sel("frame"))
+	}
+	log.Printf("snip: live step path=%s window=(%.1f,%.1f,%.1f,%.1f) content=(%.1f,%.1f,%.1f,%.1f) scroll=(%.1f,%.1f,%.1f,%.1f)",
+		path,
+		wf.origin.x, wf.origin.y, wf.size.width, wf.size.height,
+		cf.origin.x, cf.origin.y, cf.size.width, cf.size.height,
+		sf.origin.x, sf.origin.y, sf.size.width, sf.size.height)
+}
+
+// FinishLiveRelayout displays the text and logs the window, content, and
+// scroll frames for a live step. A move that is not a live resize is quiet.
+func FinishLiveRelayout(handle uintptr) {
+	if handle == 0 || !liveResize(id(handle)) {
+		return
+	}
+	window := id(handle)
+	path := "relayout"
+	if content := send(window, "contentView"); content != 0 {
+		if watch := frameWatchByView[content]; watch != nil && watch.step != "" {
+			path = watch.step
+		}
+	}
+	displayLiveCard(window)
+	logLiveFrames(path, window)
+}
+
+func displayLiveCard(window id) {
+	if window == 0 {
+		return
+	}
+	if h := cardTextForWindow(window); h != nil && h.scroll != 0 {
+		send(h.scroll, "display")
+	}
+	if content := send(window, "contentView"); content != 0 {
+		send(content, "displayIfNeeded")
+	}
 }
 
 // pinContentView fills the window with the content view. The last frame is
@@ -206,6 +333,24 @@ func pinContentView(watch *contentFrameWatch) {
 	if changed {
 		syncContentFrame(watch.window, watch.view)
 	}
+	// Frame origin stays (0, 0) while a bottom drag shifts bounds.origin,
+	// and an unflipped scroll view then rides the bottom edge.
+	resetContentBounds(watch.view, w, h)
+}
+
+func resetContentBounds(view id, w, h float64) {
+	if view == 0 || !usableFrame(0, 0, w, h) {
+		return
+	}
+	frameOnce.Do(func() {
+		purego.RegisterFunc(&setViewFrame, msgSendAddr)
+		purego.RegisterFunc(&setLayerScale, msgSendAddr)
+	})
+	bounds := msgRect(view, sel("bounds"))
+	if bounds.origin.x == 0 && bounds.origin.y == 0 && bounds.size.width == w && bounds.size.height == h {
+		return
+	}
+	setViewFrame(view, sel("setBounds:"), nsRect{size: nsSize{width: w, height: h}})
 }
 
 func constrainDelegate(delegate id, size func(int, int) (int, int)) func() {

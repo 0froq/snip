@@ -98,6 +98,9 @@ type cardUI struct {
 	// resizeDepth is non-zero while a resize callback is on the stack.
 	// hide/orderOut must not run from that stack.
 	resizeDepth int
+	// orderedOut is set by hide and cleared by show. Opacity updates skip a
+	// card in that state so they do not cancel a hide that is dropping alpha.
+	orderedOut  bool
 	jumpLabel   string
 	badge       *mygo.Window
 	textHost    *macplace.CardText
@@ -107,6 +110,10 @@ type cardUI struct {
 	pixelEdit   bool
 	pixelDraft  string
 	pixelScroll ui.ScrollState
+	// opacityActive and opacityInactive are the configured window alphas
+	// copied onto the card before it is shown or its selection changes.
+	opacityActive   float64
+	opacityInactive float64
 }
 
 // New creates the application state.
@@ -780,6 +787,7 @@ func (a *App) hideCard(h *cardUI) {
 	}
 	h.hideGen++
 	h.hiding = false
+	h.orderedOut = true
 	// Drop the whole window before any repaint. Fading or clearing the text
 	// first left the rounded background on screen with the note gone.
 	h.win.SetOpacity(0)
@@ -885,6 +893,7 @@ func (a *App) refreshSelection() {
 				continue
 			}
 			h.selected = i == sel
+			a.applyShownOpacity(h)
 			h.win.Invalidate()
 		}
 		if a.leaderActive() {
@@ -1267,6 +1276,7 @@ func (a *App) applyConfig(next config.Config) {
 			h.win.SetSize(width, height)
 		}
 		a.syncCardHeight(h)
+		a.applyShownOpacity(h)
 		h.win.Invalidate()
 	}
 }

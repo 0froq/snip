@@ -51,6 +51,10 @@ type Card struct {
 	Placement string `toml:"placement"`
 	// DoubleClickPaste pastes a card when it is double clicked.
 	DoubleClickPaste bool `toml:"double_click_paste"`
+	// ActiveOpacity is the selected card's window alpha. InactiveOpacity is
+	// every other card. Both are 0.2–1. Zero means the default of 1.
+	ActiveOpacity   float64 `toml:"active_opacity"`
+	InactiveOpacity float64 `toml:"inactive_opacity"`
 }
 
 // Leader controls timing and the which-key panel. The leader key itself
@@ -132,6 +136,8 @@ func Default() Config {
 			CascadeOriginX:   24,
 			CascadeOriginY:   24,
 			DoubleClickPaste: true,
+			ActiveOpacity:    1,
+			InactiveOpacity:  1,
 		},
 		Bindings: DefaultBindings(),
 		Capture:  Capture{Mode: CaptureAll},
@@ -328,6 +334,47 @@ func PixelScale(fontSize int) int {
 		return 2
 	}
 	return 1
+}
+
+const (
+	// OpacityMin and OpacityMax bound a card window's alpha.
+	OpacityMin = 0.2
+	// OpacityMax is fully opaque.
+	OpacityMax = 1.0
+)
+
+// EffectiveActiveOpacity is the selected card's alpha. An unset value is
+// fully opaque so a config written before this key stays as it was.
+func (c Card) EffectiveActiveOpacity() float64 {
+	return clampOpacity(c.ActiveOpacity)
+}
+
+// EffectiveInactiveOpacity is the alpha of a card that is not selected.
+func (c Card) EffectiveInactiveOpacity() float64 {
+	return clampOpacity(c.InactiveOpacity)
+}
+
+// OpacityFor returns the window alpha for a selected or idle card.
+func (c Card) OpacityFor(selected bool) float64 {
+	if selected {
+		return c.EffectiveActiveOpacity()
+	}
+	return c.EffectiveInactiveOpacity()
+}
+
+// clampOpacity maps an unset value to fully opaque and keeps every other
+// value inside 0.2–1.
+func clampOpacity(v float64) float64 {
+	if v == 0 {
+		return OpacityMax
+	}
+	if v < OpacityMin {
+		return OpacityMin
+	}
+	if v > OpacityMax {
+		return OpacityMax
+	}
+	return v
 }
 
 func (c Card) EffectiveCharWidth() int {

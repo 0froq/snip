@@ -34,6 +34,8 @@ type Form struct {
 	CascadeStepX           string
 	CascadeStepY           string
 	DoubleClickPaste       bool
+	ActiveOpacity          string
+	InactiveOpacity        string
 	CaptureMode            string
 	Blocklist              []string
 	Allowlist              []string
@@ -86,6 +88,8 @@ func FormFrom(c Config) Form {
 		CascadeStepX:           strconv.Itoa(c.Card.CascadeStepX),
 		CascadeStepY:           strconv.Itoa(c.Card.CascadeStepY),
 		DoubleClickPaste:       c.Card.DoubleClickPaste,
+		ActiveOpacity:          formatOpacity(c.Card.EffectiveActiveOpacity()),
+		InactiveOpacity:        formatOpacity(c.Card.EffectiveInactiveOpacity()),
 		CaptureMode:            c.Capture.EffectiveMode(),
 		Blocklist:              append([]string(nil), c.Capture.Blocklist...),
 		Allowlist:              append([]string(nil), c.Capture.Allowlist...),
@@ -174,6 +178,12 @@ func (f Form) Parse(prev Config) (Config, error) {
 	}
 	cfg.Theme.Palette = palette
 	cfg.Card.DoubleClickPaste = f.DoubleClickPaste
+	if cfg.Card.ActiveOpacity, err = opacityValue(f.ActiveOpacity, "Active opacity"); err != nil {
+		return Config{}, err
+	}
+	if cfg.Card.InactiveOpacity, err = opacityValue(f.InactiveOpacity, "Inactive opacity"); err != nil {
+		return Config{}, err
+	}
 	mode, err := NormalizeCaptureMode(f.CaptureMode)
 	if err != nil {
 		return Config{}, err
@@ -345,6 +355,18 @@ func normalizeForSave(cfg Config) Config {
 		cfg.Window.Panel = nil
 	}
 	return cfg
+}
+
+func formatOpacity(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+func opacityValue(raw, name string) (float64, error) {
+	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || v < OpacityMin || v > OpacityMax {
+		return 0, fmt.Errorf("%s must be a number from 0.2 to 1", name)
+	}
+	return v, nil
 }
 
 func positiveInt(raw, name string) (int, error) {

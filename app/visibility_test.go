@@ -8,12 +8,16 @@ import (
 )
 
 type recordingNoteWindow struct {
-	calls []string
+	calls   []string
+	opacity float64
 }
 
-func (w *recordingNoteWindow) ShowInactive()      { w.calls = append(w.calls, "show inactive") }
-func (w *recordingNoteWindow) Invalidate()        { w.calls = append(w.calls, "invalidate") }
-func (w *recordingNoteWindow) SetOpacity(float64) { w.calls = append(w.calls, "opacity") }
+func (w *recordingNoteWindow) ShowInactive() { w.calls = append(w.calls, "show inactive") }
+func (w *recordingNoteWindow) Invalidate()   { w.calls = append(w.calls, "invalidate") }
+func (w *recordingNoteWindow) SetOpacity(v float64) {
+	w.calls = append(w.calls, "opacity")
+	w.opacity = v
+}
 func (w *recordingNoteWindow) NativeHandle() uintptr {
 	w.calls = append(w.calls, "native display")
 	return 0 // No AppKit/display server needed, including on Darwin.
@@ -35,6 +39,27 @@ func TestShowNoteWindowAlwaysRequestsFreshContent(t *testing.T) {
 		if !reflect.DeepEqual(w.calls, want) {
 			t.Fatalf("show calls = %v, want %v", w.calls, want)
 		}
+		if w.opacity != 1 {
+			t.Fatalf("unset opacity = %v, want 1", w.opacity)
+		}
+		if h.orderedOut {
+			t.Fatal("show must clear the ordered-out hide")
+		}
+	}
+}
+
+func TestShowWindowUsesSelectionOpacity(t *testing.T) {
+	w := &recordingNoteWindow{}
+	idle := &cardUI{opacityActive: 0.9, opacityInactive: 0.4, orderedOut: true}
+	idle.showWindow(w)
+	if w.opacity != 0.4 {
+		t.Fatalf("idle opacity = %v, want 0.4", w.opacity)
+	}
+	w.opacity = 0
+	active := &cardUI{selected: true, opacityActive: 0.9, opacityInactive: 0.4}
+	active.showWindow(w)
+	if w.opacity != 0.9 {
+		t.Fatalf("active opacity = %v, want 0.9", w.opacity)
 	}
 }
 

@@ -17,6 +17,10 @@ max_height = 220
 # max_lines is ignored. Older files that still set it continue to load.
 active_color = "#C4784A"
 double_click_paste = true
+# active_opacity is the selected card. inactive_opacity is every other card.
+# Both are 0.2–1. 1 is fully opaque.
+active_opacity = 1.0
+inactive_opacity = 1.0
 padding_x = 10
 padding_y = 6
 # font_family: system sans, then a CJK sans for glyphs it lacks

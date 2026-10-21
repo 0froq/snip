@@ -324,6 +324,10 @@ func (a *App) settingsCards(c *ui.Context, f *config.Form, lang string) {
 		labeledInput(c, "Cascade step x", &f.CascadeStepX)
 		labeledInput(c, "Cascade step y", &f.CascadeStepY)
 	})
+	a.settingsSection(c, tr(lang, "opacity"), func() {
+		labeledInput(c, tr(lang, "active_opacity"), &f.ActiveOpacity)
+		labeledInput(c, tr(lang, "inactive_opacity"), &f.InactiveOpacity)
+	})
 	a.settingsSection(c, tr(lang, "motion"), func() {
 		input.Checkbox(c, tr(lang, "motion_on"), &f.MotionEnabled, input.CheckboxOptions{})
 		labeledInput(c, tr(lang, "motion_ms"), &f.MotionMs)

@@ -1,6 +1,9 @@
 package app
 
-import "github.com/0froq/snip/internal/macplace"
+import (
+	"github.com/0froq/snip/config"
+	"github.com/0froq/snip/internal/macplace"
+)
 
 // cardsShown reports the global hide/show state.
 func (a *App) cardsShown() bool {
@@ -16,6 +19,7 @@ func (a *App) showCard(h *cardUI) {
 	if h == nil || h.win == nil {
 		return
 	}
+	a.prepareCardOpacity(h)
 	a.orderCardFront(h, h.showWindow)
 }
 
@@ -42,10 +46,41 @@ type noteWindow interface {
 func (h *cardUI) showWindow(win noteWindow) {
 	h.hideGen++ // Cancel any pending animated hide, including its posted callback.
 	h.hiding = false
+	h.orderedOut = false
 	// Paint the full note while the window is still ordered out (hide leaves
-	// it at alpha 0) and only then order it in and reveal it.
+	// it at alpha 0) and only then order it in and reveal it at the
+	// configured alpha. The hide path still drops alpha to 0.
 	win.Invalidate()
 	macplace.DisplayWindow(win.NativeHandle())
 	win.ShowInactive()
-	win.SetOpacity(1)
+	win.SetOpacity(h.windowOpacity())
+}
+
+// prepareCardOpacity copies the configured alphas onto the card. Zero stays
+// zero here; windowOpacity treats that as fully opaque.
+func (a *App) prepareCardOpacity(h *cardUI) {
+	if h == nil {
+		return
+	}
+	c := a.config().Card
+	h.opacityActive = c.ActiveOpacity
+	h.opacityInactive = c.InactiveOpacity
+}
+
+// windowOpacity is the alpha for this card's selection. An unset config is 1.
+func (h *cardUI) windowOpacity() float64 {
+	return (config.Card{
+		ActiveOpacity:   h.opacityActive,
+		InactiveOpacity: h.opacityInactive,
+	}).OpacityFor(h.selected)
+}
+
+// applyShownOpacity sets the window alpha of a card that is on screen.
+// A card that hide ordered out stays at alpha 0 so the hide is not undone.
+func (a *App) applyShownOpacity(h *cardUI) {
+	if h == nil || h.win == nil || h.hiding || h.orderedOut || !a.cardsShown() {
+		return
+	}
+	a.prepareCardOpacity(h)
+	h.win.SetOpacity(h.windowOpacity())
 }

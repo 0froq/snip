@@ -729,6 +729,11 @@ func (a *App) setAllVisible(show bool) {
 	a.mu.Lock()
 	a.visible = show
 	ids := append([]string(nil), a.order...)
+	if show && a.selected >= 0 && a.selected < len(ids) {
+		// Order the selected card in last so it ends up on top.
+		sel := ids[a.selected]
+		ids = append(append(ids[:a.selected:a.selected], ids[a.selected+1:]...), sel)
+	}
 	a.mu.Unlock()
 	mygo.RunOnMain(func() {
 		for _, id := range ids {

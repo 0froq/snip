@@ -9,26 +9,145 @@ frameless = true
 panel = true
 
 [card]
+# placement: near-selection (default), near-cursor, or fixed
+placement = "near-selection"
 min_width = 120
 max_width = 480
-height = 44
-max_lines = 2
+max_height = 220
+# max_lines is ignored. Older files that still set it continue to load.
+active_color = "#C4784A"
+double_click_paste = true
+# active_opacity is the selected card. inactive_opacity is every other card.
+# Both are 0.2–1. 1 is fully opaque.
+active_opacity = 1.0
+inactive_opacity = 1.0
+# hover_hide drops a card after the pointer has stayed inside its frame.
+# The delay counts while the pointer is inside, whether or not it moves.
+hover_hide = true
+hover_hide_delay_ms = 1500
+# Restore uses the card frame plus this margin on every side. The pointer
+# must then stay outside that larger frame for the restore delay.
+hover_hide_margin = 40
+hover_hide_restore_delay_ms = 2000
 padding_x = 10
 padding_y = 6
-font_size = 12
-char_width = 7
+# font_family: system sans, then a CJK sans for glyphs it lacks
+font_family = "-apple-system, PingFang SC, Hiragino Sans GB, sans-serif"
+font_size = 14
+# card_font: system (default) or pixel. pixel draws the bundled 8-bit face
+# at font_size. Leave it unset to keep the system font.
+# card_font = "system"
 cascade_origin_x = 24
 cascade_origin_y = 24
 cascade_step_x = 12
 cascade_step_y = 10
 
-[shortcuts]
-show_all = "CmdOrCtrl+Shift+S"
-hide_all = "CmdOrCtrl+Shift+H"
-next = "CmdOrCtrl+Shift+]"
-prev = "CmdOrCtrl+Shift+["
-paste = "CmdOrCtrl+Shift+V"
-delete = "CmdOrCtrl+Shift+Backspace"
+language = "en"
+
+[theme]
+# auto follows the system appearance (Autumn Day / Autumn Night).
+# Or spring-day, spring-night, summer-day, summer-night,
+# autumn-day, autumn-night, winter-day, winter-night.
+palette = "auto"
+
+[capture]
+# mode: all (default), blocklist, or allowlist. Lists store bundle ids.
+mode = "all"
+blocklist = []
+allowlist = []
+
+[motion]
+enabled = true
+duration_ms = 160
+
+[leader]
+timeout_ms = 1500
+double_press_ms = 400
+# which_key_x/y: 0..100 percent of the work area. align is which point of the
+# panel sits there: start (left/top), center, or end (right/bottom).
+which_key_x = 100
+which_key_y = 100
+which_key_align_x = "end"
+which_key_align_y = "end"
+
+# A shortcut is a global combo, or "leader" plus a key pressed after the leader key.
+# stay keeps leader mode open after that key.
+[[bindings]]
+action = "leader"
+keys = "CmdOrCtrl+Shift+Space"
+
+[[bindings]]
+action = "toggle"
+keys = "CmdOrCtrl+Shift+S"
+
+[[bindings]]
+action = "toggle"
+keys = "leader s"
+
+[[bindings]]
+action = "next"
+keys = "CmdOrCtrl+Shift+]"
+
+[[bindings]]
+action = "next"
+keys = "leader j"
+stay = true
+
+[[bindings]]
+action = "prev"
+keys = "CmdOrCtrl+Shift+["
+
+[[bindings]]
+action = "prev"
+keys = "leader k"
+stay = true
+
+[[bindings]]
+action = "paste"
+keys = "CmdOrCtrl+Shift+V"
+
+[[bindings]]
+action = "paste"
+keys = "leader v"
+
+[[bindings]]
+action = "delete"
+keys = "CmdOrCtrl+Shift+Backspace"
+
+[[bindings]]
+action = "delete"
+keys = "leader d"
+
+[[bindings]]
+action = "clear_cards"
+keys = "CmdOrCtrl+Shift+Option+Backspace"
+
+# Shift+D, not "D": a single letter is case-insensitive in the shortcut parser.
+[[bindings]]
+action = "clear_cards"
+keys = "leader Shift+D"
+
+[[bindings]]
+action = "pin"
+keys = "CmdOrCtrl+Shift+F"
+
+[[bindings]]
+action = "pin"
+keys = "leader p"
+stay = true
+
+[[bindings]]
+action = "settings"
+keys = "CmdOrCtrl+,"
+
+[[bindings]]
+action = "settings"
+keys = "leader ,"
+
+[pasteboard]
+honor_concealed = true
+skip_transient = true
+skip_auto_generated = true
 
 [secrets]
 mask_enabled = true

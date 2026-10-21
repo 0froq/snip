@@ -1,0 +1,116 @@
+//go:build darwin
+
+package macplace
+
+import (
+	"sync"
+
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
+)
+
+var (
+	roundOnce      sync.Once
+	setLayerRadius func(id, objc.SEL, float64)
+	setLayerScale  func(id, objc.SEL, float64)
+	frameOnce      sync.Once
+	setViewFrame   func(id, objc.SEL, nsRect)
+)
+
+// SquareWindow clears the titled window chrome, including
+// fullSizeContentView, which keeps AppKit's light hairline after the title
+// bar is gone. The content view is not rounded: a corner radius or a
+// continuous corner curve would clip the pixel frame's stepped corners.
+// The window stays non-opaque so those empty corner dots show the desktop.
+// The resizable bit stays on: borderless windows still need it for edge
+// tracking and resize cursors. Hit testing uses the rectangular frame.
+func SquareWindow(handle uintptr) {
+	if handle == 0 {
+		return
+	}
+	load()
+	w := id(handle)
+	send(w, "setStyleMask:", borderlessStyleMask(uintptr(send(w, "styleMask"))))
+	send(w, "setHasShadow:", 0)
+	send(w, "setOpaque:", 0)
+	send(w, "setBackgroundColor:", uintptr(send(class("NSColor"), "clearColor")))
+	send(w, "setTitlebarAppearsTransparent:", 1)
+	send(w, "setTitleVisibility:", 1)
+	content := send(w, "contentView")
+	flattenContent(content)
+	// setStyleMask keeps the old content rect. The window frame and the
+	// view the border is drawn into then disagree by about a title bar.
+	// Read both rects as arm64 HFAs and make the content view fill the frame.
+	syncContentFrame(w, content)
+}
+
+func syncContentFrame(w, content id) {
+	if w == 0 || content == 0 {
+		return
+	}
+	frame := msgRect(w, sel("frame"))
+	view := msgRect(content, sel("frame"))
+	x, y, fw, fh, changed := contentFrameMatchingWindow(
+		frame.size.width, frame.size.height,
+		view.origin.x, view.origin.y, view.size.width, view.size.height,
+	)
+	if !usableFrame(0, 0, fw, fh) {
+		return
+	}
+	frameOnce.Do(func() {
+		// NSRect arguments travel in d0–d3 on arm64. A SyscallN pointer
+		// would not be the frame AppKit applies.
+		purego.RegisterFunc(&setViewFrame, msgSendAddr)
+		purego.RegisterFunc(&setLayerScale, msgSendAddr)
+	})
+	bounds := nsRect{size: nsSize{width: fw, height: fh}}
+	if changed {
+		setViewFrame(content, sel("setFrame:"), nsRect{origin: nsPoint{x: x, y: y}, size: bounds.size})
+	}
+	// Only the surface that still fills the old content width grows with
+	// the window. An inset text view keeps its own frame.
+	subs := send(content, "subviews")
+	n := sendInt(subs, "count")
+	for i := 0; i < n; i++ {
+		sub := send(subs, "objectAtIndex:", uintptr(i))
+		r := msgRect(sub, sel("frame"))
+		if !subviewShouldFill(fw, fh, r.origin.x, r.origin.y, r.size.width, r.size.height) {
+			continue
+		}
+		setViewFrame(sub, sel("setFrame:"), bounds)
+	}
+	layer := send(content, "layer")
+	if layer == 0 {
+		return
+	}
+	setViewFrame(layer, sel("setBounds:"), bounds)
+	if scale := msgFloat(w, sel("backingScaleFactor")); scale > 0 {
+		setLayerScale(layer, sel("setContentsScale:"), scale)
+	}
+}
+
+func flattenContent(view id) {
+	if view == 0 {
+		return
+	}
+	roundOnce.Do(func() {
+		// CGFloat is a double in a floating-point register on arm64.
+		purego.RegisterFunc(&setLayerRadius, msgSendAddr)
+	})
+	send(view, "setWantsLayer:", 1)
+	layer := send(view, "layer")
+	if layer == 0 {
+		return
+	}
+	setLayerRadius(layer, sel("setCornerRadius:"), 0)
+	setLayerRadius(layer, sel("setBorderWidth:"), 0)
+	// A layer that once used the continuous curve keeps it until told
+	// otherwise. Radius 0 on that curve is still a smooth clip.
+	if send(layer, "respondsToSelector:", uintptr(sel("setCornerCurve:"))) != 0 {
+		send(layer, "setCornerCurve:", uintptr(nsString("circular")))
+	}
+	send(layer, "setOpaque:", 0)
+	clear := send(class("NSColor"), "clearColor")
+	send(layer, "setBackgroundColor:", uintptr(send(clear, "CGColor")))
+	send(layer, "setMasksToBounds:", 0)
+}

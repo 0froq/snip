@@ -14,6 +14,8 @@ type Config struct {
 	ExtraPatterns   []string
 	MinEntropyBits  float64
 	MinSecretLength int
+	// HonorPasteboardConcealed masks the whole card when the copy was concealed.
+	HonorPasteboardConcealed bool
 }
 
 var builtinPatterns = []*regexp.Regexp{
@@ -26,9 +28,31 @@ var builtinPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b`),
 }
 
+// IsSensitive reports whether raw should be treated as a password or token.
+// That is the same detection DisplayText uses: a concealed pasteboard value
+// when that is honored, or a pattern / entropy match while masking is on.
+func IsSensitive(raw string, cfg Config, pasteboardConcealed bool) bool {
+	if raw == "" {
+		return false
+	}
+	if pasteboardConcealed && cfg.HonorPasteboardConcealed {
+		return true
+	}
+	if !cfg.Enabled {
+		return false
+	}
+	return DisplayText(raw, cfg, false) != raw
+}
+
 // DisplayText returns text safe to show on a card.
-func DisplayText(raw string, cfg Config) string {
-	if !cfg.Enabled || raw == "" {
+func DisplayText(raw string, cfg Config, pasteboardConcealed bool) string {
+	if raw == "" {
+		return raw
+	}
+	if pasteboardConcealed && cfg.HonorPasteboardConcealed {
+		return maskMatch(raw)
+	}
+	if !cfg.Enabled {
 		return raw
 	}
 	out := raw

@@ -10,6 +10,11 @@ type Card struct {
 	ID        string
 	Text      string
 	CreatedAt time.Time
+	// Concealed is true when the copy carried org.nspasteboard.ConcealedType.
+	Concealed bool
+	// Original is the clipboard text from before the first edit. Empty
+	// means Text is still that text.
+	Original string
 }
 
 // Store holds cards in insertion order (oldest first).
@@ -27,14 +32,14 @@ func New() *Store {
 
 // Add appends a card and returns it.
 func (s *Store) Add(text string) Card {
-	c, _ := s.AddWithLimit(text, 0)
+	c, _ := s.AddWithLimit(text, 0, false)
 	return c
 }
 
 // AddWithLimit appends a card. When maxCards > 0, oldest cards are removed
 // first (FIFO) until len < maxCards, then the new card is added. Returns
 // evicted card IDs in eviction order.
-func (s *Store) AddWithLimit(text string, maxCards int) (Card, []string) {
+func (s *Store) AddWithLimit(text string, maxCards int, concealed bool) (Card, []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var evicted []string
@@ -47,7 +52,7 @@ func (s *Store) AddWithLimit(text string, maxCards int) (Card, []string) {
 	}
 	s.seq++
 	id := formatID(s.seq)
-	c := Card{ID: id, Text: text, CreatedAt: time.Now().UTC()}
+	c := Card{ID: id, Text: text, CreatedAt: time.Now().UTC(), Concealed: concealed}
 	s.byID[id] = c
 	s.order = append(s.order, id)
 	return c, evicted
@@ -64,12 +69,59 @@ func (s *Store) All() []Card {
 	return out
 }
 
+// FindText returns the newest card whose text matches exactly.
+func (s *Store) FindText(text string) (Card, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := len(s.order) - 1; i >= 0; i-- {
+		c := s.byID[s.order[i]]
+		if c.Text == text {
+			return c, true
+		}
+	}
+	return Card{}, false
+}
+
 // Get returns a card by id.
 func (s *Store) Get(id string) (Card, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	c, ok := s.byID[id]
 	return c, ok
+}
+
+// UpdateText replaces a card's text. The first edit remembers the previous
+// text as Original so RestoreOriginal can put it back.
+func (s *Store) UpdateText(id, text string) (Card, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.byID[id]
+	if !ok {
+		return Card{}, false
+	}
+	if c.Original == "" && c.Text != text {
+		c.Original = c.Text
+	}
+	c.Text = text
+	s.byID[id] = c
+	return c, true
+}
+
+// RestoreOriginal puts the pre-edit clipboard text back. A card that was
+// never edited is unchanged.
+func (s *Store) RestoreOriginal(id string) (Card, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.byID[id]
+	if !ok {
+		return Card{}, false
+	}
+	if c.Original != "" {
+		c.Text = c.Original
+		c.Original = ""
+		s.byID[id] = c
+	}
+	return c, true
 }
 
 // Delete removes a card.
@@ -91,6 +143,23 @@ func (s *Store) deleteID(id string) bool {
 		}
 	}
 	return true
+}
+
+// TrimTo drops the oldest cards until at most max remain.
+// max <= 0 leaves the store unchanged. Evicted IDs are oldest first.
+func (s *Store) TrimTo(max int) []string {
+	if max <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var evicted []string
+	for len(s.order) > max {
+		id := s.order[0]
+		s.deleteID(id)
+		evicted = append(evicted, id)
+	}
+	return evicted
 }
 
 // Len returns the number of cards.

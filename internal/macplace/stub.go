@@ -1,0 +1,54 @@
+//go:build !darwin
+
+package macplace
+
+import (
+	"time"
+
+	"github.com/0froq/snip/config"
+)
+
+// Supported is false off macOS.
+const Supported = false
+
+// Origin resolves card placement. Always returns ok=false on non-Darwin builds.
+func Origin(_ config.Placement, _ int, _ int) (x, y int, ok bool) {
+	return 0, 0, false
+}
+
+// SquareWindow is a no-op off macOS.
+func SquareWindow(uintptr) {}
+
+// PreventWindowFocus is a no-op off macOS.
+func PreventWindowFocus(uintptr) {}
+
+// DisplayWindow is a no-op off macOS.
+func DisplayWindow(uintptr) {}
+
+// ConstrainWindowResize is a no-op off macOS.
+func ConstrainWindowResize(_ uintptr, _ func(int, int) (int, int)) func() { return func() {} }
+
+// FollowContentFrame is a no-op off macOS.
+func FollowContentFrame(uintptr, func()) func() { return func() {} }
+
+// PinContentFrame is a no-op off macOS.
+func PinContentFrame(uintptr) {}
+
+// FinishLiveRelayout is a no-op off macOS.
+func FinishLiveRelayout(uintptr) {}
+
+func InLiveResize(handle uintptr) bool { return false }
+
+// MouseButtonsDown reports whether a mouse button is held. It is false off macOS.
+func MouseButtonsDown() bool { return false }
+
+// AnimateWindowAlpha is a no-op off macOS.
+func AnimateWindowAlpha(uintptr, float64, time.Duration) {}
+
+// StopWindowAlphaAnimation is a no-op off macOS.
+func StopWindowAlphaAnimation(uintptr) {}
+
+func UseFrameResizeCursors() {}
+
+// SetContentMinSize is a no-op off macOS.
+func SetContentMinSize(uintptr, int, int) {}

@@ -3,15 +3,17 @@ module github.com/0froq/snip
 go 1.27.1
 
 require (
+	git.zacharyzhang.com/ZacharyZhang-NY/8bitMyGoUI v0.0.0-20261017053108-03e1f917066f
 	github.com/BurntSushi/toml v1.6.0
 	github.com/ebitengine/purego v0.11.1
-	github.com/egoist/mygo v0.5.2
+	github.com/egoist/mygo v0.5.5
 )
 
 require (
 	github.com/go-text/typesetting v0.3.5 // indirect
 	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
+	rsc.io/qr v0.2.0 // indirect
 )
 
 tool github.com/egoist/mygo/cmd/mygo
